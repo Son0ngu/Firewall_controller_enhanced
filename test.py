@@ -31,8 +31,8 @@ def test_add_rule():
     # Define rule parameters
     test_rule = {
         'name': test_rule_name,
-        'direction': 'in',
-        'action': 'allow',
+        'direction': 'out',
+        'action': 'block',
         'protocol': 'TCP',
         'local_port': '9090',
         'description': 'Temporary test rule',

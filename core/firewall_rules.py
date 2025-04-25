@@ -18,13 +18,29 @@ logger = logging.getLogger('firewall_rules')
 class FirewallRule:
     """Class representing a Windows Firewall rule with its properties."""
     
+    VALID_DIRECTIONS = ['in', 'out', 'inbound', 'outbound']
+    VALID_ACTIONS = ['allow', 'block', 'drop']
+    
     def __init__(self, name: str, direction: str = "in", action: str = "allow", 
                  protocol: str = "TCP", local_port: Optional[str] = None, 
                  remote_port: Optional[str] = None, program: Optional[str] = None,
                  enabled: bool = True, profile: str = "any", description: str = ""):
         self.name = name
-        self.direction = direction.lower()
-        self.action = action.lower()
+        
+        # Validate and normalize direction
+        direction = direction.lower()
+        if direction not in self.VALID_DIRECTIONS:
+            raise ValueError(f"Invalid direction: {direction}. Must be one of {self.VALID_DIRECTIONS}")
+        # Normalize direction to 'in' or 'out'
+        self.direction = 'in' if direction in ['in', 'inbound'] else 'out'
+        
+        # Validate and normalize action
+        action = action.lower()
+        if action not in self.VALID_ACTIONS:
+            raise ValueError(f"Invalid action: {action}. Must be one of {self.VALID_ACTIONS}")
+        # Windows Firewall uses 'Block' instead of 'drop'
+        self.action = 'block' if action in ['block', 'drop'] else 'allow'
+        
         self.protocol = protocol.upper()
         self.local_port = local_port
         self.remote_port = remote_port
@@ -248,3 +264,63 @@ def rule_exists(name: str) -> bool:
     except Exception as e:
         logger.error(f"Error checking if rule exists: {str(e)}")
         return False
+    
+def create_inbound_allow_rule(name: str, **kwargs) -> bool:
+    """
+    Helper function to create an inbound allow rule.
+    
+    Args:
+        name: Name of the rule
+        **kwargs: Additional rule parameters
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    params = {'name': name, 'direction': 'in', 'action': 'allow'}
+    params.update(kwargs)
+    return add_rule(params)
+
+def create_inbound_block_rule(name: str, **kwargs) -> bool:
+    """
+    Helper function to create an inbound block rule.
+    
+    Args:
+        name: Name of the rule
+        **kwargs: Additional rule parameters
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    params = {'name': name, 'direction': 'in', 'action': 'block'}
+    params.update(kwargs)
+    return add_rule(params)
+
+def create_outbound_allow_rule(name: str, **kwargs) -> bool:
+    """
+    Helper function to create an outbound allow rule.
+    
+    Args:
+        name: Name of the rule
+        **kwargs: Additional rule parameters
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    params = {'name': name, 'direction': 'out', 'action': 'allow'}
+    params.update(kwargs)
+    return add_rule(params)
+
+def create_outbound_block_rule(name: str, **kwargs) -> bool:
+    """
+    Helper function to create an outbound block rule.
+    
+    Args:
+        name: Name of the rule
+        **kwargs: Additional rule parameters
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    params = {'name': name, 'direction': 'out', 'action': 'block'}
+    params.update(kwargs)
+    return add_rule(params)
