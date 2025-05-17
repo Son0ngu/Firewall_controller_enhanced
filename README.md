@@ -1,1 +1,2 @@
-https://docs.google.com/document/d/1GP1MwKSg6ojnTaFhqV79ep3ZVAMgsNqqJu2NRKMJyCk/edit?usp=sharing
+
+.\.venv\Scripts\Activate.ps1
