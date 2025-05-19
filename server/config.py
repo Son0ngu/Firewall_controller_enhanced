@@ -68,8 +68,8 @@ class Config:
     CORS_SUPPORTS_CREDENTIALS = get_env('CORS_CREDENTIALS', False)
     
     # MongoDB Settings
-    MONGO_URI = get_env('MONGO_URI', 'mongodb://localhost:27017/firewall_controller')
-    MONGO_DBNAME = get_env('MONGO_DBNAME', 'firewall_controller')
+    MONGO_URI = get_env('MONGO_URI')
+    MONGO_DBNAME = get_env('MONGO_DBNAME', 'Monitoring')
     
     # JWT Authentication
     JWT_SECRET_KEY = get_env('JWT_SECRET_KEY', SECRET_KEY)

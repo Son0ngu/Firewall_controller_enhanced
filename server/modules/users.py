@@ -8,6 +8,7 @@ including user registration, login, profile management, and role-based access co
 import logging
 import secrets
 import string
+import re
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict, List, Optional, Union

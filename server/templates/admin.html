@@ -1,0 +1,1352 @@
+{# filepath: c:\Users\sonbx\firewall-controller\server\templates\admin.html #}
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Firewall Controller{% endblock %}
+
+{% block extra_css %}
+<style>
+    .nav-tabs .nav-link.active {
+        font-weight: 600;
+        border-bottom: 3px solid #0d6efd;
+    }
+    .actions-column {
+        width: 160px;
+    }
+    .domain-details {
+        font-size: 0.9rem;
+    }
+    .user-badge {
+        font-size: 0.8rem;
+    }
+    .role-admin {
+        background-color: #dc3545;
+    }
+    .role-operator {
+        background-color: #6f42c1;
+    }
+    .role-viewer {
+        background-color: #0dcaf0;
+    }
+    .status-active {
+        background-color: #198754;
+    }
+    .status-inactive {
+        background-color: #6c757d;
+    }
+    .alert-container {
+        position: fixed;
+        top: 70px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="h2"><i class="fas fa-shield-alt me-2"></i>Admin Dashboard</h1>
+            <div>
+                <span class="badge bg-primary me-2" id="connectionStatus">
+                    <i class="fas fa-sync-alt fa-spin me-1"></i>Connecting...
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Admin navigation tabs -->
+<ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="whitelist-tab" data-bs-toggle="tab" data-bs-target="#whitelist" type="button" role="tab">
+            <i class="fas fa-list me-2"></i>Whitelist Management
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">
+            <i class="fas fa-users me-2"></i>User Management
+        </button>
+    </li>
+</ul>
+
+<!-- Alert container for AJAX responses -->
+<div class="alert-container" id="alertContainer"></div>
+
+<!-- Tab content -->
+<div class="tab-content" id="adminTabsContent">
+    <!-- Whitelist Management Tab -->
+    <div class="tab-pane fade show active" id="whitelist" role="tabpanel" aria-labelledby="whitelist-tab">
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-globe me-2"></i>Domain Whitelist</h5>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                                <i class="fas fa-plus me-1"></i>Add Domain
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#bulkImportModal">
+                                <i class="fas fa-file-import me-1"></i>Bulk Import
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="exportWhitelistBtn">
+                                <i class="fas fa-file-export me-1"></i>Export
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Search and filter -->
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="domainSearch" placeholder="Search domains...">
+                                    <button class="btn btn-outline-secondary" type="button" id="searchDomainsBtn">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <select class="form-select" id="domainTypeFilter">
+                                    <option value="">All Domains</option>
+                                    <option value="exact">Exact Matches</option>
+                                    <option value="wildcard">Wildcard Domains</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Whitelist table -->
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="whitelistTable">
+                                <thead>
+                                    <tr>
+                                        <th>Domain</th>
+                                        <th>Added By</th>
+                                        <th>Added On</th>
+                                        <th>Notes</th>
+                                        <th class="actions-column">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for domain in whitelist %}
+                                    <tr data-domain-id="{{ domain._id }}">
+                                        <td>
+                                            {{ domain.domain }}
+                                            {% if domain.domain.startswith('*.') %}
+                                            <span class="badge bg-info ms-2">Wildcard</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ domain.added_by or 'System' }}</td>
+                                        <td>{{ domain.created_at|format_datetime }}</td>
+                                        <td>{{ domain.notes or '-' }}</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button type="button" class="btn btn-outline-primary edit-domain-btn" 
+                                                        data-domain-id="{{ domain._id }}" data-domain="{{ domain.domain }}" 
+                                                        data-notes="{{ domain.notes }}">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-outline-danger delete-domain-btn" 
+                                                        data-domain-id="{{ domain._id }}" data-domain="{{ domain.domain }}">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination -->
+                        <nav aria-label="Whitelist pagination" class="mt-3">
+                            <ul class="pagination justify-content-center">
+                                <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                                    <a class="page-link" href="?page={{ page - 1 }}&tab=whitelist" tabindex="-1">Previous</a>
+                                </li>
+                                {% for p in range(1, total_pages + 1) %}
+                                <li class="page-item {% if p == page %}active{% endif %}">
+                                    <a class="page-link" href="?page={{ p }}&tab=whitelist">{{ p }}</a>
+                                </li>
+                                {% endfor %}
+                                <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                                    <a class="page-link" href="?page={{ page + 1 }}&tab=whitelist">Next</a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <small class="text-muted">Total domains: <span id="domainCount">{{ domain_count }}</span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- User Management Tab -->
+    <div class="tab-pane fade" id="users" role="tabpanel" aria-labelledby="users-tab">
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-users me-2"></i>User Accounts</h5>
+                        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                            <i class="fas fa-user-plus me-1"></i>Add User
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <!-- User table -->
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="usersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Last Login</th>
+                                        <th class="actions-column">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in users %}
+                                    <tr data-user-id="{{ user._id }}">
+                                        <td>
+                                            {{ user.username }}
+                                            {% if user.username == current_user.username %}
+                                            <span class="badge bg-warning text-dark ms-2">You</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ user.email }}</td>
+                                        <td>
+                                            <span class="badge user-badge role-{{ user.role }}">{{ user.role|title }}</span>
+                                        </td>
+                                        <td>
+                                            <span class="badge user-badge status-{{ user.status }}">{{ user.status|title }}</span>
+                                        </td>
+                                        <td>{{ user.last_login|format_datetime if user.last_login else 'Never' }}</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button type="button" class="btn btn-outline-primary edit-user-btn" 
+                                                        data-user-id="{{ user._id }}" data-username="{{ user.username }}" 
+                                                        data-email="{{ user.email }}" data-role="{{ user.role }}" 
+                                                        data-status="{{ user.status }}">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                {% if user.username != current_user.username %}
+                                                <button type="button" class="btn btn-outline-warning toggle-status-btn" 
+                                                        data-user-id="{{ user._id }}" data-username="{{ user.username }}" 
+                                                        data-status="{{ user.status }}">
+                                                    {% if user.status == 'active' %}
+                                                    <i class="fas fa-user-slash" title="Deactivate"></i>
+                                                    {% else %}
+                                                    <i class="fas fa-user-check" title="Activate"></i>
+                                                    {% endif %}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-danger delete-user-btn" 
+                                                        data-user-id="{{ user._id }}" data-username="{{ user.username }}">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                                {% else %}
+                                                <button type="button" class="btn btn-outline-secondary" disabled>
+                                                    <i class="fas fa-user-slash"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary" disabled>
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <small class="text-muted">Total users: <span id="userCount">{{ user_count }}</span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Domain Modal -->
+<div class="modal fade" id="addDomainModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>Add Domain to Whitelist</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addDomainForm">
+                    <div class="mb-3">
+                        <label for="domainName" class="form-label">Domain Name</label>
+                        <input type="text" class="form-control" id="domainName" name="domain" 
+                               placeholder="example.com" required>
+                        <div class="form-text">
+                            Use <code>*.example.com</code> format for wildcard domains (matches all subdomains).
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="domainNotes" class="form-label">Notes (Optional)</label>
+                        <textarea class="form-control" id="domainNotes" name="notes" rows="2" 
+                                  placeholder="Purpose of this domain..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveDomainBtn">Add Domain</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Domain Modal -->
+<div class="modal fade" id="editDomainModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Edit Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editDomainForm">
+                    <input type="hidden" id="editDomainId" name="domain_id">
+                    <div class="mb-3">
+                        <label for="editDomainName" class="form-label">Domain Name</label>
+                        <input type="text" class="form-control" id="editDomainName" name="domain" 
+                               placeholder="example.com" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDomainNotes" class="form-label">Notes (Optional)</label>
+                        <textarea class="form-control" id="editDomainNotes" name="notes" rows="2" 
+                                  placeholder="Purpose of this domain..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="updateDomainBtn">Update Domain</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Import Modal -->
+<div class="modal fade" id="bulkImportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-import me-2"></i>Bulk Import Domains</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="bulkImportForm">
+                    <div class="mb-3">
+                        <label for="importType" class="form-label">Import Method</label>
+                        <select class="form-select" id="importType">
+                            <option value="text">Paste domains</option>
+                            <option value="file">Upload file</option>
+                        </select>
+                    </div>
+                    
+                    <div id="textImportSection">
+                        <div class="mb-3">
+                            <label for="bulkDomains" class="form-label">Domains (one per line)</label>
+                            <textarea class="form-control" id="bulkDomains" rows="10" 
+                                      placeholder="example.com
+*.example.org
+another-domain.com"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div id="fileImportSection" style="display: none;">
+                        <div class="mb-3">
+                            <label for="domainFile" class="form-label">Domain List File</label>
+                            <input class="form-control" type="file" id="domainFile" accept=".txt,.csv">
+                            <div class="form-text">
+                                Upload a text file with one domain per line, or a CSV with domains in the first column.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="importNotes" class="form-label">Notes for all imported domains (Optional)</label>
+                        <input type="text" class="form-control" id="importNotes" 
+                               placeholder="Bulk import on YYYY-MM-DD">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="importDomainsBtn">Import Domains</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i>Add New User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addUserForm">
+                    <div class="mb-3">
+                        <label for="newUsername" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="newUsername" name="username" 
+                               placeholder="john_doe" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="newEmail" name="email" 
+                               placeholder="john@example.com" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="newPassword" name="password" 
+                               required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirmPassword" class="form-label">Confirm Password</label>
+                        <input type="password" class="form-control" id="confirmPassword" 
+                               required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newRole" class="form-label">Role</label>
+                        <select class="form-select" id="newRole" name="role" required>
+                            <option value="viewer">Viewer</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                        <div class="form-text">
+                            <strong>Viewer:</strong> Can only view logs and statistics<br>
+                            <strong>Operator:</strong> Can manage whitelists and view logs<br>
+                            <strong>Administrator:</strong> Full access including user management
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveUserBtn">Create User</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-edit me-2"></i>Edit User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editUserForm">
+                    <input type="hidden" id="editUserId" name="user_id">
+                    <div class="mb-3">
+                        <label for="editUsername" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="editUsername" name="username" 
+                               readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="editEmail" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editRole" class="form-label">Role</label>
+                        <select class="form-select" id="editRole" name="role" required>
+                            <option value="viewer">Viewer</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editStatus" class="form-label">Status</label>
+                        <select class="form-select" id="editStatus" name="status" required>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="resetPasswordCheck">
+                            <label class="form-check-label" for="resetPasswordCheck">
+                                Reset Password
+                            </label>
+                        </div>
+                    </div>
+                    <div id="resetPasswordFields" style="display: none;">
+                        <div class="mb-3">
+                            <label for="newUserPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newUserPassword" name="password">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmUserPassword" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirmUserPassword">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="updateUserBtn">Update User</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Socket.IO connection if available
+        let socket;
+        if (typeof io !== 'undefined') {
+            socket = io();
+            
+            // Connection status indicators
+            socket.on('connect', function() {
+                document.getElementById('connectionStatus').innerHTML = 
+                    '<i class="fas fa-check-circle me-1"></i>Connected';
+                document.getElementById('connectionStatus').className = 'badge bg-success me-2';
+            });
+            
+            socket.on('disconnect', function() {
+                document.getElementById('connectionStatus').innerHTML = 
+                    '<i class="fas fa-times-circle me-1"></i>Disconnected';
+                document.getElementById('connectionStatus').className = 'badge bg-danger me-2';
+            });
+            
+            // Listen for whitelist updates
+            socket.on('whitelist_updated', function(data) {
+                if (data.action === 'add') {
+                    // Show notification
+                    showAlert('success', `Domain "${data.domain}" added to whitelist`);
+                    
+                    // Refresh the table
+                    refreshWhitelistTable();
+                } else if (data.action === 'update') {
+                    showAlert('success', `Domain "${data.domain}" updated`);
+                    refreshWhitelistTable();
+                } else if (data.action === 'delete') {
+                    showAlert('success', `Domain "${data.domain}" removed from whitelist`);
+                    refreshWhitelistTable();
+                }
+            });
+        }
+        
+        // Check active tab from URL param
+        const urlParams = new URLSearchParams(window.location.search);
+        const tabParam = urlParams.get('tab');
+        if (tabParam === 'users') {
+            document.getElementById('users-tab').click();
+        }
+        
+        // Set up whitelist table search
+        document.getElementById('searchDomainsBtn').addEventListener('click', function() {
+            const searchTerm = document.getElementById('domainSearch').value.trim().toLowerCase();
+            const typeFilter = document.getElementById('domainTypeFilter').value;
+            
+            const rows = document.querySelectorAll('#whitelistTable tbody tr');
+            rows.forEach(row => {
+                const domainCell = row.querySelector('td:first-child');
+                const domain = domainCell.textContent.trim().toLowerCase();
+                const isWildcard = domain.startsWith('*.');
+                
+                let visible = domain.includes(searchTerm);
+                
+                if (typeFilter === 'wildcard' && !isWildcard) {
+                    visible = false;
+                } else if (typeFilter === 'exact' && isWildcard) {
+                    visible = false;
+                }
+                
+                row.style.display = visible ? '' : 'none';
+            });
+        });
+        
+        // Domain type filter change
+        document.getElementById('domainTypeFilter').addEventListener('change', function() {
+            document.getElementById('searchDomainsBtn').click();
+        });
+        
+        // Add domain form submission
+        document.getElementById('saveDomainBtn').addEventListener('click', function() {
+            const domain = document.getElementById('domainName').value.trim();
+            const notes = document.getElementById('domainNotes').value.trim();
+            
+            if (!domain) {
+                showAlert('danger', 'Please enter a domain name');
+                return;
+            }
+            
+            fetch('/api/whitelist', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    domain: domain,
+                    notes: notes
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', data.error);
+                } else {
+                    // Clear form
+                    document.getElementById('domainName').value = '';
+                    document.getElementById('domainNotes').value = '';
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addDomainModal'));
+                    modal.hide();
+                    
+                    // Show success alert
+                    showAlert('success', `Domain "${domain}" added to whitelist`);
+                    
+                    // If Socket.IO is not handling updates, refresh manually
+                    if (!socket) {
+                        refreshWhitelistTable();
+                    }
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'Error: ' + error.message);
+            });
+        });
+        
+        // Edit domain buttons
+        document.querySelectorAll('.edit-domain-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const domainId = this.getAttribute('data-domain-id');
+                const domain = this.getAttribute('data-domain');
+                const notes = this.getAttribute('data-notes') || '';
+                
+                document.getElementById('editDomainId').value = domainId;
+                document.getElementById('editDomainName').value = domain;
+                document.getElementById('editDomainNotes').value = notes;
+                
+                const editModal = new bootstrap.Modal(document.getElementById('editDomainModal'));
+                editModal.show();
+            });
+        });
+        
+        // Update domain form submission
+        document.getElementById('updateDomainBtn').addEventListener('click', function() {
+            const domainId = document.getElementById('editDomainId').value;
+            const domain = document.getElementById('editDomainName').value.trim();
+            const notes = document.getElementById('editDomainNotes').value.trim();
+            
+            if (!domain) {
+                showAlert('danger', 'Please enter a domain name');
+                return;
+            }
+            
+            fetch(`/api/whitelist/${domainId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    domain: domain,
+                    notes: notes
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', data.error);
+                } else {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editDomainModal'));
+                    modal.hide();
+                    
+                    // Show success alert
+                    showAlert('success', `Domain "${domain}" updated`);
+                    
+                    // If Socket.IO is not handling updates, refresh manually
+                    if (!socket) {
+                        refreshWhitelistTable();
+                    }
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'Error: ' + error.message);
+            });
+        });
+        
+        // Delete domain buttons
+        document.querySelectorAll('.delete-domain-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const domainId = this.getAttribute('data-domain-id');
+                const domain = this.getAttribute('data-domain');
+                
+                if (confirm(`Are you sure you want to remove "${domain}" from the whitelist?`)) {
+                    fetch(`/api/whitelist/${domainId}`, {
+                        method: 'DELETE'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            showAlert('danger', data.error);
+                        } else {
+                            // Show success alert
+                            showAlert('success', `Domain "${domain}" removed from whitelist`);
+                            
+                            // If Socket.IO is not handling updates, refresh manually
+                            if (!socket) {
+                                refreshWhitelistTable();
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        showAlert('danger', 'Error: ' + error.message);
+                    });
+                }
+            });
+        });
+        
+        // Import type toggle
+        document.getElementById('importType').addEventListener('change', function() {
+            const importType = this.value;
+            
+            if (importType === 'text') {
+                document.getElementById('textImportSection').style.display = 'block';
+                document.getElementById('fileImportSection').style.display = 'none';
+            } else {
+                document.getElementById('textImportSection').style.display = 'none';
+                document.getElementById('fileImportSection').style.display = 'block';
+            }
+        });
+        
+        // Bulk import form submission
+        document.getElementById('importDomainsBtn').addEventListener('click', function() {
+            const importType = document.getElementById('importType').value;
+            const notes = document.getElementById('importNotes').value.trim();
+            let domains = [];
+            
+            if (importType === 'text') {
+                // Get domains from textarea
+                const bulkDomains = document.getElementById('bulkDomains').value;
+                domains = bulkDomains.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0);
+            } else {
+                // Get domains from file
+                const fileInput = document.getElementById('domainFile');
+                if (!fileInput.files || fileInput.files.length === 0) {
+                    showAlert('danger', 'Please select a file to import');
+                    return;
+                }
+                
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    const contents = e.target.result;
+                    domains = contents.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0);
+                    
+                    // If CSV, extract first column
+                    if (file.name.endsWith('.csv')) {
+                        domains = domains.map(line => {
+                            const parts = line.split(',');
+                            return parts[0].trim().replace(/"/g, '');
+                        });
+                    }
+                    
+                    processBulkImport(domains, notes);
+                };
+                
+                reader.readAsText(file);
+                return;
+            }
+            
+            if (domains.length === 0) {
+                showAlert('danger', 'No domains to import');
+                return;
+            }
+            
+            processBulkImport(domains, notes);
+        });
+        
+        function processBulkImport(domains, notes) {
+            fetch('/api/whitelist/bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    domains: domains,
+                    notes: notes
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', data.error);
+                } else {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('bulkImportModal'));
+                    modal.hide();
+                    
+                    // Clear form
+                    document.getElementById('bulkDomains').value = '';
+                    document.getElementById('domainFile').value = '';
+                    document.getElementById('importNotes').value = '';
+                    
+                    // Show success alert
+                    showAlert('success', `${data.added} domains imported successfully. ${data.skipped} skipped (already exist or invalid).`);
+                    
+                    // Refresh the table
+                    refreshWhitelistTable();
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'Error: ' + error.message);
+            });
+        }
+        
+        // Export whitelist button
+        document.getElementById('exportWhitelistBtn').addEventListener('click', function() {
+            window.location.href = '/api/whitelist/export';
+        });
+        
+        // Add user form submission
+        document.getElementById('saveUserBtn').addEventListener('click', function() {
+            const username = document.getElementById('newUsername').value.trim();
+            const email = document.getElementById('newEmail').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const role = document.getElementById('newRole').value;
+            
+            // Validation
+            if (!username || !email || !password) {
+                showAlert('danger', 'All fields are required');
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showAlert('danger', 'Passwords do not match');
+                return;
+            }
+            
+            fetch('/api/users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    username: username,
+                    email: email,
+                    password: password,
+                    role: role
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', data.error);
+                } else {
+                    // Clear form
+                    document.getElementById('newUsername').value = '';
+                    document.getElementById('newEmail').value = '';
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
+                    modal.hide();
+                    
+                    // Show success alert
+                    showAlert('success', `User "${username}" created successfully`);
+                    
+                    // Refresh user list
+                    refreshUserTable();
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'Error: ' + error.message);
+            });
+        });
+        
+        // Edit user buttons
+        document.querySelectorAll('.edit-user-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const userId = this.getAttribute('data-user-id');
+                const username = this.getAttribute('data-username');
+                const email = this.getAttribute('data-email');
+                const role = this.getAttribute('data-role');
+                const status = this.getAttribute('data-status');
+                
+                document.getElementById('editUserId').value = userId;
+                document.getElementById('editUsername').value = username;
+                document.getElementById('editEmail').value = email;
+                document.getElementById('editRole').value = role;
+                document.getElementById('editStatus').value = status;
+                
+                // Reset password fields
+                document.getElementById('resetPasswordCheck').checked = false;
+                document.getElementById('resetPasswordFields').style.display = 'none';
+                document.getElementById('newUserPassword').value = '';
+                document.getElementById('confirmUserPassword').value = '';
+                
+                const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
+                editModal.show();
+            });
+        });
+        
+        // Reset password checkbox
+        document.getElementById('resetPasswordCheck').addEventListener('change', function() {
+            document.getElementById('resetPasswordFields').style.display = 
+                this.checked ? 'block' : 'none';
+        });
+        
+        // Update user form submission
+        document.getElementById('updateUserBtn').addEventListener('click', function() {
+            const userId = document.getElementById('editUserId').value;
+            const username = document.getElementById('editUsername').value;
+            const email = document.getElementById('editEmail').value.trim();
+            const role = document.getElementById('editRole').value;
+            const status = document.getElementById('editStatus').value;
+            const resetPassword = document.getElementById('resetPasswordCheck').checked;
+            
+            let userData = {
+                email: email,
+                role: role,
+                status: status
+            };
+            
+            // Add password if reset was checked
+            if (resetPassword) {
+                const password = document.getElementById('newUserPassword').value;
+                const confirmPassword = document.getElementById('confirmUserPassword').value;
+                
+                if (!password) {
+                    showAlert('danger', 'Please enter a new password');
+                    return;
+                }
+                
+                if (password !== confirmPassword) {
+                    showAlert('danger', 'Passwords do not match');
+                    return;
+                }
+                
+                userData.password = password;
+            }
+            
+            fetch(`/api/users/${userId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(userData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', data.error);
+                } else {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+                    modal.hide();
+                    
+                    // Show success alert
+                    showAlert('success', `User "${username}" updated successfully`);
+                    
+                    // Refresh user list
+                    refreshUserTable();
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'Error: ' + error.message);
+            });
+        });
+        
+        // Toggle user status buttons
+        document.querySelectorAll('.toggle-status-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const userId = this.getAttribute('data-user-id');
+                const username = this.getAttribute('data-username');
+                const currentStatus = this.getAttribute('data-status');
+                const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+                const action = currentStatus === 'active' ? 'deactivate' : 'activate';
+                
+                if (confirm(`Are you sure you want to ${action} user "${username}"?`)) {
+                    fetch(`/api/users/${userId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            status: newStatus
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            showAlert('danger', data.error);
+                        } else {
+                            // Show success alert
+                            showAlert('success', `User "${username}" ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+                            
+                            // Refresh user list
+                            refreshUserTable();
+                        }
+                    })
+                    .catch(error => {
+                        showAlert('danger', 'Error: ' + error.message);
+                    });
+                }
+            });
+        });
+        
+        // Delete user buttons
+        document.querySelectorAll('.delete-user-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const userId = this.getAttribute('data-user-id');
+                const username = this.getAttribute('data-username');
+                
+                if (confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+                    fetch(`/api/users/${userId}`, {
+                        method: 'DELETE'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            showAlert('danger', data.error);
+                        } else {
+                            // Show success alert
+                            showAlert('success', `User "${username}" deleted successfully`);
+                            
+                            // Refresh user list
+                            refreshUserTable();
+                        }
+                    })
+                    .catch(error => {
+                        showAlert('danger', 'Error: ' + error.message);
+                    });
+                }
+            });
+        });
+        
+        // Function to refresh whitelist table
+        window.refreshWhitelistTable = function() {
+            fetch('/api/whitelist')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showAlert('danger', data.error);
+                        return;
+                    }
+                    
+                    const tableBody = document.querySelector('#whitelistTable tbody');
+                    tableBody.innerHTML = '';
+                    
+                    data.domains.forEach(domain => {
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-domain-id', domain._id);
+                        
+                        // Format date
+                        const date = new Date(domain.created_at);
+                        const formattedDate = date.toLocaleString();
+                        
+                        // Create wildcard badge if needed
+                        const wildcardBadge = domain.domain.startsWith('*.') ? 
+                            '<span class="badge bg-info ms-2">Wildcard</span>' : '';
+                        
+                        row.innerHTML = `
+                            <td>${domain.domain} ${wildcardBadge}</td>
+                            <td>${domain.added_by || 'System'}</td>
+                            <td>${formattedDate}</td>
+                            <td>${domain.notes || '-'}</td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-primary edit-domain-btn" 
+                                            data-domain-id="${domain._id}" data-domain="${domain.domain}" 
+                                            data-notes="${domain.notes || ''}">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger delete-domain-btn" 
+                                            data-domain-id="${domain._id}" data-domain="${domain.domain}">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        `;
+                        
+                        tableBody.appendChild(row);
+                    });
+                    
+                    // Update domain count
+                    document.getElementById('domainCount').textContent = data.total || data.domains.length;
+                    
+                    // Reattach event listeners
+                    document.querySelectorAll('.edit-domain-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const domainId = this.getAttribute('data-domain-id');
+                            const domain = this.getAttribute('data-domain');
+                            const notes = this.getAttribute('data-notes') || '';
+                            
+                            document.getElementById('editDomainId').value = domainId;
+                            document.getElementById('editDomainName').value = domain;
+                            document.getElementById('editDomainNotes').value = notes;
+                            
+                            const editModal = new bootstrap.Modal(document.getElementById('editDomainModal'));
+                            editModal.show();
+                        });
+                    });
+                    
+                    document.querySelectorAll('.delete-domain-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const domainId = this.getAttribute('data-domain-id');
+                            const domain = this.getAttribute('data-domain');
+                            
+                            if (confirm(`Are you sure you want to remove "${domain}" from the whitelist?`)) {
+                                fetch(`/api/whitelist/${domainId}`, {
+                                    method: 'DELETE'
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.error) {
+                                        showAlert('danger', data.error);
+                                    } else {
+                                        showAlert('success', `Domain "${domain}" removed from whitelist`);
+                                        refreshWhitelistTable();
+                                    }
+                                })
+                                .catch(error => {
+                                    showAlert('danger', 'Error: ' + error.message);
+                                });
+                            }
+                        });
+                    });
+                })
+                .catch(error => {
+                    showAlert('danger', 'Error refreshing whitelist: ' + error.message);
+                });
+        };
+        
+        // Function to refresh user table
+        function refreshUserTable() {
+            fetch('/api/users')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showAlert('danger', data.error);
+                        return;
+                    }
+                    
+                    const tableBody = document.querySelector('#usersTable tbody');
+                    tableBody.innerHTML = '';
+                    
+                    // Get current user info
+                    const currentUser = {
+                        username: '{{ current_user.username }}'
+                    };
+                    
+                    data.users.forEach(user => {
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-user-id', user._id);
+                        
+                        // Format date
+                        let lastLoginText = 'Never';
+                        if (user.last_login) {
+                            const date = new Date(user.last_login);
+                            lastLoginText = date.toLocaleString();
+                        }
+                        
+                        // Create current user badge if needed
+                        const currentUserBadge = user.username === currentUser.username ? 
+                            '<span class="badge bg-warning text-dark ms-2">You</span>' : '';
+                        
+                        // Create role and status badges
+                        const roleBadge = `<span class="badge user-badge role-${user.role}">${user.role.charAt(0).toUpperCase() + user.role.slice(1)}</span>`;
+                        const statusBadge = `<span class="badge user-badge status-${user.status}">${user.status.charAt(0).toUpperCase() + user.status.slice(1)}</span>`;
+                        
+                        // Create action buttons
+                        let actionButtons;
+                        if (user.username === currentUser.username) {
+                            // Current user - can't deactivate or delete themselves
+                            actionButtons = `
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-primary edit-user-btn" 
+                                            data-user-id="${user._id}" data-username="${user.username}" 
+                                            data-email="${user.email}" data-role="${user.role}" 
+                                            data-status="${user.status}">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" disabled>
+                                        <i class="fas fa-user-slash"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" disabled>
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            `;
+                        } else {
+                            // Other users - can be fully managed
+                            const statusIcon = user.status === 'active' ? 
+                                '<i class="fas fa-user-slash" title="Deactivate"></i>' : 
+                                '<i class="fas fa-user-check" title="Activate"></i>';
+                                
+                            actionButtons = `
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-primary edit-user-btn" 
+                                            data-user-id="${user._id}" data-username="${user.username}" 
+                                            data-email="${user.email}" data-role="${user.role}" 
+                                            data-status="${user.status}">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-warning toggle-status-btn" 
+                                            data-user-id="${user._id}" data-username="${user.username}" 
+                                            data-status="${user.status}">
+                                        ${statusIcon}
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger delete-user-btn" 
+                                            data-user-id="${user._id}" data-username="${user.username}">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            `;
+                        }
+                        
+                        row.innerHTML = `
+                            <td>${user.username} ${currentUserBadge}</td>
+                            <td>${user.email}</td>
+                            <td>${roleBadge}</td>
+                            <td>${statusBadge}</td>
+                            <td>${lastLoginText}</td>
+                            <td>${actionButtons}</td>
+                        `;
+                        
+                        tableBody.appendChild(row);
+                    });
+                    
+                    // Update user count
+                    document.getElementById('userCount').textContent = data.total || data.users.length;
+                    
+                    // Reattach event listeners
+                    document.querySelectorAll('.edit-user-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const userId = this.getAttribute('data-user-id');
+                            const username = this.getAttribute('data-username');
+                            const email = this.getAttribute('data-email');
+                            const role = this.getAttribute('data-role');
+                            const status = this.getAttribute('data-status');
+                            
+                            document.getElementById('editUserId').value = userId;
+                            document.getElementById('editUsername').value = username;
+                            document.getElementById('editEmail').value = email;
+                            document.getElementById('editRole').value = role;
+                            document.getElementById('editStatus').value = status;
+                            
+                            // Reset password fields
+                            document.getElementById('resetPasswordCheck').checked = false;
+                            document.getElementById('resetPasswordFields').style.display = 'none';
+                            document.getElementById('newUserPassword').value = '';
+                            document.getElementById('confirmUserPassword').value = '';
+                            
+                            const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
+                            editModal.show();
+                        });
+                    });
+                    
+                    document.querySelectorAll('.toggle-status-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const userId = this.getAttribute('data-user-id');
+                            const username = this.getAttribute('data-username');
+                            const currentStatus = this.getAttribute('data-status');
+                            const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+                            const action = currentStatus === 'active' ? 'deactivate' : 'activate';
+                            
+                            if (confirm(`Are you sure you want to ${action} user "${username}"?`)) {
+                                fetch(`/api/users/${userId}`, {
+                                    method: 'PUT',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({
+                                        status: newStatus
+                                    })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.error) {
+                                        showAlert('danger', data.error);
+                                    } else {
+                                        showAlert('success', `User "${username}" ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+                                        refreshUserTable();
+                                    }
+                                })
+                                .catch(error => {
+                                    showAlert('danger', 'Error: ' + error.message);
+                                });
+                            }
+                        });
+                    });
+                    
+                    document.querySelectorAll('.delete-user-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const userId = this.getAttribute('data-user-id');
+                            const username = this.getAttribute('data-username');
+                            
+                            if (confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+                                fetch(`/api/users/${userId}`, {
+                                    method: 'DELETE'
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.error) {
+                                        showAlert('danger', data.error);
+                                    } else {
+                                        showAlert('success', `User "${username}" deleted successfully`);
+                                        refreshUserTable();
+                                    }
+                                })
+                                .catch(error => {
+                                    showAlert('danger', 'Error: ' + error.message);
+                                });
+                            }
+                        });
+                    });
+                })
+                .catch(error => {
+                    showAlert('danger', 'Error refreshing user list: ' + error.message);
+                });
+        }
+        
+        // Function to show alert messages
+        function showAlert(type, message) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alertElement = document.createElement('div');
+            
+            alertElement.className = `alert alert-${type} alert-dismissible fade show`;
+            alertElement.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            alertContainer.appendChild(alertElement);
+            
+            // Remove alert after 5 seconds
+            setTimeout(() => {
+                alertElement.remove();
+            }, 5000);
+        }
+    });
+</script>
+{% endblock %}
