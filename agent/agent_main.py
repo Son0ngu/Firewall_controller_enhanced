@@ -1,281 +1,332 @@
 """
-Firewall Controller Agent - Main Module
+Firewall Controller Agent - Module Chính
 
-This is the entry point for the agent application. It initializes and manages all components:
-- Packet capturing and inspection
-- Domain whitelist management
-- Firewall control
-- Log collection and sending
+Đây là điểm khởi đầu cho ứng dụng agent. Nó khởi tạo và quản lý tất cả các thành phần:
+- Bắt và kiểm tra gói tin mạng
+- Quản lý danh sách trắng (whitelist) các tên miền
+- Điều khiển tường lửa
+- Thu thập và gửi nhật ký (log)
 
-The agent can be run as a normal process or registered as a Windows service.
+Agent có thể chạy như một tiến trình thông thường hoặc đăng ký như một dịch vụ Windows.
 """
 
-import logging
-import signal
-import sys
-import time
-from typing import Dict
+# Import các thư viện cần thiết
+import logging  # Thư viện để ghi log
+import signal  # Xử lý tín hiệu hệ thống (để bắt sự kiện khi người dùng dừng chương trình)
+import sys  # Để làm việc với môi trường hệ thống
+import time  # Để xử lý thời gian, tạm dừng
+from typing import Dict  # Hỗ trợ gợi ý kiểu dữ liệu cho dictionary
 
-from agent.config import get_config
-from agent.firewall_manager import FirewallManager
-from agent.log_sender import LogSender
-from agent.packet_sniffer import PacketSniffer
-from agent.whitelist import WhitelistManager
+# Import các module tự định nghĩa từ package agent
+from agent.config import get_config  # Đọc cấu hình từ file
+from agent.firewall_manager import FirewallManager  # Quản lý tường lửa
+from agent.log_sender import LogSender  # Gửi log tới server
+from agent.packet_sniffer import PacketSniffer  # Bắt gói tin mạng
+from agent.whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
 
-# Configure logging
+# Cấu hình hệ thống ghi log
+# - level=logging.INFO: Chỉ ghi những thông báo từ mức INFO trở lên
+# - format: Định dạng log gồm thời gian, tên module, mức log và nội dung
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("agent_main")
+logger = logging.getLogger("agent_main")  # Tạo logger cho module này
 
-# Global component variables
-config = None
-firewall = None
-whitelist = None
-log_sender = None
-packet_sniffer = None
-running = True
+# Khai báo biến toàn cục để lưu trữ các thành phần của agent
+# Các biến này sẽ được khởi tạo trong hàm initialize_components()
+config = None  # Cấu hình của agent
+firewall = None  # Quản lý tường lửa
+whitelist = None  # Quản lý danh sách tên miền được phép
+log_sender = None  # Gửi log đến server
+packet_sniffer = None  # Bắt gói tin mạng
+running = True  # Điều khiển vòng lặp chính, khi False thì agent sẽ dừng
 
 def handle_domain_detection(record: Dict):
     """
-    Callback function for when a domain is detected in network traffic.
-    Checks the domain against whitelist and takes appropriate action.
+    Hàm callback khi phát hiện kết nối đến một tên miền trong lưu lượng mạng.
+    Kiểm tra tên miền với whitelist và thực hiện hành động phù hợp.
     
-    Args:
-        record: Dictionary with network connection details (domain, IP, etc.)
+    Tham số:
+        record: Dictionary chứa chi tiết kết nối mạng (tên miền, IP, v.v.)
     """
     try:
+        # Lấy thông tin tên miền và IP đích từ bản ghi
         domain = record.get("domain")
         dest_ip = record.get("dest_ip")
         
+        # Kiểm tra tính hợp lệ của dữ liệu
         if not domain or not dest_ip:
-            logger.warning("Incomplete connection record received")
+            logger.warning("Nhận được bản ghi kết nối không đầy đủ")
             return
         
-        # Check if domain is in whitelist
+        # Kiểm tra xem tên miền có trong danh sách cho phép không
         allowed = whitelist.is_allowed(domain)
         
-        # Add action to the record
+        # Thêm thông tin hành động vào bản ghi
         record["action"] = "allow" if allowed else "block"
         
-        # Queue log for sending to server
+        # Đưa log vào hàng đợi để gửi đến server
         log_sender.queue_log(record)
         
-        # Take action based on configuration and whitelist result
+        # Thực hiện hành động dựa trên cấu hình và kết quả kiểm tra whitelist
         if not allowed:
+            # Nếu tên miền không được phép và cấu hình cho phép chặn
             if firewall and config["firewall"]["enabled"] and config["firewall"]["mode"] == "block":
+                # Chặn IP đích tương ứng với tên miền không được phép
                 firewall.block_ip(dest_ip, domain)
-                logger.info(f"Blocked connection to {domain} ({dest_ip})")
+                logger.info(f"Đã chặn kết nối đến {domain} ({dest_ip})")
             else:
-                # Just log warning if in monitor mode
-                logger.warning(f"Detected connection to non-whitelisted domain: {domain} ({dest_ip})")
+                # Chỉ ghi log cảnh báo nếu đang ở chế độ giám sát (không chặn)
+                logger.warning(f"Phát hiện kết nối đến tên miền không nằm trong whitelist: {domain} ({dest_ip})")
     
     except Exception as e:
-        logger.error(f"Error in domain detection handler: {str(e)}", exc_info=True)
+        # Ghi log nếu xảy ra lỗi trong quá trình xử lý
+        logger.error(f"Lỗi trong hàm xử lý phát hiện tên miền: {str(e)}", exc_info=True)
 
 def initialize_components():
-    """Initialize all agent components based on configuration."""
+    """
+    Khởi tạo tất cả các thành phần của agent dựa trên cấu hình.
+    Bao gồm: whitelist, firewall, log_sender và packet_sniffer.
+    """
     global config, firewall, whitelist, log_sender, packet_sniffer
     
     try:
-        logger.info("Initializing agent components...")
+        logger.info("Đang khởi tạo các thành phần của agent...")
         
-        # Initialize whitelist manager
+        # Khởi tạo quản lý danh sách cho phép (whitelist)
         whitelist_config = {
-            "server_url": config["server"]["url"],
-            "api_key": config["auth"]["api_key"],
-            "whitelist_source": config["whitelist"]["source"],
-            "whitelist_file": config["whitelist"]["file"],
-            "update_interval": config["whitelist"]["update_interval"]
+            "server_url": config["server"]["url"],  # URL của server để tải whitelist
+            "api_key": config["auth"]["api_key"],  # Khóa API để xác thực với server
+            "whitelist_source": config["whitelist"]["source"],  # Nguồn whitelist (file/server)
+            "whitelist_file": config["whitelist"]["file"],  # Đường dẫn file whitelist local
+            "update_interval": config["whitelist"]["update_interval"]  # Thời gian cập nhật định kỳ
         }
         whitelist = WhitelistManager(whitelist_config)
-        whitelist.start_periodic_updates()
-        logger.info(f"Whitelist initialized with {len(whitelist.domains)} domains")
+        whitelist.start_periodic_updates()  # Bắt đầu cập nhật định kỳ whitelist
+        logger.info(f"Whitelist đã được khởi tạo với {len(whitelist.domains)} tên miền")
         
-        # Initialize firewall manager if enabled
+        # Khởi tạo quản lý tường lửa nếu được bật trong cấu hình
         if config["firewall"]["enabled"]:
-            firewall = FirewallManager(config["firewall"]["rule_prefix"])
-            logger.info(f"Firewall manager initialized with {len(firewall.blocked_ips)} existing blocks")
+            firewall = FirewallManager(config["firewall"]["rule_prefix"])  # Tiền tố cho quy tắc tường lửa
+            logger.info(f"Firewall manager đã khởi tạo với {len(firewall.blocked_ips)} quy tắc chặn hiện có")
         else:
-            logger.info("Firewall functionality is disabled in configuration")
+            logger.info("Chức năng tường lửa bị vô hiệu hóa trong cấu hình")
         
-        # Initialize log sender
+        # Khởi tạo module gửi log
         log_sender_config = {
-            "server_url": config["server"]["url"],
-            "api_key": config["auth"]["api_key"],
-            "batch_size": config["logging"]["sender"]["batch_size"],
-            "max_queue_size": config["logging"]["sender"]["max_queue_size"],
-            "retry_interval": config["server"]["retry_interval"],
-            "max_retries": config["server"]["max_retries"]
+            "server_url": config["server"]["url"],  # URL của server để gửi log
+            "api_key": config["auth"]["api_key"],  # Khóa API để xác thực
+            "batch_size": config["logging"]["sender"]["batch_size"],  # Số lượng log gửi mỗi lần
+            "max_queue_size": config["logging"]["sender"]["max_queue_size"],  # Kích thước tối đa của hàng đợi
+            "retry_interval": config["server"]["retry_interval"],  # Thời gian thử lại khi gửi thất bại
+            "max_retries": config["server"]["max_retries"]  # Số lần thử lại tối đa
         }
         log_sender = LogSender(log_sender_config)
-        log_sender.start()
-        logger.info("Log sender initialized and started")
+        log_sender.start()  # Bắt đầu luồng gửi log
+        logger.info("Log sender đã khởi tạo và bắt đầu")
         
-        # Initialize packet sniffer
-        packet_sniffer = PacketSniffer(callback=handle_domain_detection)
-        packet_sniffer.start()
-        logger.info("Packet sniffer initialized and started")
+        # Khởi tạo module bắt gói tin
+        packet_sniffer = PacketSniffer(callback=handle_domain_detection)  # Hàm callback khi phát hiện tên miền
+        packet_sniffer.start()  # Bắt đầu bắt gói tin
+        logger.info("Packet sniffer đã khởi tạo và bắt đầu")
         
-        logger.info("All agent components initialized successfully")
+        logger.info("Tất cả các thành phần của agent đã khởi tạo thành công")
         
     except Exception as e:
-        logger.error(f"Error initializing components: {str(e)}", exc_info=True)
-        raise
+        # Ghi log nếu có lỗi trong quá trình khởi tạo
+        logger.error(f"Lỗi khi khởi tạo các thành phần: {str(e)}", exc_info=True)
+        raise  # Ném lại ngoại lệ để hàm gọi xử lý
 
 def cleanup():
-    """Gracefully stop all components."""
+    """
+    Dừng tất cả các thành phần một cách an toàn khi agent kết thúc.
+    Bao gồm: packet_sniffer, whitelist updater, log_sender và có thể xóa các quy tắc tường lửa.
+    """
     global firewall, whitelist, log_sender, packet_sniffer
     
-    logger.info("Stopping agent components...")
+    logger.info("Đang dừng các thành phần của agent...")
     
-    # Stop packet sniffer
+    # Dừng packet sniffer - module bắt gói tin
     if packet_sniffer:
         try:
             packet_sniffer.stop()
-            logger.info("Packet sniffer stopped")
+            logger.info("Packet sniffer đã dừng")
         except Exception as e:
-            logger.error(f"Error stopping packet sniffer: {str(e)}")
+            logger.error(f"Lỗi khi dừng packet sniffer: {str(e)}")
     
-    # Stop whitelist updates
+    # Dừng cập nhật whitelist
     if whitelist:
         try:
             whitelist.stop_periodic_updates()
-            logger.info("Whitelist updater stopped")
+            logger.info("Whitelist updater đã dừng")
         except Exception as e:
-            logger.error(f"Error stopping whitelist updater: {str(e)}")
+            logger.error(f"Lỗi khi dừng whitelist updater: {str(e)}")
     
-    # Stop log sender and flush logs
+    # Dừng log sender và đẩy các log còn trong hàng đợi
     if log_sender:
         try:
-            log_sender.stop()
-            logger.info("Log sender stopped")
+            log_sender.stop()  # Hàm này sẽ cố gắng gửi các log còn lại trước khi thoát
+            logger.info("Log sender đã dừng")
         except Exception as e:
-            logger.error(f"Error stopping log sender: {str(e)}")
+            logger.error(f"Lỗi khi dừng log sender: {str(e)}")
     
-    # Clean up firewall rules if configured to do so
+    # Xóa các quy tắc tường lửa nếu được cấu hình
     if firewall and config and config["firewall"]["cleanup_on_exit"]:
         try:
-            logger.info("Clearing firewall rules...")
-            firewall.clear_all_rules()
-            logger.info("Firewall rules cleared")
+            logger.info("Đang xóa các quy tắc tường lửa...")
+            firewall.clear_all_rules()  # Xóa tất cả các quy tắc do agent tạo ra
+            logger.info("Các quy tắc tường lửa đã được xóa")
         except Exception as e:
-            logger.error(f"Error clearing firewall rules: {str(e)}")
+            logger.error(f"Lỗi khi xóa các quy tắc tường lửa: {str(e)}")
     
-    logger.info("Agent shutdown complete")
+    logger.info("Agent đã đóng hoàn toàn")
 
 def signal_handler(sig, frame):
-    """Handle termination signals."""
+    """
+    Xử lý tín hiệu kết thúc từ hệ điều hành (Ctrl+C, kill, v.v).
+    
+    Tham số:
+        sig: Mã tín hiệu nhận được
+        frame: Frame stack hiện tại
+    """
     global running
-    logger.info(f"Signal {sig} received, stopping agent...")
-    running = False
+    logger.info(f"Nhận được tín hiệu {sig}, đang dừng agent...")
+    running = False  # Đặt biến running thành False để thoát vòng lặp chính
 
 def main():
-    """Main entry point for the agent."""
+    """
+    Hàm chính của agent, thực hiện:
+    1. Tải cấu hình
+    2. Khởi tạo các thành phần
+    3. Chạy vòng lặp chính để giữ agent hoạt động
+    """
     global config, running
     
     try:
-        # Load configuration
+        # Tải cấu hình từ file/environment
         config = get_config()
         
-        # Apply startup delay if configured
+        # Áp dụng độ trễ khởi động nếu được cấu hình
         startup_delay = config["general"]["startup_delay"]
         if startup_delay > 0:
-            logger.info(f"Applying startup delay of {startup_delay} seconds...")
-            time.sleep(startup_delay)
+            logger.info(f"Áp dụng độ trễ khởi động {startup_delay} giây...")
+            time.sleep(startup_delay)  # Tạm dừng trước khi khởi động
         
-        # Check for admin privileges if required
+        # Kiểm tra quyền admin nếu yêu cầu (cần thiết cho thao tác tường lửa)
         if config["general"]["check_admin"] and config["firewall"]["enabled"]:
             import ctypes
             if not ctypes.windll.shell32.IsUserAnAdmin():
-                logger.error("Firewall operations require administrator privileges. Please run as administrator.")
+                logger.error("Các thao tác với tường lửa yêu cầu quyền admin. Vui lòng chạy với quyền admin.")
                 if config["firewall"]["enabled"]:
-                    logger.warning("Continuing without firewall capabilities...")
-                    config["firewall"]["enabled"] = False
+                    logger.warning("Tiếp tục mà không có khả năng điều khiển tường lửa...")
+                    config["firewall"]["enabled"] = False  # Vô hiệu hóa chức năng tường lửa
         
-        # Initialize all components
+        # Khởi tạo tất cả các thành phần
         initialize_components()
         
-        # Send startup log
+        # Gửi log thông báo khởi động
         if log_sender:
             import socket
             import platform
             startup_log = {
-                "event_type": "agent_startup",
-                "hostname": socket.gethostname(),
-                "os": f"{platform.system()} {platform.version()}",
-                "firewall_enabled": config["firewall"]["enabled"],
-                "firewall_mode": config["firewall"]["mode"]
+                "event_type": "agent_startup",  # Loại sự kiện: khởi động agent
+                "hostname": socket.gethostname(),  # Tên máy
+                "os": f"{platform.system()} {platform.version()}",  # Thông tin hệ điều hành
+                "firewall_enabled": config["firewall"]["enabled"],  # Trạng thái tường lửa
+                "firewall_mode": config["firewall"]["mode"]  # Chế độ tường lửa (block/monitor)
             }
-            log_sender.queue_log(startup_log)
+            log_sender.queue_log(startup_log)  # Đưa log khởi động vào hàng đợi
         
-        logger.info("Agent initialization complete, entering main loop")
+        logger.info("Khởi tạo agent hoàn tất, bắt đầu vòng lặp chính")
         
-        # Main loop - just keep the process alive
-        # The actual work is done in background threads
+        # Vòng lặp chính - giữ cho tiến trình hoạt động
+        # Công việc chính được thực hiện trong các luồng nền
         while running:
-            time.sleep(1)
+            time.sleep(1)  # Ngủ 1 giây để giảm tải CPU
         
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received")
+        # Bắt sự kiện khi người dùng nhấn Ctrl+C
+        logger.info("Nhận được tín hiệu ngắt từ bàn phím")
     except Exception as e:
-        logger.error(f"Unhandled error in agent main: {str(e)}", exc_info=True)
+        # Bắt các lỗi không xử lý được
+        logger.error(f"Lỗi không xử lý được trong agent main: {str(e)}", exc_info=True)
     finally:
+        # Luôn thực hiện đoạn cleanup khi kết thúc, dù có lỗi hay không
         cleanup()
 
 def run_as_service():
-    """Run the agent as a Windows service."""
+    """
+    Chạy agent như một dịch vụ Windows, cho phép:
+    - Cài đặt/gỡ bỏ dịch vụ
+    - Khởi động/dừng dịch vụ từ trình quản lý dịch vụ Windows
+    """
     try:
-        import servicemanager
-        import win32event
-        import win32service
-        import win32serviceutil
+        # Import các module cần thiết cho dịch vụ Windows
+        import servicemanager  # Tương tác với trình quản lý dịch vụ Windows
+        import win32event  # Xử lý sự kiện Windows
+        import win32service  # Giao diện với hệ thống dịch vụ Windows
+        import win32serviceutil  # Tiện ích làm việc với dịch vụ Windows
         
         class AgentService(win32serviceutil.ServiceFramework):
-            _svc_name_ = "FirewallControllerAgent"
-            _svc_display_name_ = "Firewall Controller Agent"
-            _svc_description_ = "Monitors network traffic and enforces domain whitelist policy"
+            _svc_name_ = "FirewallControllerAgent"  # Tên dịch vụ trong hệ thống
+            _svc_display_name_ = "Firewall Controller Agent"  # Tên hiển thị
+            _svc_description_ = "Giám sát lưu lượng mạng và thực thi chính sách whitelist tên miền"  # Mô tả
 
             def __init__(self, args):
+                # Khởi tạo framework dịch vụ
                 win32serviceutil.ServiceFramework.__init__(self, args)
+                # Tạo event để báo hiệu dừng dịch vụ
                 self.stop_event = win32event.CreateEvent(None, 0, 0, None)
 
             def SvcStop(self):
+                # Được gọi khi dịch vụ nhận lệnh dừng
+                # Báo cáo trạng thái "đang chuẩn bị dừng"
                 self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+                # Đặt event dừng để báo hiệu dừng dịch vụ
                 win32event.SetEvent(self.stop_event)
+                # Đặt biến running thành False để dừng vòng lặp chính
                 global running
                 running = False
 
             def SvcDoRun(self):
+                # Được gọi khi dịch vụ bắt đầu chạy
+                # Báo cáo trạng thái "đang chạy"
                 self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+                # Ghi log khởi động dịch vụ vào event log Windows
                 servicemanager.LogMsg(
                     servicemanager.EVENTLOG_INFORMATION_TYPE,
                     servicemanager.PYS_SERVICE_STARTED,
                     (self._svc_name_, '')
                 )
                 
-                main()  # Run the main agent function
+                # Gọi hàm main để chạy logic chính của agent
+                main()
 
+        # Xử lý các đối số dòng lệnh
         if len(sys.argv) == 1:
+            # Không có đối số = chạy dịch vụ
             servicemanager.Initialize()
             servicemanager.PrepareToHostSingle(AgentService)
             servicemanager.StartServiceCtrlDispatcher()
         else:
+            # Có đối số = xử lý lệnh dịch vụ (install, remove, start, stop)
             win32serviceutil.HandleCommandLine(AgentService)
             
     except ImportError:
-        logger.error("Required Windows service modules not installed. Please install pywin32.")
+        # Xử lý trường hợp không cài đặt thư viện pywin32
+        logger.error("Các module dịch vụ Windows cần thiết chưa được cài đặt. Vui lòng cài đặt pywin32.")
         sys.exit(1)
 
 if __name__ == "__main__":
-    # Register signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # Đăng ký handler xử lý tín hiệu
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # kill command
     
-    # Check if running as service
+    # Kiểm tra xem có đang chạy như một dịch vụ không
     if len(sys.argv) > 1 and sys.argv[1] in ['--service', 'install', 'remove', 'start', 'stop', 'update']:
+        # Chạy như dịch vụ Windows
         run_as_service()
     else:
-        # Run as normal process
+        # Chạy như tiến trình thông thường
         main()

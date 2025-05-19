@@ -1,10 +1,12 @@
-import logging
-import subprocess
-import re
-import time
-from typing import Dict, List, Optional, Set
+# Import các thư viện cần thiết
+import logging  # Thư viện ghi log hệ thống
+import subprocess  # Thư viện thực thi lệnh hệ điều hành (để chạy lệnh netsh)
+import re  # Thư viện xử lý biểu thức chính quy (để kiểm tra định dạng IP)
+import time  # Thư viện xử lý thời gian (dùng để tạo timestamp)
+from typing import Dict, List, Optional, Set  # Thư viện kiểu dữ liệu tĩnh
 
-# Configure logging
+# Cấu hình logger cho module này
+# Sử dụng một logger riêng để dễ dàng lọc log từ module này
 logger = logging.getLogger("firewall_manager")
 
 class FirewallManager:
@@ -20,14 +22,22 @@ class FirewallManager:
         Args:
             rule_prefix: Prefix to use for all firewall rules created by this instance
         """
+        # Lưu tiền tố cho tên các quy tắc tường lửa
+        # Tiền tố này giúp nhận dạng các quy tắc do agent tạo ra,
+        # phục vụ cho việc quản lý và xóa quy tắc sau này
         self.rule_prefix = rule_prefix
+        
+        # Tập hợp lưu trữ các địa chỉ IP đã bị chặn
+        # Sử dụng kiểu dữ liệu Set để tránh trùng lặp và tìm kiếm nhanh O(1)
         self.blocked_ips: Set[str] = set()
         
-        # Check if we have admin privileges (required for firewall operations)
+        # Kiểm tra quyền admin - cần thiết để thao tác với tường lửa Windows
         if not self._has_admin_privileges():
+            # Cảnh báo nếu không có quyền admin
             logger.warning("Firewall operations require administrator privileges")
         
-        # Initialize by loading existing rules with our prefix
+        # Tải các quy tắc tường lửa hiện có để đồng bộ trạng thái
+        # Đảm bảo agent biết được những IP nào đã bị chặn trước đó
         self._load_existing_rules()
     
     def block_ip(self, ip: str, domain: Optional[str] = None) -> bool:
@@ -41,56 +51,64 @@ class FirewallManager:
         Returns:
             bool: True if successful, False otherwise
         """
+        # Kiểm tra tính hợp lệ của địa chỉ IP
         if not self._is_valid_ip(ip):
             logger.warning(f"Invalid IP address format: {ip}")
             return False
             
-        # If already blocked, consider it a success
+        # Nếu IP đã bị chặn, coi như thành công và trả về ngay
+        # Tránh tạo nhiều quy tắc trùng lặp cho cùng một IP
         if ip in self.blocked_ips:
             logger.debug(f"IP {ip} is already blocked")
             return True
             
-        # Create rule name with timestamp to ensure uniqueness
+        # Tạo tên quy tắc với timestamp để đảm bảo duy nhất
+        # Sử dụng timestamp tránh trùng lặp tên quy tắc
+        # Thay thế dấu chấm trong IP bằng dấu gạch dưới để tạo tên hợp lệ
         timestamp = int(time.time())
         rule_name = f"{self.rule_prefix}{ip.replace('.', '_')}_{timestamp}"
         
-        # Build description
+        # Xây dựng mô tả cho quy tắc
+        # Nếu có tên miền, thêm thông tin tên miền vào mô tả
         if domain:
             description = f"Blocked connection to {domain} ({ip})"
         else:
             description = f"Blocked connection to {ip}"
             
         try:
-            # Create the firewall rule using netsh
+            # Tạo quy tắc tường lửa sử dụng lệnh netsh
+            # Sử dụng mảng để tránh vấn đề về khoảng trắng và ký tự đặc biệt
             command = [
                 "netsh", "advfirewall", "firewall", "add", "rule",
-                f"name={rule_name}",
-                "dir=out",
-                "action=block",
-                f"remoteip={ip}",
-                "enable=yes",
-                f"description={description}"
+                f"name={rule_name}",  # Tên quy tắc
+                "dir=out",  # Hướng: chặn lưu lượng đi ra (outbound)
+                "action=block",  # Hành động: chặn kết nối
+                f"remoteip={ip}",  # Địa chỉ IP đích cần chặn
+                "enable=yes",  # Bật quy tắc ngay lập tức
+                f"description={description}"  # Mô tả để dễ nhận biết
             ]
             
-            # Execute the command
+            # Thực thi lệnh netsh
             result = subprocess.run(
                 command,
-                capture_output=True,
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                capture_output=True,  # Bắt đầu ra để phân tích
+                text=True,  # Chuyển đầu ra thành chuỗi thay vì byte
+                creationflags=subprocess.CREATE_NO_WINDOW  # Không hiển thị cửa sổ CMD
             )
             
+            # Kiểm tra kết quả lệnh
             if result.returncode == 0:
-                # Success
+                # Thành công: thêm IP vào danh sách đã chặn
                 self.blocked_ips.add(ip)
                 logger.info(f"Successfully blocked IP: {ip} with rule: {rule_name}")
                 return True
             else:
-                # Command failed
+                # Thất bại: ghi log lỗi từ netsh
                 logger.error(f"Failed to block IP {ip}. Error: {result.stderr.strip()}")
                 return False
                 
         except Exception as e:
+            # Bắt các ngoại lệ có thể xảy ra (quyền truy cập, lỗi hệ thống, v.v.)
             logger.error(f"Error blocking IP {ip}: {str(e)}")
             return False
     
@@ -104,32 +122,36 @@ class FirewallManager:
         Returns:
             bool: True if at least one rule was removed, False otherwise
         """
+        # Kiểm tra tính hợp lệ của địa chỉ IP
         if not self._is_valid_ip(ip):
             logger.warning(f"Invalid IP address format: {ip}")
             return False
             
-        # If not in our blocked list, nothing to do
+        # Nếu IP không nằm trong danh sách đã chặn, không cần làm gì
         if ip not in self.blocked_ips:
             logger.debug(f"IP {ip} is not in our blocked list")
             return False
             
         try:
-            # Find all rules related to this IP
+            # Tìm tất cả quy tắc liên quan đến IP này
             rules = self._find_rules_for_ip(ip)
             
+            # Kiểm tra nếu không tìm thấy quy tắc nào
             if not rules:
                 logger.warning(f"No firewall rules found for IP {ip}")
                 return False
                 
             success = False
             
-            # Delete each rule
+            # Xóa từng quy tắc đã tìm thấy
             for rule_name in rules:
+                # Tạo lệnh xóa quy tắc
                 command = [
                     "netsh", "advfirewall", "firewall", "delete", "rule",
-                    f"name={rule_name}"
+                    f"name={rule_name}"  # Xóa quy tắc theo tên
                 ]
                 
+                # Thực thi lệnh
                 result = subprocess.run(
                     command,
                     capture_output=True,
@@ -137,19 +159,23 @@ class FirewallManager:
                     creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 
+                # Kiểm tra kết quả
                 if result.returncode == 0:
                     logger.info(f"Successfully removed rule: {rule_name}")
                     success = True
                 else:
                     logger.error(f"Failed to remove rule {rule_name}. Error: {result.stderr.strip()}")
             
+            # Nếu ít nhất một quy tắc đã được xóa thành công
             if success:
+                # Xóa IP khỏi danh sách đã chặn
                 self.blocked_ips.remove(ip)
                 return True
             else:
                 return False
                 
         except Exception as e:
+            # Bắt các ngoại lệ có thể xảy ra
             logger.error(f"Error unblocking IP {ip}: {str(e)}")
             return False
     
@@ -163,6 +189,8 @@ class FirewallManager:
         Returns:
             bool: True if the IP is blocked, False otherwise
         """
+        # Kiểm tra xem IP có trong tập hợp các IP đã chặn không
+        # Phép kiểm tra này có độ phức tạp O(1) do dùng set
         return ip in self.blocked_ips
     
     def get_blocked_ips(self) -> List[str]:
@@ -172,6 +200,7 @@ class FirewallManager:
         Returns:
             List[str]: List of blocked IP addresses
         """
+        # Chuyển đổi tập hợp thành danh sách để trả về
         return list(self.blocked_ips)
     
     def clear_all_rules(self) -> bool:
@@ -183,12 +212,14 @@ class FirewallManager:
             bool: True if successful, False if errors occurred
         """
         try:
-            # Get all rules with our prefix
+            # Lấy tất cả quy tắc có tiền tố của chúng ta
+            # Sử dụng wildcard (*) để tìm tất cả các quy tắc bắt đầu bằng tiền tố
             command = [
                 "netsh", "advfirewall", "firewall", "show", "rule", 
-                f"name={self.rule_prefix}*", "verbose"
+                f"name={self.rule_prefix}*", "verbose"  # Hiển thị chi tiết để phân tích
             ]
             
+            # Thực thi lệnh
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -196,24 +227,26 @@ class FirewallManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
+            # Kiểm tra lỗi
             if result.returncode != 0:
                 logger.error(f"Failed to list rules: {result.stderr.strip()}")
                 return False
                 
-            # Parse the output to extract rule names
+            # Phân tích đầu ra để trích xuất tên quy tắc
             rule_names = []
             lines = result.stdout.split('\n')
             for line in lines:
                 if line.strip().startswith("Rule Name:"):
-                    rule_name = line.strip()[10:].strip()
+                    rule_name = line.strip()[10:].strip()  # Cắt "Rule Name:" và khoảng trắng
                     if rule_name.startswith(self.rule_prefix):
                         rule_names.append(rule_name)
             
+            # Nếu không tìm thấy quy tắc nào
             if not rule_names:
                 logger.info("No rules to clear")
                 return True
                 
-            # Delete each rule
+            # Xóa từng quy tắc đã tìm thấy
             success = True
             for rule_name in rule_names:
                 command = [
@@ -228,19 +261,21 @@ class FirewallManager:
                     creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 
+                # Kiểm tra kết quả của từng lệnh xóa
                 if result.returncode == 0:
                     logger.info(f"Successfully removed rule: {rule_name}")
                 else:
                     logger.error(f"Failed to remove rule {rule_name}. Error: {result.stderr.strip()}")
                     success = False
             
-            # Clear the blocked IPs set
+            # Xóa tập hợp các IP đã chặn nếu tất cả quy tắc đã được xóa thành công
             if success:
                 self.blocked_ips.clear()
                 
             return success
                 
         except Exception as e:
+            # Bắt các ngoại lệ có thể xảy ra
             logger.error(f"Error clearing firewall rules: {str(e)}")
             return False
     
@@ -250,12 +285,13 @@ class FirewallManager:
         Used during initialization to sync our state with the firewall.
         """
         try:
-            # Get all rules with our prefix
+            # Lấy tất cả quy tắc có tiền tố của chúng ta
             command = [
                 "netsh", "advfirewall", "firewall", "show", "rule", 
                 f"name={self.rule_prefix}*", "verbose"
             ]
             
+            # Thực thi lệnh
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -263,39 +299,44 @@ class FirewallManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
+            # Kiểm tra lỗi
             if result.returncode != 0:
                 logger.error(f"Failed to list rules: {result.stderr.strip()}")
                 return
                 
-            # Parse the output to extract IPs
-            current_rule = None
-            current_ip = None
+            # Phân tích đầu ra để trích xuất các IP
+            current_rule = None  # Tên quy tắc hiện tại đang phân tích
+            current_ip = None  # IP hiện tại đang phân tích
             lines = result.stdout.split('\n')
             
             for line in lines:
                 line = line.strip()
                 
+                # Bắt đầu một quy tắc mới
                 if line.startswith("Rule Name:"):
                     current_rule = line[10:].strip()
                     current_ip = None
                     
+                # Tìm trường RemoteIP trong quy tắc
                 elif line.startswith("RemoteIP:"):
                     ip_part = line[9:].strip()
                     
-                    # Extract IP from the RemoteIP field
+                    # Trích xuất IP từ trường RemoteIP
                     if ip_part and ip_part != "Any":
-                        # Handle multiple IPs or ranges
+                        # Xử lý nhiều IP hoặc dải IP (phân cách bởi dấu phẩy)
                         ip_parts = ip_part.split(',')
                         for part in ip_parts:
                             part = part.strip()
                             if self._is_valid_ip(part):
                                 current_ip = part
+                                # Thêm IP vào tập hợp đã chặn
                                 self.blocked_ips.add(part)
                                 logger.debug(f"Found existing block for IP: {part} in rule: {current_rule}")
             
             logger.info(f"Loaded {len(self.blocked_ips)} blocked IPs from existing firewall rules")
             
         except Exception as e:
+            # Bắt các ngoại lệ có thể xảy ra
             logger.error(f"Error loading existing firewall rules: {str(e)}")
     
     def _find_rules_for_ip(self, ip: str) -> List[str]:
@@ -308,15 +349,16 @@ class FirewallManager:
         Returns:
             List[str]: List of rule names
         """
-        rule_names = []
+        rule_names = []  # Danh sách tên các quy tắc sẽ trả về
         
         try:
-            # Get all rules with our prefix
+            # Lấy tất cả quy tắc có tiền tố của chúng ta
             command = [
                 "netsh", "advfirewall", "firewall", "show", "rule", 
                 f"name={self.rule_prefix}*", "verbose"
             ]
             
+            # Thực thi lệnh
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -324,37 +366,42 @@ class FirewallManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
+            # Kiểm tra lỗi
             if result.returncode != 0:
                 logger.error(f"Failed to list rules: {result.stderr.strip()}")
                 return rule_names
                 
-            # Parse the output to find rules matching this IP
-            current_rule = None
-            current_ip = None
+            # Phân tích đầu ra để tìm quy tắc khớp với IP này
+            current_rule = None  # Tên quy tắc hiện tại đang phân tích
+            current_ip = None  # IP hiện tại đang phân tích
             lines = result.stdout.split('\n')
             
             for line in lines:
                 line = line.strip()
                 
+                # Bắt đầu một quy tắc mới
                 if line.startswith("Rule Name:"):
                     current_rule = line[10:].strip()
                     current_ip = None
                     
+                # Tìm trường RemoteIP trong quy tắc
                 elif line.startswith("RemoteIP:"):
                     ip_part = line[9:].strip()
                     
-                    # Check if this rule blocks our IP
+                    # Kiểm tra xem quy tắc này có chặn IP của chúng ta không
                     if ip_part and ip_part != "Any":
                         ip_parts = ip_part.split(',')
                         for part in ip_parts:
                             part = part.strip()
                             if part == ip:
+                                # Thêm tên quy tắc vào danh sách kết quả
                                 rule_names.append(current_rule)
                                 break
             
             return rule_names
             
         except Exception as e:
+            # Bắt các ngoại lệ có thể xảy ra
             logger.error(f"Error finding rules for IP {ip}: {str(e)}")
             return rule_names
     
@@ -366,9 +413,11 @@ class FirewallManager:
             bool: True if running as admin, False otherwise
         """
         try:
-            # Try to run a simple firewall command that requires admin rights
+            # Thử chạy một lệnh tường lửa đơn giản đòi hỏi quyền admin
+            # Lệnh này chỉ hiển thị thông tin về profile hiện tại, không thay đổi cấu hình
             command = ["netsh", "advfirewall", "show", "currentprofile"]
             
+            # Thực thi lệnh
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -376,9 +425,11 @@ class FirewallManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
+            # Nếu lệnh thành công, chúng ta có quyền admin
             return result.returncode == 0
             
         except Exception as e:
+            # Bắt các ngoại lệ có thể xảy ra
             logger.error(f"Error checking admin privileges: {str(e)}")
             return False
     
@@ -392,13 +443,16 @@ class FirewallManager:
         Returns:
             bool: True if the string is a valid IPv4 address
         """
+        # Mẫu (pattern) để kiểm tra địa chỉ IPv4
+        # Cấu trúc: 4 nhóm số từ 0-255 phân cách bởi dấu chấm
         pattern = r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$'
         match = re.match(pattern, ip)
         
+        # Nếu không khớp mẫu cơ bản
         if not match:
             return False
             
-        # Validate each octet
+        # Xác thực từng octet (phải từ 0-255)
         for i in range(1, 5):
             octet = int(match.group(i))
             if octet < 0 or octet > 255:
@@ -409,17 +463,19 @@ class FirewallManager:
 
 # Example usage (for testing)
 if __name__ == "__main__":
-    # Configure logging
+    # Phần mã này chỉ chạy khi file được thực thi trực tiếp (không phải import)
+    
+    # Cấu hình logging cho mục đích kiểm thử
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # Create firewall manager
+    # Tạo đối tượng firewall manager
     firewall = FirewallManager()
     
-    # Test blocking and unblocking
-    test_ip = "93.184.216.34"  # example.com IP
+    # Kiểm thử chặn và bỏ chặn
+    test_ip = "93.184.216.34"  # Địa chỉ IP của example.com
     test_domain = "example.com"
     
     print(f"\nBlocking IP {test_ip} ({test_domain})...")
@@ -428,26 +484,26 @@ if __name__ == "__main__":
     else:
         print(f"Failed to block {test_ip}")
     
-    # Check if blocked
+    # Kiểm tra xem IP đã bị chặn chưa
     print(f"\nChecking if {test_ip} is blocked...")
     if firewall.is_blocked(test_ip):
         print(f"{test_ip} is blocked")
     else:
         print(f"{test_ip} is not blocked")
     
-    # List all blocked IPs
+    # Liệt kê tất cả các IP đã bị chặn
     print("\nAll blocked IPs:")
     for ip in firewall.get_blocked_ips():
         print(f"- {ip}")
     
-    # Unblock the IP
+    # Bỏ chặn IP
     print(f"\nUnblocking IP {test_ip}...")
     if firewall.unblock_ip(test_ip):
         print(f"Successfully unblocked {test_ip}")
     else:
         print(f"Failed to unblock {test_ip}")
     
-    # Clear all rules
+    # Xóa tất cả các quy tắc
     print("\nClearing all firewall rules...")
     if firewall.clear_all_rules():
         print("Successfully cleared all rules")
