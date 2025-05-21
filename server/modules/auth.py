@@ -5,191 +5,210 @@ This module handles user authentication, authorization, and user management.
 It provides endpoints for login, logout, token refresh, and user CRUD operations.
 """
 
-import logging
-from datetime import datetime, timedelta
-from functools import wraps
-from typing import Dict, List, Optional, Union
+# Import các thư viện cần thiết
+import logging  # Thư viện hỗ trợ ghi log, dùng để theo dõi hoạt động của module
+from datetime import datetime, timedelta  # Thư viện xử lý thời gian, dùng cho token và timestamp
+from functools import wraps  # Thư viện hỗ trợ tạo decorator, dùng cho xác thực và phân quyền
+from typing import Dict, List, Optional, Union  # Thư viện kiểu dữ liệu, giúp viết code rõ ràng hơn
 
-import bcrypt
-import jwt
-from bson import ObjectId
-from flask import Blueprint, jsonify, request, current_app, g
-from flask_socketio import SocketIO
-from pymongo import MongoClient, DESCENDING
-from pymongo.collection import Collection
-from pymongo.database import Database
+import bcrypt  # Thư viện mã hóa mật khẩu, dùng để băm và xác thực mật khẩu người dùng
+import jwt  # Thư viện JWT (JSON Web Token), dùng để tạo và xác thực token xác thực
+from bson import ObjectId  # Thư viện làm việc với ObjectID của MongoDB
+from flask import Blueprint, jsonify, request, current_app, g  # Framework Flask để tạo API web
+from flask_socketio import SocketIO  # Thư viện hỗ trợ WebSocket, dùng cho giao tiếp thời gian thực
+from pymongo import MongoClient, DESCENDING  # Thư viện kết nối đến MongoDB
+from pymongo.collection import Collection  # Kiểu Collection trong MongoDB
+from pymongo.database import Database  # Kiểu Database trong MongoDB
 
+# Import model từ các module khác của dự án
 from server.models.user_model import User, UserCreate, UserUpdate, UserResponse, UserRole, UserStatus
 
-# Configure logging
+# Cấu hình logging cho module này
+# Sử dụng logger riêng để dễ dàng lọc log từ module này
 logger = logging.getLogger("auth_module")
 
-# Initialize Blueprint for API routes
-auth_bp = Blueprint('auth', __name__)
-users_bp = Blueprint('users', __name__)
+# Khởi tạo Blueprint cho các route API
+# Blueprint giúp tổ chức các route theo nhóm chức năng
+auth_bp = Blueprint('auth', __name__)  # Blueprint cho các API xác thực (login, logout)
+users_bp = Blueprint('users', __name__)  # Blueprint cho các API quản lý người dùng
 
-# Will be initialized externally with the Flask-SocketIO instance
+# Biến socketio sẽ được khởi tạo từ bên ngoài với instance Flask-SocketIO
+# Dùng để thông báo realtime khi có thay đổi (như tạo user mới, đăng nhập, v.v.)
 socketio: Optional[SocketIO] = None
 
-# MongoDB connection (initialized in init_app)
-_db: Optional[Database] = None
-_users_collection: Optional[Collection] = None
+# Các biến kết nối MongoDB (được khởi tạo trong hàm init_app)
+_db: Optional[Database] = None  # Database MongoDB
+_users_collection: Optional[Collection] = None  # Collection lưu thông tin người dùng
 
-# JWT settings
-_jwt_secret_key: str = ""
-_jwt_access_token_expires: int = 3600  # 1 hour
-_jwt_refresh_token_expires: int = 2592000  # 30 days
+# Cài đặt JWT
+_jwt_secret_key: str = ""  # Khóa bí mật để ký và xác thực token
+_jwt_access_token_expires: int = 3600  # Thời gian hết hạn của access token (1 giờ)
+_jwt_refresh_token_expires: int = 2592000  # Thời gian hết hạn của refresh token (30 ngày)
 
 def init_app(app, mongo_client: MongoClient, socket_io: Optional[SocketIO] = None):
     """
-    Initialize the authentication module with the Flask app and MongoDB connection.
+    Khởi tạo module xác thực với ứng dụng Flask và kết nối MongoDB.
     
     Args:
-        app: The Flask application instance
-        mongo_client: PyMongo MongoClient instance
-        socket_io: Optional Flask-SocketIO instance
+        app: Instance ứng dụng Flask
+        mongo_client: Instance MongoClient của PyMongo để kết nối đến MongoDB
+        socket_io: Instance Flask-SocketIO tùy chọn (cho thông báo realtime)
     """
     global _db, _users_collection, socketio, _jwt_secret_key, _jwt_access_token_expires, _jwt_refresh_token_expires
     
-    # Store the SocketIO instance if provided
+    # Lưu trữ instance SocketIO nếu được cung cấp
+    # Giúp gửi thông báo realtime khi có thay đổi
     socketio = socket_io
     
-    # Get the database
+    # Lấy database từ MongoDB client
+    # Sử dụng tên database từ cấu hình hoặc mặc định là 'firewall_controller'
     db_name = app.config.get('MONGO_DBNAME', 'firewall_controller')
     _db = mongo_client[db_name]
     
-    # Get the users collection
+    # Lấy collection users từ database
+    # Collection này lưu trữ thông tin người dùng và xác thực
     _users_collection = _db.users
     
-    # Create indexes
-    _users_collection.create_index([("username", 1)], unique=True)
-    _users_collection.create_index([("email", 1)], unique=True)
-    _users_collection.create_index([("password_reset_token", 1)])
+    # Tạo các index trong MongoDB để tối ưu truy vấn và đảm bảo tính duy nhất
+    _users_collection.create_index([("username", 1)], unique=True)  # Index theo username, đảm bảo duy nhất
+    _users_collection.create_index([("email", 1)], unique=True)  # Index theo email, đảm bảo duy nhất
+    _users_collection.create_index([("password_reset_token", 1)])  # Index theo token reset password
     
-    # Get JWT settings from app config
+    # Lấy cài đặt JWT từ cấu hình ứng dụng
     _jwt_secret_key = app.config.get('JWT_SECRET_KEY', app.config.get('SECRET_KEY'))
     _jwt_access_token_expires = app.config.get('JWT_ACCESS_TOKEN_EXPIRES', 3600)
     _jwt_refresh_token_expires = app.config.get('JWT_REFRESH_TOKEN_EXPIRES', 2592000)
     
-    # Register the blueprints with the app
+    # Đăng ký các blueprint với ứng dụng
+    # Cài đặt đường dẫn prefix cho các API
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(users_bp, url_prefix='/api/users')
     
-    # Create default admin user if none exists
+    # Tạo tài khoản admin mặc định nếu chưa có admin nào trong hệ thống
+    # Đảm bảo luôn có ít nhất một tài khoản admin để quản lý hệ thống
     if _users_collection.count_documents({"role": UserRole.ADMIN}) == 0:
         _create_default_admin(app)
     
     logger.info("Authentication module initialized")
 
 
-# ======== JWT Token Functions ========
+# ======== Các hàm xử lý JWT Token ========
 
 def generate_access_token(user_id: str, role: str) -> str:
     """
-    Generate an access token for a user.
+    Tạo access token cho người dùng.
+    Access token có thời hạn ngắn và dùng để xác thực người dùng khi truy cập API.
     
     Args:
-        user_id: The user's ID
-        role: The user's role
+        user_id: ID của người dùng
+        role: Vai trò của người dùng
     
     Returns:
         str: JWT access token
     """
     now = datetime.utcnow()
     payload = {
-        "sub": user_id,
-        "role": role,
-        "type": "access",
-        "iat": now,
-        "exp": now + timedelta(seconds=_jwt_access_token_expires)
+        "sub": user_id,  # subject - ID của user
+        "role": role,  # vai trò người dùng để phân quyền
+        "type": "access",  # loại token là access
+        "iat": now,  # issued at - thời điểm tạo token
+        "exp": now + timedelta(seconds=_jwt_access_token_expires)  # expiration - thời điểm hết hạn
     }
     return jwt.encode(payload, _jwt_secret_key, algorithm="HS256")
 
 
 def generate_refresh_token(user_id: str) -> str:
     """
-    Generate a refresh token for a user.
+    Tạo refresh token cho người dùng.
+    Refresh token có thời hạn dài và dùng để tạo access token mới khi access token cũ hết hạn.
     
     Args:
-        user_id: The user's ID
+        user_id: ID của người dùng
     
     Returns:
         str: JWT refresh token
     """
     now = datetime.utcnow()
     payload = {
-        "sub": user_id,
-        "type": "refresh",
-        "iat": now,
-        "exp": now + timedelta(seconds=_jwt_refresh_token_expires)
+        "sub": user_id,  # subject - ID của user
+        "type": "refresh",  # loại token là refresh
+        "iat": now,  # issued at - thời điểm tạo token
+        "exp": now + timedelta(seconds=_jwt_refresh_token_expires)  # expiration - thời điểm hết hạn
     }
     return jwt.encode(payload, _jwt_secret_key, algorithm="HS256")
 
 
 def validate_token(token: str) -> Dict:
     """
-    Validate a JWT token.
+    Xác thực một JWT token.
+    Kiểm tra tính hợp lệ và thời hạn của token.
     
     Args:
-        token: The JWT token to validate
+        token: JWT token cần xác thực
     
     Returns:
-        Dict: Token payload if valid
+        Dict: Payload của token nếu hợp lệ
     
     Raises:
-        jwt.InvalidTokenError: If the token is invalid
+        jwt.InvalidTokenError: Nếu token không hợp lệ
     """
     return jwt.decode(token, _jwt_secret_key, algorithms=["HS256"])
 
 
-# ======== Authentication Decorators ========
+# ======== Các Decorator Xác thực ========
 
 def token_required(f):
     """
-    Decorator to require a valid JWT token for API access.
-    Places the authenticated user in g.user
+    Decorator để yêu cầu JWT token hợp lệ khi truy cập API.
+    Đặt thông tin người dùng đã xác thực vào g.user để sử dụng trong hàm xử lý.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
         
-        # Get token from Authorization header
+        # Lấy token từ header Authorization
+        # Format: "Bearer [token]"
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith('Bearer '):
             token = auth_header.split(' ')[1]
         
+        # Kiểm tra xem có token không
         if not token:
             return jsonify({"error": "Authentication token is missing"}), 401
         
         try:
-            # Validate token
+            # Xác thực token
             payload = validate_token(token)
             
-            # Check if it's an access token
+            # Kiểm tra xem có phải access token không
             if payload.get('type') != 'access':
                 return jsonify({"error": "Invalid token type"}), 401
             
-            # Get user from database
+            # Lấy thông tin người dùng từ database
             user = _users_collection.find_one({"_id": ObjectId(payload['sub'])})
             
             if not user:
                 return jsonify({"error": "User not found"}), 401
             
-            # Check if user is active
+            # Kiểm tra trạng thái tài khoản
             if user.get("status") != UserStatus.ACTIVE:
                 return jsonify({"error": "User account is inactive"}), 403
             
-            # Store user in Flask's g object
+            # Lưu thông tin người dùng vào đối tượng g của Flask
+            # g là context global cho mỗi request
             g.user = user
             g.user_id = str(user["_id"])
             g.user_role = user.get("role", UserRole.VIEWER)
             
         except jwt.ExpiredSignatureError:
+            # Token đã hết hạn
             return jsonify({"error": "Token has expired", "code": "token_expired"}), 401
         except (jwt.InvalidTokenError, Exception) as e:
+            # Token không hợp lệ hoặc lỗi khác
             logger.error(f"Token validation error: {str(e)}")
             return jsonify({"error": "Invalid authentication token"}), 401
         
+        # Nếu token hợp lệ, tiếp tục thực hiện hàm xử lý API
         return f(*args, **kwargs)
     
     return decorated
@@ -197,17 +216,20 @@ def token_required(f):
 
 def admin_required(f):
     """
-    Decorator to require admin role.
-    Must be used after token_required.
+    Decorator để yêu cầu quyền admin.
+    Phải sử dụng sau token_required.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Kiểm tra xem đã xác thực chưa
         if not hasattr(g, 'user_role'):
             return jsonify({"error": "Authentication required"}), 401
         
+        # Kiểm tra xem có phải admin không
         if g.user_role != UserRole.ADMIN:
             return jsonify({"error": "Admin privileges required"}), 403
         
+        # Nếu là admin, tiếp tục thực hiện hàm xử lý API
         return f(*args, **kwargs)
     
     return decorated
@@ -215,28 +237,32 @@ def admin_required(f):
 
 def operator_required(f):
     """
-    Decorator to require at least operator role.
-    Must be used after token_required.
+    Decorator để yêu cầu ít nhất quyền operator.
+    Cả admin và operator đều có thể truy cập.
+    Phải sử dụng sau token_required.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Kiểm tra xem đã xác thực chưa
         if not hasattr(g, 'user_role'):
             return jsonify({"error": "Authentication required"}), 401
         
+        # Kiểm tra xem có quyền admin hoặc operator không
         if g.user_role not in [UserRole.ADMIN, UserRole.OPERATOR]:
             return jsonify({"error": "Operator privileges required"}), 403
         
+        # Nếu có đủ quyền, tiếp tục thực hiện hàm xử lý API
         return f(*args, **kwargs)
     
     return decorated
 
 
-# ======== Authentication Routes ========
+# ======== Các Route Xác thực ========
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
     """
-    User login endpoint.
+    API đăng nhập người dùng.
     
     Request body:
     {
@@ -245,8 +271,9 @@ def login():
     }
     
     Returns:
-        JSON with access token, refresh token, and user data
+        JSON với access token, refresh token và thông tin người dùng
     """
+    # Kiểm tra xem request có phải là JSON không
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
@@ -254,21 +281,26 @@ def login():
     username = data.get('username')
     password = data.get('password')
     
+    # Kiểm tra các trường bắt buộc
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
     
-    # Find user by username
+    # Tìm người dùng theo username
     user = _users_collection.find_one({"username": username})
     
     if not user:
+        # Ghi log cảnh báo nếu có người thử đăng nhập với username không tồn tại
         logger.warning(f"Login attempt with non-existent username: {username}")
         return jsonify({"error": "Invalid username or password"}), 401
     
-    # Verify password
+    # Xác thực mật khẩu bằng bcrypt
+    # bcrypt.checkpw so sánh mật khẩu nhập vào (đã mã hóa) với mật khẩu đã lưu
     if not bcrypt.checkpw(password.encode('utf-8'), user.get('password_hash', '').encode('utf-8')):
+        # Ghi log cảnh báo nếu mật khẩu sai
         logger.warning(f"Failed login attempt for user: {username}")
         
-        # Increment failed login attempts
+        # Tăng số lần đăng nhập thất bại
+        # Giúp phát hiện các cuộc tấn công brute force
         _users_collection.update_one(
             {"_id": user["_id"]},
             {"$inc": {"login_attempts": 1}}
@@ -276,15 +308,15 @@ def login():
         
         return jsonify({"error": "Invalid username or password"}), 401
     
-    # Check if user is active
+    # Kiểm tra trạng thái tài khoản
     if user.get("status") != UserStatus.ACTIVE:
         return jsonify({"error": "Your account is inactive. Please contact an administrator."}), 403
     
-    # Generate tokens
+    # Tạo token
     access_token = generate_access_token(str(user["_id"]), user.get("role", UserRole.VIEWER))
     refresh_token = generate_refresh_token(str(user["_id"]))
     
-    # Update user's last login time and reset login attempts
+    # Cập nhật thời gian đăng nhập cuối và reset số lần đăng nhập thất bại
     _users_collection.update_one(
         {"_id": user["_id"]},
         {
@@ -295,7 +327,8 @@ def login():
         }
     )
     
-    # Prepare user data for response
+    # Chuẩn bị dữ liệu người dùng cho response
+    # Loại bỏ thông tin nhạy cảm như password_hash
     user_data = {
         "_id": str(user["_id"]),
         "username": user["username"],
@@ -304,6 +337,7 @@ def login():
         "role": user.get("role", UserRole.VIEWER)
     }
     
+    # Trả về token và thông tin người dùng
     return jsonify({
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -316,7 +350,8 @@ def login():
 @auth_bp.route('/refresh', methods=['POST'])
 def refresh():
     """
-    Refresh access token using a refresh token.
+    Làm mới access token bằng refresh token.
+    Khi access token hết hạn, client gửi refresh token để lấy access token mới.
     
     Request body:
     {
@@ -324,39 +359,42 @@ def refresh():
     }
     
     Returns:
-        JSON with new access token
+        JSON với access token mới
     """
+    # Kiểm tra xem request có phải là JSON không
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
     refresh_token = request.json.get('refresh_token')
     
+    # Kiểm tra các trường bắt buộc
     if not refresh_token:
         return jsonify({"error": "Refresh token required"}), 400
     
     try:
-        # Validate refresh token
+        # Xác thực refresh token
         payload = validate_token(refresh_token)
         
-        # Check if it's a refresh token
+        # Kiểm tra xem có phải refresh token không
         if payload.get('type') != 'refresh':
             return jsonify({"error": "Invalid token type"}), 401
         
         user_id = payload.get('sub')
         
-        # Find user
+        # Tìm người dùng
         user = _users_collection.find_one({"_id": ObjectId(user_id)})
         
         if not user:
             return jsonify({"error": "User not found"}), 401
         
-        # Check if user is active
+        # Kiểm tra trạng thái tài khoản
         if user.get("status") != UserStatus.ACTIVE:
             return jsonify({"error": "Your account is inactive"}), 403
         
-        # Generate new access token
+        # Tạo access token mới
         access_token = generate_access_token(user_id, user.get("role", UserRole.VIEWER))
         
+        # Trả về access token mới
         return jsonify({
             "access_token": access_token,
             "token_type": "Bearer",
@@ -364,8 +402,10 @@ def refresh():
         }), 200
         
     except jwt.ExpiredSignatureError:
+        # Refresh token đã hết hạn
         return jsonify({"error": "Refresh token has expired", "code": "token_expired"}), 401
     except (jwt.InvalidTokenError, Exception) as e:
+        # Refresh token không hợp lệ hoặc lỗi khác
         logger.error(f"Refresh token validation error: {str(e)}")
         return jsonify({"error": "Invalid refresh token"}), 401
 
@@ -374,16 +414,16 @@ def refresh():
 @token_required
 def logout():
     """
-    User logout endpoint.
+    API đăng xuất người dùng.
     
-    Note: With JWT, server-side logout is limited. The client should discard tokens.
-    This endpoint is mainly for future extensions or stateful tracking.
+    Lưu ý: Với JWT, việc đăng xuất ở phía server có hạn chế. Client nên hủy token.
+    Endpoint này chủ yếu để mở rộng trong tương lai hoặc theo dõi trạng thái.
     
     Returns:
-        JSON confirming logout
+        JSON xác nhận đăng xuất
     """
-    # In a stateless JWT system, there's no server-side logout beyond token expiry
-    # Future enhancement: could implement a token blocklist/revocation mechanism
+    # Trong hệ thống JWT không trạng thái, không có đăng xuất phía server ngoài việc token hết hạn
+    # Cải tiến trong tương lai: có thể triển khai cơ chế chặn/thu hồi token
     
     return jsonify({"message": "Successfully logged out"}), 200
 
@@ -392,14 +432,15 @@ def logout():
 @token_required
 def get_profile():
     """
-    Get current user profile.
+    Lấy thông tin hồ sơ người dùng hiện tại.
     
     Returns:
-        JSON with user profile data
+        JSON với dữ liệu hồ sơ người dùng
     """
     user = g.user
     
-    # Prepare user profile data
+    # Chuẩn bị dữ liệu hồ sơ người dùng
+    # Loại bỏ thông tin nhạy cảm như password_hash
     profile = {
         "_id": str(user["_id"]),
         "username": user["username"],
@@ -417,18 +458,19 @@ def get_profile():
 @token_required
 def update_profile():
     """
-    Update current user profile.
+    Cập nhật hồ sơ người dùng hiện tại.
     
     Request body:
     {
-        "full_name": "New Name",
-        "email": "new.email@example.com",
+        "full_name": "Tên Mới",
+        "email": "email.moi@example.com",
         "preferences": { "theme": "dark" }
     }
     
     Returns:
-        JSON with updated profile
+        JSON với hồ sơ đã cập nhật
     """
+    # Kiểm tra xem request có phải là JSON không
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
@@ -436,18 +478,18 @@ def update_profile():
     user_id = ObjectId(g.user_id)
     updates = {}
     
-    # Fields that can be updated by the user
+    # Các trường người dùng có thể cập nhật
     if 'full_name' in data:
         updates['full_name'] = data['full_name']
     
     if 'email' in data:
-        # Check if email is already taken
+        # Kiểm tra xem email đã được sử dụng chưa
         if _users_collection.find_one({"email": data['email'], "_id": {"$ne": user_id}}):
             return jsonify({"error": "Email is already in use"}), 409
         updates['email'] = data['email']
     
     if 'preferences' in data and isinstance(data['preferences'], dict):
-        # Merge with existing preferences
+        # Kết hợp với preferences hiện tại
         current_prefs = g.user.get('preferences', {})
         current_prefs.update(data['preferences'])
         updates['preferences'] = current_prefs
@@ -455,7 +497,7 @@ def update_profile():
     if updates:
         updates['updated_at'] = datetime.utcnow()
         
-        # Update the user
+        # Cập nhật người dùng trong database
         result = _users_collection.update_one(
             {"_id": user_id},
             {"$set": updates}
@@ -464,10 +506,10 @@ def update_profile():
         if result.modified_count == 0:
             return jsonify({"error": "Profile update failed"}), 500
         
-        # Get updated user data
+        # Lấy dữ liệu người dùng đã cập nhật
         user = _users_collection.find_one({"_id": user_id})
         
-        # Prepare response
+        # Chuẩn bị response
         profile = {
             "_id": str(user["_id"]),
             "username": user["username"],
@@ -487,17 +529,18 @@ def update_profile():
 @token_required
 def change_password():
     """
-    Change user password.
+    Thay đổi mật khẩu người dùng.
     
     Request body:
     {
-        "current_password": "current-password",
-        "new_password": "new-secure-password"
+        "current_password": "mat-khau-hien-tai",
+        "new_password": "mat-khau-moi-an-toan"
     }
     
     Returns:
-        JSON confirming password change
+        JSON xác nhận thay đổi mật khẩu
     """
+    # Kiểm tra xem request có phải là JSON không
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
@@ -505,23 +548,24 @@ def change_password():
     current_password = data.get('current_password')
     new_password = data.get('new_password')
     
+    # Kiểm tra các trường bắt buộc
     if not current_password or not new_password:
         return jsonify({"error": "Current and new passwords required"}), 400
     
     user = g.user
     
-    # Verify current password
+    # Xác thực mật khẩu hiện tại
     if not bcrypt.checkpw(current_password.encode('utf-8'), user.get('password_hash', '').encode('utf-8')):
         return jsonify({"error": "Current password is incorrect"}), 401
     
-    # Validate new password strength
+    # Xác thực độ mạnh của mật khẩu mới
     if len(new_password) < 8:
         return jsonify({"error": "Password must be at least 8 characters long"}), 400
     
-    # Hash new password
+    # Mã hóa mật khẩu mới
     hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
-    # Update password in database
+    # Cập nhật mật khẩu trong database
     result = _users_collection.update_one(
         {"_id": user["_id"]},
         {
@@ -538,42 +582,43 @@ def change_password():
     return jsonify({"message": "Password changed successfully"}), 200
 
 
-# ======== User Management Routes (Admin only) ========
+# ======== Các Route Quản lý Người dùng (Chỉ Admin) ========
 
 @users_bp.route('', methods=['GET'])
 @token_required
 @admin_required
 def list_users():
     """
-    List all users. Admin only.
+    Liệt kê tất cả người dùng. Chỉ dành cho Admin.
     
     Query parameters:
-    - limit: Maximum number of users to return (default: 100)
-    - skip: Number of users to skip (default: 0)
-    - status: Filter by account status
-    - role: Filter by role
+    - limit: Số lượng người dùng tối đa trả về (mặc định: 100)
+    - skip: Số lượng người dùng bỏ qua (mặc định: 0)
+    - status: Lọc theo trạng thái tài khoản
+    - role: Lọc theo vai trò
     
     Returns:
-        JSON with list of users
+        JSON với danh sách người dùng
     """
-    # Parse query parameters
-    limit = min(int(request.args.get('limit', 100)), 100)
+    # Phân tích tham số truy vấn
+    limit = min(int(request.args.get('limit', 100)), 100)  # Giới hạn tối đa 100 người dùng
     skip = int(request.args.get('skip', 0))
     status = request.args.get('status')
     role = request.args.get('role')
     
-    # Build query
+    # Xây dựng truy vấn
     query = {}
     if status:
         query['status'] = status
     if role:
         query['role'] = role
     
-    # Execute query
+    # Thực hiện truy vấn
     users = _users_collection.find(query).sort([("username", 1)]).skip(skip).limit(limit)
     total = _users_collection.count_documents(query)
     
-    # Format user data
+    # Định dạng dữ liệu người dùng
+    # Loại bỏ thông tin nhạy cảm và chuyển ObjectId thành chuỗi
     result = []
     for user in users:
         user_data = {
@@ -599,61 +644,62 @@ def list_users():
 @admin_required
 def create_user():
     """
-    Create a new user. Admin only.
+    Tạo người dùng mới. Chỉ dành cho Admin.
     
     Request body:
     {
-        "username": "newuser",
+        "username": "taikhoanmoi",
         "email": "user@example.com",
-        "password": "securepassword",
-        "full_name": "New User",
+        "password": "matkhauantoan",
+        "full_name": "Người Dùng Mới",
         "role": "viewer"
     }
     
     Returns:
-        JSON with created user data
+        JSON với dữ liệu người dùng đã tạo
     """
+    # Kiểm tra xem request có phải là JSON không
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
     data = request.json
     
-    # Validate required fields
+    # Xác thực các trường bắt buộc
     required_fields = ['username', 'email', 'password']
     for field in required_fields:
         if field not in data:
             return jsonify({"error": f"Missing required field: {field}"}), 400
     
-    # Validate username
+    # Xác thực username
     username = data['username']
     if not username or len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters long"}), 400
     
-    # Check if username is taken
+    # Kiểm tra xem username đã được sử dụng chưa
     if _users_collection.find_one({"username": username}):
         return jsonify({"error": "Username is already taken"}), 409
     
-    # Validate email
+    # Xác thực email
     email = data['email']
     
-    # Check if email is already registered
+    # Kiểm tra xem email đã đăng ký chưa
     if _users_collection.find_one({"email": email}):
         return jsonify({"error": "Email is already registered"}), 409
     
-    # Validate role
+    # Xác thực vai trò
     role = data.get('role', UserRole.VIEWER)
     if role not in [r.value for r in UserRole]:
         return jsonify({"error": f"Invalid role: {role}"}), 400
     
-    # Validate password
+    # Xác thực mật khẩu
     password = data['password']
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters long"}), 400
     
-    # Hash password
+    # Mã hóa mật khẩu
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
-    # Prepare user document
+    # Chuẩn bị document người dùng
     new_user = {
         "username": username,
         "email": email,
@@ -667,14 +713,14 @@ def create_user():
     }
     
     try:
-        # Insert user
+        # Thêm người dùng vào database
         result = _users_collection.insert_one(new_user)
         new_user_id = result.inserted_id
         
-        # Get created user
+        # Lấy người dùng đã tạo
         created_user = _users_collection.find_one({"_id": new_user_id})
         
-        # Format user data for response
+        # Định dạng dữ liệu người dùng cho response
         user_data = {
             "_id": str(created_user["_id"]),
             "username": created_user["username"],
@@ -699,32 +745,32 @@ def create_user():
 @token_required
 def get_user(user_id):
     """
-    Get user details.
+    Lấy thông tin chi tiết người dùng.
     
-    Regular users can only get their own details.
-    Admins can get details for any user.
+    Người dùng thông thường chỉ có thể xem thông tin của chính họ.
+    Admin có thể xem thông tin của bất kỳ người dùng nào.
     
     Args:
-        user_id: User ID
+        user_id: ID người dùng
     
     Returns:
-        JSON with user details
+        JSON với thông tin chi tiết người dùng
     """
     try:
-        # Check if user is requesting their own info or is admin
+        # Kiểm tra xem người dùng có đang yêu cầu thông tin của chính họ hoặc là admin
         is_admin = g.user_role == UserRole.ADMIN
         is_self = g.user_id == user_id
         
         if not is_admin and not is_self:
             return jsonify({"error": "Permission denied"}), 403
         
-        # Find user
+        # Tìm người dùng
         user = _users_collection.find_one({"_id": ObjectId(user_id)})
         
         if not user:
             return jsonify({"error": "User not found"}), 404
         
-        # Format user data
+        # Định dạng dữ liệu người dùng
         user_data = {
             "_id": str(user["_id"]),
             "username": user["username"],
@@ -736,7 +782,7 @@ def get_user(user_id):
             "last_login": user.get("last_login").isoformat() if user.get("last_login") else None
         }
         
-        # Additional information for admins
+        # Thông tin bổ sung cho admin
         if is_admin:
             user_data["login_attempts"] = user.get("login_attempts", 0)
         
@@ -751,50 +797,51 @@ def get_user(user_id):
 @token_required
 def update_user(user_id):
     """
-    Update user details.
+    Cập nhật thông tin người dùng.
     
-    Regular users can only update their own details and only certain fields.
-    Admins can update any user and all fields.
+    Người dùng thông thường chỉ có thể cập nhật thông tin của chính họ và chỉ một số trường nhất định.
+    Admin có thể cập nhật bất kỳ người dùng nào và tất cả các trường.
     
     Args:
-        user_id: User ID
+        user_id: ID người dùng
     
     Request body:
     {
-        "email": "new.email@example.com",
-        "full_name": "Updated Name",
+        "email": "email.moi@example.com",
+        "full_name": "Tên Đã Cập Nhật",
         "role": "operator",
         "status": "active"
     }
     
     Returns:
-        JSON with updated user details
+        JSON với thông tin người dùng đã cập nhật
     """
+    # Kiểm tra xem request có phải là JSON không
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
     data = request.json
     
     try:
-        # Check if user is updating their own info or is admin
+        # Kiểm tra xem người dùng có đang cập nhật thông tin của chính họ hoặc là admin
         is_admin = g.user_role == UserRole.ADMIN
         is_self = g.user_id == user_id
         
         if not is_admin and not is_self:
             return jsonify({"error": "Permission denied"}), 403
         
-        # Find user
+        # Tìm người dùng
         user = _users_collection.find_one({"_id": ObjectId(user_id)})
         
         if not user:
             return jsonify({"error": "User not found"}), 404
         
-        # Prepare updates
+        # Chuẩn bị các cập nhật
         updates = {}
         
-        # Fields that regular users can update for themselves
+        # Các trường mà người dùng thông thường có thể cập nhật cho chính họ
         if 'email' in data:
-            # Check if email is already taken
+            # Kiểm tra xem email đã được sử dụng chưa
             if _users_collection.find_one({"email": data['email'], "_id": {"$ne": ObjectId(user_id)}}):
                 return jsonify({"error": "Email is already in use"}), 409
             updates['email'] = data['email']
@@ -802,10 +849,10 @@ def update_user(user_id):
         if 'full_name' in data:
             updates['full_name'] = data['full_name']
         
-        # Admin-only fields
+        # Các trường chỉ dành cho admin
         if is_admin:
             if 'role' in data:
-                # Prevent removing the last admin
+                # Ngăn chặn việc xóa admin cuối cùng
                 if user.get('role') == UserRole.ADMIN and data['role'] != UserRole.ADMIN:
                     admin_count = _users_collection.count_documents({"role": UserRole.ADMIN})
                     if admin_count <= 1:
@@ -813,7 +860,7 @@ def update_user(user_id):
                 updates['role'] = data['role']
             
             if 'status' in data:
-                # Prevent deactivating the last admin
+                # Ngăn chặn việc vô hiệu hóa admin cuối cùng
                 if user.get('role') == UserRole.ADMIN and data['status'] != UserStatus.ACTIVE:
                     active_admin_count = _users_collection.count_documents({
                         "role": UserRole.ADMIN, 
@@ -823,7 +870,7 @@ def update_user(user_id):
                         return jsonify({"error": "Cannot deactivate last administrator"}), 400
                 updates['status'] = data['status']
         
-        # Apply updates if any
+        # Áp dụng các cập nhật nếu có
         if updates:
             updates['updated_at'] = datetime.utcnow()
             
@@ -835,10 +882,10 @@ def update_user(user_id):
             if result.modified_count == 0:
                 return jsonify({"error": "Failed to update user"}), 500
             
-            # Get updated user
+            # Lấy người dùng đã cập nhật
             updated_user = _users_collection.find_one({"_id": ObjectId(user_id)})
             
-            # Format user data for response
+            # Định dạng dữ liệu người dùng cho response
             user_data = {
                 "_id": str(updated_user["_id"]),
                 "username": updated_user["username"],
@@ -867,16 +914,16 @@ def update_user(user_id):
 @admin_required
 def delete_user(user_id):
     """
-    Delete a user. Admin only.
+    Xóa người dùng. Chỉ dành cho Admin.
     
     Args:
-        user_id: User ID to delete
+        user_id: ID người dùng cần xóa
     
     Returns:
-        JSON confirming deletion
+        JSON xác nhận xóa
     """
     try:
-        # Check if trying to delete self
+        # Kiểm tra xem có đang cố gắng xóa chính mình không
         if g.user_id == user_id:
             return jsonify({"error": "Cannot delete your own account"}), 400
         
@@ -885,13 +932,13 @@ def delete_user(user_id):
         if not user:
             return jsonify({"error": "User not found"}), 404
         
-        # Prevent deleting the last admin
+        # Ngăn chặn xóa admin cuối cùng
         if user.get('role') == UserRole.ADMIN:
             admin_count = _users_collection.count_documents({"role": UserRole.ADMIN})
             if admin_count <= 1:
                 return jsonify({"error": "Cannot delete the last administrator"}), 400
         
-        # Delete user
+        # Xóa người dùng
         result = _users_collection.delete_one({"_id": ObjectId(user_id)})
         
         if result.deleted_count == 0:
@@ -909,21 +956,21 @@ def delete_user(user_id):
 @admin_required
 def reset_user_password(user_id):
     """
-    Reset a user's password. Admin only.
+    Đặt lại mật khẩu người dùng. Chỉ dành cho Admin.
     
     Args:
-        user_id: User ID
+        user_id: ID người dùng
     
     Request body:
     {
-        "new_password": "new-secure-password"  # Optional, auto-generated if not provided
+        "new_password": "mat-khau-moi-an-toan"  # Tùy chọn, tự động tạo nếu không cung cấp
     }
     
     Returns:
-        JSON with new password (if auto-generated) or confirmation
+        JSON với mật khẩu mới (nếu tự động tạo) hoặc xác nhận
     """
     try:
-        # Find user
+        # Tìm người dùng
         user = _users_collection.find_one({"_id": ObjectId(user_id)})
         
         if not user:
@@ -932,7 +979,7 @@ def reset_user_password(user_id):
         data = request.json or {}
         new_password = data.get('new_password')
         
-        # Generate a random password if none provided
+        # Tạo mật khẩu ngẫu nhiên nếu không được cung cấp
         if not new_password:
             import secrets
             import string
@@ -940,15 +987,15 @@ def reset_user_password(user_id):
             new_password = ''.join(secrets.choice(alphabet) for _ in range(12))
             password_was_generated = True
         else:
-            # Validate provided password
+            # Xác thực mật khẩu được cung cấp
             if len(new_password) < 8:
                 return jsonify({"error": "Password must be at least 8 characters long"}), 400
             password_was_generated = False
         
-        # Hash new password
+        # Mã hóa mật khẩu mới
         hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        # Update password in database
+        # Cập nhật mật khẩu trong database
         result = _users_collection.update_one(
             {"_id": ObjectId(user_id)},
             {
@@ -976,30 +1023,30 @@ def reset_user_password(user_id):
         return jsonify({"error": "Failed to reset password"}), 500
 
 
-# ======== Helper Functions ========
+# ======== Các Hàm Hỗ Trợ ========
 
 def _create_default_admin(app):
     """
-    Create a default admin user if none exists.
+    Tạo người dùng admin mặc định nếu chưa tồn tại.
     
     Args:
-        app: Flask application with config
+        app: Ứng dụng Flask với cấu hình
     """
     default_username = app.config.get('DEFAULT_ADMIN_USERNAME', 'admin')
     default_password = app.config.get('DEFAULT_ADMIN_PASSWORD')
     default_email = app.config.get('DEFAULT_ADMIN_EMAIL', 'admin@example.com')
     
-    # Generate a random password if none is provided
+    # Tạo mật khẩu ngẫu nhiên nếu không được cung cấp
     if not default_password:
         import secrets
         import string
         alphabet = string.ascii_letters + string.digits
         default_password = ''.join(secrets.choice(alphabet) for _ in range(12))
     
-    # Hash the password
+    # Mã hóa mật khẩu
     hashed_password = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
-    # Create admin user
+    # Tạo người dùng admin
     admin_user = {
         "username": default_username,
         "email": default_email,
