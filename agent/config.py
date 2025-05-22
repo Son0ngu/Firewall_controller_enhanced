@@ -66,7 +66,7 @@ DEFAULT_CONFIG = {
     
     # Cấu hình bắt gói tin mạng
     "packet_capture": {
-        "engine": "pydivert",  # Thư viện bắt gói tin: pydivert hoặc scapy
+        "engine": "scapy",  # Thư viện bắt gói tin: pydivert hoặc scapy
         "filter": "outbound and (tcp.DstPort == 80 or tcp.DstPort == 443)",  # Bộ lọc gói tin - chỉ quan tâm đến gói tin đi ra cổng 80 (HTTP) và 443 (HTTPS)
         "buffer_size": 4096,  # Kích thước buffer đọc gói tin (bytes)
         "packet_limit": 0,  # Giới hạn số gói tin bắt được (0 = không giới hạn)
@@ -97,7 +97,7 @@ DEFAULT_CONFIG = {
     "firewall": {
         "enabled": True,  # Có sử dụng tường lửa để chặn không
         "mode": "block",  # Chế độ: block (chặn), warn (cảnh báo), monitor (chỉ giám sát)
-        "rule_prefix": "FWController_Block_",  # Tiền tố cho tên các quy tắc tường lửa
+        "rule_prefix": "sown",  # Tiền tố cho tên các quy tắc tường lửa
         "include_domain_in_rule": True,  # Có đưa tên miền vào tên quy tắc không
         "cleanup_on_exit": True,  # Có xóa các quy tắc khi thoát không
         "block_timeout": 0,  # Thời gian chặn (giây), 0 = vĩnh viễn
@@ -279,7 +279,7 @@ def _validate_config(config: Dict) -> None:
     
     # Kiểm tra engine bắt gói tin
     # Đảm bảo engine được chọn là hợp lệ
-    if config["packet_capture"]["engine"] not in ["pydivert", "scapy"]:
+    if config["packet_capture"]["engine"] not in ["scapy"]:
         logger.warning(f"Unknown packet capture engine: {config['packet_capture']['engine']}")
     
     # Kiểm tra chế độ tường lửa
