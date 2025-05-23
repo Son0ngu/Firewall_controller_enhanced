@@ -9,6 +9,7 @@ registers blueprints, initializes components like SocketIO, and provides the app
 import logging  # Thư viện ghi log, dùng để theo dõi hoạt động của ứng dụng
 import os  # Thư viện tương tác với hệ điều hành, dùng để truy cập biến môi trường và thao tác với đường dẫn
 from logging.handlers import RotatingFileHandler  # Handler ghi log vào file có khả năng tự động xoay vòng khi đạt kích thước giới hạn
+from datetime import datetime  # Thêm để sử dụng cho filter format_datetime
 
 import eventlet  # Thư viện xử lý IO không đồng bộ, tối ưu cho WebSocket và các hoạt động mạng
 # Patch standard library for eventlet compatibility (must be first)
@@ -17,10 +18,16 @@ import eventlet  # Thư viện xử lý IO không đồng bộ, tối ưu cho We
 eventlet.monkey_patch()
 
 # Import các thành phần của Flask và các extension
-from flask import Flask, jsonify, request  # Framework web Flask cơ bản và các tiện ích
+from flask import Flask, jsonify, request, render_template, redirect, url_for, session  # Thêm render_template, redirect, url_for
 from flask_cors import CORS  # Extension để hỗ trợ Cross-Origin Resource Sharing, cho phép truy cập API từ domain khác
 from flask_socketio import SocketIO  # Extension hỗ trợ WebSocket cho giao tiếp realtime
 from pymongo import MongoClient  # Thư viện kết nối đến MongoDB
+
+# Thêm đoạn này sau các import
+from dotenv import load_dotenv  # Thư viện đọc file .env
+
+# Tải biến môi trường từ file .env
+load_dotenv()
 
 # Import các module tự định nghĩa từ dự án
 from server.config import get_config  # Hàm lấy cấu hình ứng dụng
@@ -57,6 +64,24 @@ def create_app(config_object=None):
     if config_object is None:
         config_object = get_config()
     app.config.from_object(config_object)  # Áp dụng cấu hình vào app
+    
+    app.secret_key = app.config.get('SECRET_KEY', 'your-secret-key')
+    
+    # Middleware kiểm tra người dùng đăng nhập
+    @app.before_request
+    def check_auth():
+        # Danh sách các đường dẫn công khai
+        public_paths = ['/auth/login', '/api/health', '/static/']
+        
+        # Bỏ qua kiểm tra cho đường dẫn công khai
+        for path in public_paths:
+            if request.path.startswith(path):
+                return None
+        
+        # Kiểm tra session
+        if 'user_id' not in session:
+            if request.path != '/':
+                return redirect(url_for('auth.login_page'))
     
     # Cấu hình logging chi tiết
     # Chỉ thiết lập khi không ở chế độ debug hoặc testing
@@ -101,32 +126,59 @@ def create_app(config_object=None):
         engineio_logger=app.debug  # Chỉ bật engineio logger trong chế độ debug
     )
     
-    # Kết nối đến MongoDB
-    # Đây là cơ sở dữ liệu chính của ứng dụng
-    mongo_uri = app.config.get('MONGO_URI')
+    # Kết nối đến MongoDB từ biến môi trường
+    mongo_uri = os.environ.get('MONGO_URI')
     if not mongo_uri:
-        if app.config['TESTING']:
-            # Sử dụng MongoDB giả lập trong bộ nhớ cho unit test
-            mongo_uri = "mongomock://localhost/firewall_controller_test"
-        else:
-            # Sử dụng MongoDB local nếu không có URI được cấu hình
-            mongo_uri = "mongodb://localhost:27017/firewall_controller"
+        app.logger.warning("MONGO_URI not found in environment variables. Using default connection settings.")
+        # Sử dụng cấu hình mặc định từ config nếu không có biến môi trường
+        mongo_uri = app.config.get('MONGO_URI', 'mongodb://localhost:27017/')
     
-    # Tạo kết nối đến MongoDB
+    app.logger.info(f"Connecting to MongoDB database...")
     mongo_client = MongoClient(mongo_uri)
-    
+
+    # Kiểm tra kết nối
+    try:
+        # Ping server để kiểm tra kết nối
+        mongo_client.admin.command('ping')
+        app.logger.info("MongoDB Atlas connection successful!")
+    except Exception as e:
+        app.logger.error(f"MongoDB Atlas connection failed: {e}")
+        # Không dừng ứng dụng, sẽ tiếp tục với kết nối thất bại và các module sẽ xử lý lỗi khi cần
+
     # Khởi tạo các module với Flask app, MongoDB client và SocketIO
     # Mỗi module này đảm nhận một phần chức năng của hệ thống
     auth.init_app(app, mongo_client, socketio)  # Module xác thực và quản lý người dùng
-    logs.init_app(app, mongo_client, socketio)  # Module quản lý logs từ các agent và hệ thống
-    whitelist.init_app(app, mongo_client, socketio)  # Module quản lý danh sách các domain được phép
+    logs.init_app(app, mongo_client)  # Module quản lý logs từ các agent và hệ thống
+    whitelist.init_app(app, mongo_client)  # Module quản lý danh sách các domain được phép
     agents.init_app(app, mongo_client, socketio)  # Module quản lý các agent được cài đặt trên máy client
+    
+    # Đăng ký template filter format_datetime
+    @app.template_filter('format_datetime')
+    def format_datetime(value, format='%Y-%m-%d %H:%M:%S'):
+        """Format a datetime object to a string."""
+        if value is None:
+            return ""
+        return value.strftime(format)
     
     # Đăng ký các handler xử lý lỗi cho ứng dụng
     register_error_handlers(app)
     
     # Đăng ký các route chính của ứng dụng
     register_main_routes(app)
+    
+    # Context processor để cung cấp biến current_user và current_year cho tất cả templates
+    @app.context_processor
+    def inject_user_and_time():
+        # Tạo dummy current_user khi chưa đăng nhập
+        dummy_user = {
+            "is_authenticated": False,
+            "username": "Guest",
+            "role": "guest"
+        }
+        return {
+            'current_user': dummy_user,
+            'current_year': datetime.now().year
+        }
     
     # Ghi log xác nhận ứng dụng đã được khởi tạo thành công
     app.logger.info("Application initialized successfully")
@@ -189,10 +241,20 @@ def register_main_routes(app):
     def index():
         """
         Route trang chủ của ứng dụng.
-        Trả về file index.html từ thư mục static.
+        Hiển thị dashboard cho người dùng đã đăng nhập hoặc chuyển hướng đến trang đăng nhập.
         """
-        return app.send_static_file('index.html')
-    
+        # Phía client sẽ kiểm tra token và tự động chuyển hướng đến /auth/login nếu chưa đăng nhập
+        
+        # Chuẩn bị dữ liệu cho dashboard
+        stats = {
+            "allowed": 0,
+            "blocked": 0,
+            "active_agents": 0
+        }
+        recent_logs = []
+        
+        return render_template('index.html', stats=stats, recent_logs=recent_logs)
+
     @app.route('/api/health', methods=['GET'])
     def health_check():
         """
@@ -212,6 +274,25 @@ def register_main_routes(app):
             "version": "1.0.0",  # Phiên bản của ứng dụng
             "environment": os.environ.get('FLASK_ENV', 'development')  # Môi trường hiện tại (development, production...)
         }), 200
+
+    @app.route('/admin')
+    def admin_dashboard():
+        """
+        Trang quản trị dành cho admin
+        """
+        # Đảm bảo người dùng là admin
+        if session.get('role') != 'admin':
+            return redirect(url_for('auth.login_page'))
+        
+        # Lấy dữ liệu cho dashboard
+        stats = {
+            "allowed": 0,
+            "blocked": 0,
+            "active_agents": 0,
+            "total_users": 0
+        }
+        
+        return render_template('admin.html', stats=stats)
 
 
 if __name__ == "__main__":

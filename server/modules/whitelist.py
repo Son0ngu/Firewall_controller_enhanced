@@ -1,36 +1,56 @@
 # Import các thư viện cần thiết
-import logging  # Thư viện ghi log, giúp theo dõi hoạt động của module
-import re  # Thư viện xử lý biểu thức chính quy, dùng để xác thực định dạng tên miền
-from datetime import datetime  # Thư viện xử lý thời gian, dùng cho timestamps
-from typing import Dict, List, Optional, Set, Union  # Thư viện kiểu dữ liệu tĩnh, giúp code rõ ràng hơn
+import logging
+import re
+from datetime import datetime
+from typing import Dict, List, Optional, Set, Union
+from functools import wraps
 
-from bson import ObjectId  # Thư viện làm việc với MongoDB ObjectId
-from flask import Blueprint, jsonify, request, current_app, g  # Framework Flask để tạo API
-from flask_socketio import SocketIO  # Thư viện để triển khai giao tiếp real-time qua WebSocket
-from pymongo import MongoClient, DESCENDING  # Thư viện kết nối MongoDB và hằng số sắp xếp
-from pymongo.collection import Collection  # Kiểu dữ liệu Collection của MongoDB
-from pymongo.database import Database  # Kiểu dữ liệu Database của MongoDB
-
-# Import các decorator xác thực và phân quyền từ module auth
-from server.modules.auth import token_required, admin_required, operator_required
+from bson import ObjectId
+from flask import Blueprint, jsonify, request, current_app, g, session
+from flask_socketio import SocketIO
+from pymongo import MongoClient, DESCENDING
+from pymongo.collection import Collection
+from pymongo.database import Database
 
 # Cấu hình logging cho module
-# Sử dụng logger riêng giúp dễ dàng lọc log từ module này
 logger = logging.getLogger("whitelist_module")
 
 # Khởi tạo Blueprint cho các route API
-# Blueprint giúp tổ chức các route theo nhóm chức năng
 whitelist_bp = Blueprint('whitelist', __name__)
 
 # Biến socketio sẽ được khởi tạo từ bên ngoài với instance Flask-SocketIO
-# Dùng để gửi thông báo realtime khi có thay đổi trong whitelist
 socketio: Optional[SocketIO] = None
 
 # Các biến kết nối MongoDB (được khởi tạo trong hàm init_app)
 _db: Optional[Database] = None  # Database MongoDB
 _whitelist_collection: Optional[Collection] = None  # Collection lưu trữ whitelist
 
-def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
+# Định nghĩa các decorator xác thực đơn giản hơn
+def check_admin():
+    """
+    Decorator đơn giản kiểm tra xem người dùng đã đăng nhập với vai trò admin chưa.
+    """
+    def decorator(f):
+        @wraps(f)  # Giữ lại metadata của hàm gốc
+        def wrapped(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({"error": "Authentication required"}), 401
+                
+            # Kiểm tra vai trò của người dùng
+            if session.get('role') != 'admin':
+                return jsonify({"error": "Admin privileges required"}), 403
+                
+            # Thiết lập thông tin người dùng để sử dụng trong hàm xử lý
+            g.user = {
+                'username': session.get('username', 'unknown')
+            }
+            
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
     """
     Khởi tạo module whitelist với ứng dụng Flask và kết nối MongoDB.
     
@@ -41,32 +61,25 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
     """
     global _db, _whitelist_collection, socketio
     
-    # Lưu trữ instance SocketIO để sử dụng sau này
-    # SocketIO dùng để thông báo realtime khi whitelist thay đổi
+    # Lưu trữ instance SocketIO nếu được cung cấp
     socketio = socket_io
     
-    # Lấy tên database từ cấu hình hoặc sử dụng tên mặc định
-    db_name = app.config.get('MONGO_DBNAME', 'firewall_controller')
+    # Sử dụng tên database từ cấu hình
+    db_name = app.config.get('MONGO_DBNAME', 'Monitoring')
     _db = mongo_client[db_name]
     
     # Lấy collection whitelist từ database
-    # Collection này lưu trữ danh sách các tên miền được phép truy cập
     _whitelist_collection = _db.whitelist
     
     # Tạo các chỉ mục (index) để tối ưu hiệu suất truy vấn
-    # Index domain là unique để đảm bảo không có tên miền trùng lặp
     _whitelist_collection.create_index([("domain", 1)], unique=True)
-    # Index added_date để sắp xếp và lọc theo thời gian thêm
     _whitelist_collection.create_index([("added_date", DESCENDING)])
-    # Index added_by để lọc theo người đã thêm tên miền
     _whitelist_collection.create_index([("added_by", 1)])
     
     # Đăng ký blueprint với ứng dụng Flask
-    # URL prefix '/api' sẽ được thêm vào tất cả các route trong blueprint
     app.register_blueprint(whitelist_bp, url_prefix='/api')
     
     # Tạo whitelist mặc định nếu chưa có dữ liệu
-    # Đảm bảo hệ thống có một số tên miền an toàn từ đầu
     if _whitelist_collection.count_documents({}) == 0:
         _create_default_whitelist()
     
@@ -76,7 +89,7 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
 # ======== Các route API ========
 
 @whitelist_bp.route('/whitelist', methods=['GET'])
-@token_required  # Yêu cầu người dùng đã đăng nhập
+@check_admin()  # Chỉ admin mới có thể xem whitelist
 def get_whitelist():
     """
     Lấy danh sách whitelist với tùy chọn lọc.
@@ -155,8 +168,7 @@ def get_whitelist():
 
 
 @whitelist_bp.route('/whitelist', methods=['POST'])
-@token_required  # Yêu cầu người dùng đã đăng nhập
-@operator_required  # Yêu cầu ít nhất quyền operator
+@check_admin()  # Chỉ admin mới có thể thêm vào whitelist
 def add_domain():
     """
     Thêm một tên miền vào whitelist.
@@ -237,8 +249,7 @@ def add_domain():
 
 
 @whitelist_bp.route('/whitelist/<domain_id>', methods=['PUT'])
-@token_required  # Yêu cầu người dùng đã đăng nhập
-@operator_required  # Yêu cầu ít nhất quyền operator
+@check_admin()
 def update_domain(domain_id):
     """
     Cập nhật một bản ghi tên miền trong whitelist.
@@ -356,8 +367,7 @@ def update_domain(domain_id):
 
 
 @whitelist_bp.route('/whitelist/<domain_id>', methods=['DELETE'])
-@token_required  # Yêu cầu người dùng đã đăng nhập
-@operator_required  # Yêu cầu ít nhất quyền operator
+@check_admin()
 def delete_domain(domain_id):
     """
     Xóa một tên miền khỏi whitelist.
@@ -415,8 +425,7 @@ def delete_domain(domain_id):
 
 
 @whitelist_bp.route('/whitelist/domain/<domain>', methods=['DELETE'])
-@token_required  # Yêu cầu người dùng đã đăng nhập
-@operator_required  # Yêu cầu ít nhất quyền operator
+@check_admin()
 def delete_domain_by_name(domain):
     """
     Xóa một tên miền khỏi whitelist theo tên.
@@ -521,8 +530,7 @@ def check_domain(domain):
 
 
 @whitelist_bp.route('/whitelist/bulk', methods=['POST'])
-@token_required  # Yêu cầu người dùng đã đăng nhập
-@operator_required  # Yêu cầu ít nhất quyền operator
+@check_admin()
 def bulk_add_domains():
     """
     Thêm nhiều tên miền vào whitelist cùng lúc.

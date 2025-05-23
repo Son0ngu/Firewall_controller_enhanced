@@ -26,7 +26,7 @@ socketio: Optional[SocketIO] = None
 _db: Optional[Database] = None  # Database MongoDB
 _logs_collection: Optional[Collection] = None  # Collection lưu trữ logs
 
-def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
+def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
     """
     Khởi tạo module logs với ứng dụng Flask và kết nối MongoDB.
     
@@ -37,12 +37,11 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
     """
     global _db, _logs_collection, socketio
     
-    # Lưu trữ instance SocketIO để sử dụng sau này
-    # SocketIO giúp gửi thông báo realtime khi có log mới đến các client
+    # Lưu trữ instance SocketIO nếu được cung cấp
     socketio = socket_io
     
-    # Lấy tên database từ cấu hình hoặc sử dụng tên mặc định
-    db_name = app.config.get('MONGO_DBNAME', 'firewall_controller')
+    # Sử dụng tên database từ cấu hình
+    db_name = app.config.get('MONGO_DBNAME', 'Monitoring')
     _db = mongo_client[db_name]
     
     # Lấy collection logs từ database
@@ -68,113 +67,74 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
 
 # ======== Các route API ========
 
+# Sửa đổi route nhận log để bỏ xác thực
 @logs_bp.route('/logs', methods=['POST'])
 def receive_logs():
     """
     Nhận logs từ các agent và lưu trữ vào database.
-    Phát sóng (broadcast) logs mới đến các client qua Socket.IO.
-    
-    Format yêu cầu:
-    {
-        "logs": [
-            {
-                "agent_id": "agent123",
-                "timestamp": "2023-01-01T12:00:00Z",
-                "domain": "example.com",
-                "dest_ip": "93.184.216.34",
-                "dest_port": 443,
-                "protocol": "HTTPS",
-                "action": "block"
-            },
-            ...
-        ]
-    }
-    
-    Returns:
-        JSON response với trạng thái và số lượng logs đã lưu
+    Không yêu cầu xác thực để đơn giản hóa.
     """
-    # Kiểm tra xem request có định dạng JSON không
+    # Kiểm tra định dạng JSON
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
     # Lấy dữ liệu từ request
     data = request.json
-    # Kiểm tra cấu trúc dữ liệu và sự tồn tại của trường 'logs'
     if not data or not isinstance(data, dict) or "logs" not in data:
         return jsonify({"error": "Invalid request format, 'logs' field required"}), 400
     
-    # Lấy danh sách logs và kiểm tra kiểu dữ liệu
     logs = data["logs"]
     if not isinstance(logs, list):
         return jsonify({"error": "'logs' must be an array"}), 400
     
-    # Xác thực và xử lý từng log một
+    # Xác thực và xử lý mỗi log
     valid_logs = []
     for log in logs:
-        # Bỏ qua logs không hợp lệ
         if not isinstance(log, dict):
             continue
             
-        # Đảm bảo các trường bắt buộc
-        # domain và agent_id là bắt buộc để một log có ý nghĩa
+        # Đảm bảo có các trường cần thiết
         if "domain" not in log or "agent_id" not in log:
             continue
             
-        # Thêm timestamp nếu không có
-        # Timestamp là quan trọng để theo dõi thời gian xảy ra sự kiện
+        # Thêm timestamp nếu chưa có
         if "timestamp" not in log:
             log["timestamp"] = datetime.utcnow().isoformat()
             
-        # Phân tích timestamp nếu nó là chuỗi
-        # Chuyển đổi từ chuỗi ISO thành đối tượng datetime
+        # Chuyển đổi timestamp từ chuỗi sang datetime
         if isinstance(log["timestamp"], str):
             try:
-                # Thay 'Z' bằng '+00:00' để tuân thủ định dạng ISO 8601
                 log["timestamp"] = datetime.fromisoformat(log["timestamp"].replace('Z', '+00:00'))
             except ValueError:
-                # Nếu phân tích thất bại, sử dụng thời gian hiện tại
                 log["timestamp"] = datetime.utcnow()
                 
-        # Thêm vào danh sách logs hợp lệ
         valid_logs.append(log)
     
-    # Kiểm tra xem có logs hợp lệ nào không
     if not valid_logs:
         return jsonify({"status": "warning", "message": "No valid logs provided"}), 200
         
     try:
-        # Chèn logs vào database với thao tác hàng loạt
-        # Sử dụng insert_many để tối ưu hiệu suất khi thêm nhiều bản ghi
+        # Lưu logs vào database
         result = _logs_collection.insert_many(valid_logs)
         
-        # Phát sóng logs mới đến các client đang kết nối
-        # Điều này cho phép cập nhật giao diện người dùng theo thời gian thực
-        for log in valid_logs:
-            # Copy log để không thay đổi dữ liệu gốc
-            log_with_id = log.copy()
-            
-            # Chuyển đổi ObjectId thành chuỗi để serialization JSON
-            if "_id" in log_with_id and isinstance(log_with_id["_id"], ObjectId):
-                log_with_id["_id"] = str(log_with_id["_id"])
-                
-            # Chuyển đổi datetime thành chuỗi ISO
-            if "timestamp" in log_with_id and isinstance(log_with_id["timestamp"], datetime):
-                log_with_id["timestamp"] = log_with_id["timestamp"].isoformat()
-                
-            # Phát sóng sự kiện 'new_log' với dữ liệu log
-            if socketio:
-                socketio.emit('new_log', log_with_id)
+        # Broadcast các logs mới qua SocketIO nếu được cấu hình
+        if socketio:
+            for log in valid_logs:
+                log_copy = log.copy()
+                if "_id" in log_copy and isinstance(log_copy["_id"], ObjectId):
+                    log_copy["_id"] = str(log_copy["_id"])
+                if "timestamp" in log_copy and isinstance(log_copy["timestamp"], datetime):
+                    log_copy["timestamp"] = log_copy["timestamp"].isoformat()
+                socketio.emit('new_log', log_copy)
         
-        # Trả về thông tin thành công
         return jsonify({
             "status": "success",
             "count": len(result.inserted_ids)
         }), 201
         
     except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi lưu trữ
         logger.error(f"Error storing logs: {str(e)}")
-        return jsonify({"error": "Failed to store logs"}), 500
+        return jsonify({"error": f"Failed to store logs: {str(e)}"}), 500
 
 
 @logs_bp.route('/logs', methods=['GET'])

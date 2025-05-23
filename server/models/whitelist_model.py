@@ -37,12 +37,15 @@ class PyObjectId(ObjectId):
         return ObjectId(v)
 
     @classmethod
-    def __modify_schema__(cls, field_schema):
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
         """
         Điều chỉnh schema cho OpenAPI (Swagger) để hiển thị kiểu dữ liệu này là chuỗi.
         Giúp tài liệu API hiển thị kiểu dữ liệu một cách rõ ràng.
+        Thay thế cho phương thức __modify_schema__ trong Pydantic v1.
         """
-        field_schema.update(type="string")
+        json_schema = handler(core_schema)
+        json_schema.update(type="string", format="objectid")
+        return json_schema
 
 
 class Whitelist(BaseModel):

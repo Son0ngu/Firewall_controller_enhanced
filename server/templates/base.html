@@ -28,7 +28,7 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                {% if current_user.is_authenticated %}
+                {% if current_user is defined and current_user.is_authenticated %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="{{ url_for('index') }}">
@@ -150,5 +150,23 @@
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     
     {% block extra_js %}{% endblock %}
+
+    <script>
+    // Kiểm tra xác thực (trừ trang login)
+    if (!window.location.pathname.includes('/login')) {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            window.location.href = '/auth/login';
+        }
+    }
+
+    // Xử lý lỗi WebSocket
+    window.addEventListener('error', function(event) {
+        if (event.message && event.message.includes('WebSocket connection')) {
+            console.log('WebSocket connection error handled');
+            event.preventDefault();
+        }
+    });
+    </script>
 </body>
 </html>
