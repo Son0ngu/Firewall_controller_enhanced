@@ -23,15 +23,12 @@ class AgentController:
     def _register_routes(self):
         """Register routes for this controller"""
         self.blueprint.add_url_rule('/register', 'register_agent', self.register_agent, methods=['POST'])
-        self.blueprint.add_url_rule('/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])
         self.blueprint.add_url_rule('', 'list_agents', self.list_agents, methods=['GET'])
         self.blueprint.add_url_rule('/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
         self.blueprint.add_url_rule('/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
         self.blueprint.add_url_rule('/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
         self.blueprint.add_url_rule('/commands', 'get_commands', self.get_commands, methods=['GET'])
-        self.blueprint.add_url_rule('/commands', 'list_commands', self.list_commands, methods=['GET'])
         self.blueprint.add_url_rule('/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
-        self.blueprint.add_url_rule('/broadcast', 'broadcast_command', self.broadcast_command, methods=['POST'])
     
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
@@ -338,29 +335,3 @@ class AgentController:
         except Exception as e:
             self.logger.error(f"Error updating command result: {e}")
             return self._error_response("Failed to update command result", 500)
-    
-    def broadcast_command(self):
-        """Broadcast command to multiple agents"""
-        try:
-            data = self._validate_json_request(['command_type'])
-            
-            # Call service method
-            result = self.service.broadcast_command(data, "admin")
-            
-            # Broadcast notification via SocketIO
-            if self.socketio:
-                self.socketio.emit("commands_broadcast", {
-                    "command_type": data["command_type"],
-                    "agent_count": result['agent_count'],
-                    "successful_count": result['successful_count'],
-                    "created_by": "admin",
-                    "created_at": datetime.utcnow().isoformat()
-                })
-            
-            return self._success_response(result, f"Command sent to {result['successful_count']} agents", 201)
-            
-        except ValueError as e:
-            return self._error_response(str(e), 400)
-        except Exception as e:
-            self.logger.error(f"Error broadcasting command: {e}")
-            return self._error_response("Failed to broadcast command", 500)

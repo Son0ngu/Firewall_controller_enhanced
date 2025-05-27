@@ -1,3 +1,6 @@
 scapy
 requests
 pywin32
+getmac wmi-client-wrapper
+psutil
+pip install getmac

@@ -257,23 +257,13 @@ def _deep_update(base_dict: Dict, update_dict: Dict) -> None:
 
 
 def _validate_config(config: Dict) -> None:
-    """
-    Validate the configuration.
-    
-    Args:
-        config: Configuration dictionary to validate
-    """
-    # Kiểm tra các trường bắt buộc
+    """Simple configuration validation"""
     if not config["server"]["url"]:
-        logger.warning("Server URL is not configured")
+        logger.warning("Server URL not configured")
     
-    # Kiểm tra engine bắt gói tin
-    if config["packet_capture"]["engine"] not in ["scapy"]:
-        logger.warning(f"Unknown packet capture engine: {config['packet_capture']['engine']}")
-    
-    # Kiểm tra chế độ tường lửa
     if config["firewall"]["enabled"] and config["firewall"]["mode"] not in ["block", "warn", "monitor"]:
-        logger.warning(f"Unknown firewall mode: {config['firewall']['mode']}")
+        logger.warning(f"Invalid firewall mode: {config['firewall']['mode']} - using 'monitor'")
+        config["firewall"]["mode"] = "monitor"
 
 
 def get_config() -> Dict[str, Any]:
