@@ -227,6 +227,87 @@ def register_main_routes(app):
             "environment": os.environ.get('FLASK_ENV', 'development'),
             "authentication_required": False
         }), 200
+    
+    @app.route('/setup-sample-data', methods=['POST'])
+    def setup_sample_data():
+        """Endpoint để tạo sample data trực tiếp trên server"""
+        try:
+            sample_entries = [
+                # Essential domains
+                {"type": "domain", "value": "google.com", "category": "search", "notes": "Google search engine", "priority": "high"},
+                {"type": "domain", "value": "*.google.com", "category": "search", "notes": "All Google services", "priority": "high"},
+                {"type": "domain", "value": "github.com", "category": "development", "notes": "Code repository", "priority": "normal"},
+                {"type": "domain", "value": "microsoft.com", "category": "business", "notes": "Microsoft services", "priority": "high"},
+                {"type": "domain", "value": "stackoverflow.com", "category": "development", "notes": "Developer Q&A", "priority": "normal"},
+                
+                # System domains
+                {"type": "domain", "value": "windowsupdate.microsoft.com", "category": "system", "notes": "Windows Update", "priority": "critical"},
+                {"type": "domain", "value": "update.microsoft.com", "category": "system", "notes": "Microsoft Update", "priority": "critical"},
+                
+                # DNS servers
+                {"type": "ip", "value": "8.8.8.8", "category": "dns", "notes": "Google DNS Primary", "priority": "high"},
+                {"type": "ip", "value": "8.8.4.4", "category": "dns", "notes": "Google DNS Secondary", "priority": "high"},
+                {"type": "ip", "value": "1.1.1.1", "category": "dns", "notes": "Cloudflare DNS", "priority": "high"},
+                
+                # API endpoints
+                {"type": "url", "value": "https://api.github.com/*", "category": "api", "notes": "GitHub API endpoints", "priority": "normal"},
+                {"type": "url", "value": "https://fonts.googleapis.com/*", "category": "cdn", "notes": "Google Fonts CDN", "priority": "normal"},
+                {"type": "url", "value": "https://cdnjs.cloudflare.com/*", "category": "cdn", "notes": "Cloudflare CDN", "priority": "normal"},
+                
+                # Patterns
+                {"type": "pattern", "value": "*.microsoft.com", "category": "business", "notes": "Microsoft services pattern", "priority": "normal"},
+                {"type": "pattern", "value": "*.amazonaws.com", "category": "cloud", "notes": "AWS services pattern", "priority": "normal"},
+            ]
+            
+            # Import whitelist module để sử dụng collection
+            from modules.whitelist import _whitelist_collection
+            
+            if _whitelist_collection is None:
+                return jsonify({"error": "Whitelist module not initialized"}), 500
+            
+            created_count = 0
+            existing_count = 0
+            error_count = 0
+            
+            for entry in sample_entries:
+                try:
+                    entry_data = {
+                        "type": entry["type"],
+                        "value": entry["value"], 
+                        "category": entry["category"],
+                        "notes": entry["notes"],
+                        "priority": entry.get("priority", "normal"),
+                        "added_by": "system",
+                        "added_date": datetime.utcnow(),
+                        "usage_count": 0,
+                        "enable_logging": False,
+                        "is_temporary": False
+                    }
+                    
+                    # Check if exists
+                    existing = _whitelist_collection.find_one({"value": entry["value"]})
+                    if not existing:
+                        _whitelist_collection.insert_one(entry_data)
+                        created_count += 1
+                        app.logger.info(f"Created sample entry: {entry['value']}")
+                    else:
+                        existing_count += 1
+                        
+                except Exception as e:
+                    error_count += 1
+                    app.logger.error(f"Error creating sample entry {entry['value']}: {e}")
+            
+            return jsonify({
+                "message": f"Sample data setup completed",
+                "created": created_count,
+                "existing": existing_count,
+                "errors": error_count,
+                "total_samples": len(sample_entries)
+            }), 200
+            
+        except Exception as e:
+            app.logger.error(f"Error setting up sample data: {e}")
+            return jsonify({"error": str(e)}), 500
 
 def register_socketio_events(socketio):
     """Register Socket.IO event handlers."""

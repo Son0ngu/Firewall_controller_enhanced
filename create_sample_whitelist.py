@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta
 
 # Server URL
-SERVER_URL = "http://localhost:5000"  # Thay đổi nếu server chạy ở port khác
+SERVER_URL = "https://firewall-controller-vu7f.onrender.com"  
 
 # Sample DOMAINS
 SAMPLE_DOMAINS = [

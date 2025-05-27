@@ -122,7 +122,12 @@ class WhitelistManager:
             return False
             
         try:
-            url = f"{self.server_url.rstrip('/')}/api/whitelist/agent-sync"
+            # ✅ SỬA: Đảm bảo URL được build đúng
+            base_url = self.server_url.rstrip('/')
+            if not base_url.endswith('/api'):
+                url = f"{base_url}/api/whitelist/agent-sync"
+            else:
+                url = f"{base_url}/whitelist/agent-sync"
             
             params = {}
             if self.last_updated:
@@ -131,6 +136,8 @@ class WhitelistManager:
             if hasattr(self, 'agent_id') and self.agent_id:
                 params['agent_id'] = self.agent_id
                 
+            logger.debug(f"Requesting whitelist from: {url}")
+            
             response = requests.get(
                 url, 
                 params=params,

@@ -58,13 +58,13 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
         except Exception:
             pass  # Index might not exist
         
-        # Create unique index on value field (excluding null values)
+        # ✅ SỬA: Sử dụng sparse index thay vì partial filter
         _whitelist_collection.create_index(
             [("value", 1)], 
             unique=True,
-            partialFilterExpression={"value": {"$ne": None}}
+            sparse=True  # Sparse index tự động loại trừ null/missing values
         )
-        logger.info("Created unique index on value field")
+        logger.info("Created unique sparse index on value field")
         
         # Create other indexes
         _whitelist_collection.create_index([("type", 1)])
@@ -73,9 +73,12 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
         _whitelist_collection.create_index([("added_date", DESCENDING)])
         _whitelist_collection.create_index([("expiry_date", 1)], sparse=True)
         
+        logger.info("All whitelist indexes created successfully")
+        
     except Exception as e:
         logger.error(f"Error creating indexes: {e}")
         # Continue without indexes if creation fails
+        logger.warning("Continuing without indexes - performance may be affected")
     
     app.register_blueprint(whitelist_bp, url_prefix='/api/whitelist')
     logger.info("Whitelist module initialized")
