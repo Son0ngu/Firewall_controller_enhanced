@@ -241,23 +241,23 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
- * ✅ Helper function to get status CSS class
+ * ✅ Helper function to get status CSS class - UPDATED
  */
 function getStatusClass(status) {
     switch (status) {
         case 'active':
-            return 'online';
+            return 'success';  // Green
         case 'inactive':
-            return 'inactive';
+            return 'warning';  // Yellow/Orange
         case 'offline':
-            return 'offline';
+            return 'danger';   // Red
         default:
-            return 'offline';
+            return 'secondary'; // Gray
     }
 }
 
 /**
- * ✅ Helper function to get status text
+ * ✅ Helper function to get status text - UPDATED
  */
 function getStatusText(status) {
     switch (status) {
@@ -273,17 +273,19 @@ function getStatusText(status) {
 }
 
 /**
- * ✅ Helper function to get platform icon
+ * ✅ Helper function to get status icon - UPDATED
  */
-function getPlatformIcon(platform) {
-    if (!platform) return 'desktop';
-    
-    const p = platform.toLowerCase();
-    if (p.includes('windows')) return 'windows';
-    if (p.includes('linux')) return 'linux';
-    if (p.includes('darwin') || p.includes('mac')) return 'apple';
-    if (p.includes('android')) return 'android';
-    return 'desktop';
+function getStatusIcon(status) {
+    switch (status) {
+        case 'active':
+            return 'check-circle';
+        case 'inactive':
+            return 'exclamation-triangle';
+        case 'offline':
+            return 'times-circle';
+        default:
+            return 'question-circle';
+    }
 }
 
 /**
@@ -335,7 +337,7 @@ async function loadAgents() {
 }
 
 /**
- * Update statistics cards
+ * ✅ Update statistics calculation - UPDATED
  */
 function updateStatistics() {
     const total = agentsData.length;
@@ -352,313 +354,8 @@ function updateStatistics() {
 }
 
 /**
- * Render agents list
+ * ✅ Enhanced agent rendering - UPDATED
  */
-function renderAgents(agents) {
-    const container = document.getElementById('agentsContainer');
-    
-    if (agents.length === 0) {
-        container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-laptop-code fa-3x text-muted mb-3"></i>
-                <h5>No Agents Registered</h5>
-                <p class="text-muted">No agents have been registered yet.</p>
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAgentModal">
-                    <i class="fas fa-plus me-1"></i>Add Your First Agent
-                </button>
-            </div>
-        `;
-        return;
-    }
-    
-    container.innerHTML = '';
-    
-    agents.forEach((agent, index) => {
-        const statusClass = getStatusClass(agent.status);
-        const statusText = getStatusText(agent.status);
-        const lastSeen = agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never';
-        const registeredDate = agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown';
-        
-        const agentElement = document.createElement('div');
-        agentElement.className = 'p-3 border-bottom';
-        agentElement.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center">
-                    <div class="me-3">
-                        <span class="agent-status ${statusClass}"></span>
-                    </div>
-                    <div>
-                        <h6 class="mb-1">
-                            <i class="fas fa-desktop me-2"></i>
-                            ${agent.hostname || 'Unknown Host'}
-                        </h6>
-                        <div class="d-flex align-items-center text-muted mb-1">
-                            <span class="badge bg-${statusClass === 'online' ? 'success' : statusClass === 'offline' ? 'danger' : 'warning'} me-2">
-                                ${statusText}
-                            </span>
-                            <small>
-                                <i class="fas fa-network-wired me-1"></i>
-                                ${agent.ip_address || 'Unknown IP'}
-                            </small>
-                        </div>
-                        <div class="d-flex align-items-center text-muted">
-                            <small class="me-3">
-                                <i class="fas fa-clock me-1"></i>
-                                Last seen: ${lastSeen}
-                            </small>
-                            <small>
-                                <i class="fas fa-calendar me-1"></i>
-                                Registered: ${registeredDate}
-                            </small>
-                        </div>
-                        ${agent.agent_version ? `
-                            <div class="mt-1">
-                                <small class="text-muted">
-                                    <i class="fas fa-code-branch me-1"></i>
-                                    Version: ${agent.agent_version}
-                                </small>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-                
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-primary" onclick="viewAgentDetails('${agent.agent_id}')" title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button type="button" class="btn btn-outline-info" onclick="pingAgent('${agent.agent_id}')" title="Ping Agent">
-                        <i class="fas fa-wifi"></i>
-                    </button>
-                    <button type="button" class="btn btn-outline-success" onclick="sendCommand('${agent.agent_id}')" title="Send Command">
-                        <i class="fas fa-terminal"></i>
-                    </button>
-                    <button type="button" class="btn btn-outline-danger" onclick="removeAgent('${agent.agent_id}')" title="Remove Agent">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-        
-        container.appendChild(agentElement);
-    });
-}
-
-/**
- * ✅ Ping agent
- */
-function pingAgent(agentId) {
-    const agent = agentsData.find(a => a.agent_id === agentId);
-    if (!agent) {
-        showNotification('danger', 'Agent not found');
-        return;
-    }
-    
-    showNotification('info', `Pinging ${agent.hostname}...`);
-    
-    // Send ping command
-    sendCommand(agentId, 'ping');
-}
-
-/**
- * ✅ Remove agent
- */
-function removeAgent(agentId) {
-    const agent = agentsData.find(a => a.agent_id === agentId);
-    if (!agent) {
-        showNotification('danger', 'Agent not found');
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to remove agent "${agent.hostname}"?`)) {
-        return;
-    }
-    
-    fetch(`/api/agents/${agentId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            throw new Error(data.error);
-        }
-        showNotification('success', `Agent "${agent.hostname}" removed successfully`);
-        loadAgents(); // Refresh the list
-    })
-    .catch(error => {
-        showNotification('danger', 'Failed to remove agent: ' + error.message);
-    });
-}
-
-/**
- * Send command to agent
- */
-function sendCommand(agentId, commandType = null) {
-    const agent = agentsData.find(a => a.agent_id === agentId);
-    if (!agent) {
-        showNotification('danger', 'Agent not found');
-        return;
-    }
-    
-    // Get command type if not provided
-    const command = commandType || prompt('Enter command type (e.g., "update_whitelist", "restart", "get_status"):');
-    if (!command) return;
-    
-    fetch(`/api/agents/${agentId}/command`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            command_type: command,
-            description: `Manual command: ${command}`
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            throw new Error(data.error);
-        }
-        showNotification('success', `Command "${command}" sent to ${agent.hostname}`);
-    })
-    .catch(error => {
-        showNotification('danger', 'Failed to send command: ' + error.message);
-    });
-}
-
-/**
- * View agent details
- */
-function viewAgentDetails(agentId) {
-    const agent = agentsData.find(a => a.agent_id === agentId);
-    if (!agent) {
-        showNotification('danger', 'Agent not found');
-        return;
-    }
-    
-    // Create detailed info modal content
-    const info = `
-Agent Details:
-
-ID: ${agent.agent_id}
-Hostname: ${agent.hostname || 'Unknown'}
-IP Address: ${agent.ip_address || 'Unknown'}
-Platform: ${agent.platform || 'Unknown'}
-OS Info: ${agent.os_info || 'Unknown'}
-Version: ${agent.agent_version || 'Unknown'}
-Status: ${getStatusText(agent.status)}
-Last Seen: ${agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never'}
-Registered: ${agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown'}
-User ID: ${agent.user_id || 'Unknown'}
-    `.trim();
-    
-    alert(info);
-}
-
-/**
- * Show notification
- */
-function showNotification(type, message) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 5000);
-}
-
-// ✅ Listen for real-time heartbeat updates
-socket.on('agent_heartbeat', function(data) {
-    console.log('Agent heartbeat received:', data);
-    
-    // Find and update agent status in real-time
-    const agentCard = document.querySelector(`[data-agent-id="${data.agent_id}"]`);
-    if (agentCard) {
-        // Update status badge
-        const statusBadge = agentCard.querySelector('.badge');
-        if (statusBadge) {
-            statusBadge.className = 'badge bg-success me-2';
-            statusBadge.innerHTML = '<i class="fas fa-check-circle me-1"></i>Active';
-        }
-        
-        // Update last seen time
-        const lastSeenElement = agentCard.querySelector('.last-seen');
-        if (lastSeenElement) {
-            lastSeenElement.textContent = 'Last seen: Just now';
-        }
-        
-        // Update metrics if available
-        if (data.metrics) {
-            const metricsElement = agentCard.querySelector('.metrics');
-            if (metricsElement) {
-                metricsElement.innerHTML = `
-                    <small class="text-muted">
-                        CPU: ${data.metrics.cpu_percent || 0}% | 
-                        RAM: ${data.metrics.memory_percent || 0}% | 
-                        Uptime: ${Math.round((data.metrics.uptime_seconds || 0) / 3600)}h
-                    </small>
-                `;
-            }
-        }
-    }
-    
-    // Update statistics counters
-    updateStatistics();
-});
-
-// ✅ Improved status calculation
-function getStatusBadge(agent) {
-    const now = new Date();
-    const lastHeartbeat = agent.last_heartbeat ? new Date(agent.last_heartbeat) : null;
-    
-    let statusClass, statusText, statusIcon;
-    
-    if (!lastHeartbeat) {
-        statusClass = 'danger';
-        statusText = 'Offline';
-        statusIcon = 'times-circle';
-    } else {
-        const minutesSince = (now - lastHeartbeat) / (1000 * 60);
-        
-        if (minutesSince <= 3) {
-            statusClass = 'success';
-            statusText = 'Active';
-            statusIcon = 'check-circle';
-        } else if (minutesSince <= 30) {
-            statusClass = 'warning';
-            statusText = 'Inactive';
-            statusIcon = 'exclamation-triangle';
-        } else {
-            statusClass = 'danger';
-            statusText = 'Offline';
-            statusIcon = 'times-circle';
-        }
-    }
-    
-    const timeAgo = lastHeartbeat ? 
-        `(${Math.round((now - lastHeartbeat) / (1000 * 60))}m ago)` : 
-        '(never)';
-    
-    return `
-        <span class="badge bg-${statusClass} d-flex align-items-center">
-            <i class="fas fa-${statusIcon} me-1"></i>
-            ${statusText}
-            <small class="ms-1">${timeAgo}</small>
-        </span>
-    `;
-}
-
-// ✅ Enhanced agent rendering with metrics
 function renderAgents(agents) {
     const container = document.getElementById('agentsContainer');
     
@@ -762,5 +459,24 @@ function renderAgents(agents) {
         container.appendChild(agentElement);
     });
 }
+
+// ✅ Update real-time heartbeat handler - SIMPLIFIED
+socket.on('agent_heartbeat', function(data) {
+    console.log('Agent heartbeat received:', data);
+    
+    // Update agent data in memory
+    const agentIndex = agentsData.findIndex(a => a.agent_id === data.agent_id);
+    if (agentIndex >= 0) {
+        // Update agent status and heartbeat info
+        agentsData[agentIndex].status = 'active';
+        agentsData[agentIndex].last_heartbeat = data.last_heartbeat;
+        agentsData[agentIndex].time_since_heartbeat = 0;
+        agentsData[agentIndex].metrics = data.metrics;
+        
+        // Re-render agents to reflect changes
+        renderAgents(agentsData);
+        updateStatistics();
+    }
+});
 </script>
 {% endblock %}
