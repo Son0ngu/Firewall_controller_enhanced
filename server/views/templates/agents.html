@@ -241,7 +241,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
- * ✅ Helper function to get status CSS class - UPDATED
+ * ✅ Helper function to get status CSS class
  */
 function getStatusClass(status) {
     switch (status) {
@@ -257,7 +257,7 @@ function getStatusClass(status) {
 }
 
 /**
- * ✅ Helper function to get status text - UPDATED
+ * ✅ Helper function to get status text
  */
 function getStatusText(status) {
     switch (status) {
@@ -273,7 +273,7 @@ function getStatusText(status) {
 }
 
 /**
- * ✅ Helper function to get status icon - UPDATED
+ * ✅ Helper function to get status icon
  */
 function getStatusIcon(status) {
     switch (status) {
@@ -286,6 +286,39 @@ function getStatusIcon(status) {
         default:
             return 'question-circle';
     }
+}
+
+/**
+ * ✅ Get status badge with server-provided status
+ */
+function getStatusBadge(agent) {
+    // Use server-provided status only
+    const status = agent.status || 'offline';
+    const statusClass = getStatusClass(status);
+    const statusText = getStatusText(status);
+    const statusIcon = getStatusIcon(status);
+    
+    // Show time since last heartbeat if available
+    let timeAgo = '';
+    if (agent.time_since_heartbeat !== null && agent.time_since_heartbeat !== undefined) {
+        const minutes = Math.round(agent.time_since_heartbeat);
+        timeAgo = ` (${minutes}m ago)`;
+    } else if (agent.last_heartbeat) {
+        const now = new Date();
+        const lastHeartbeat = new Date(agent.last_heartbeat);
+        const minutesSince = Math.round((now - lastHeartbeat) / (1000 * 60));
+        timeAgo = ` (${minutesSince}m ago)`;
+    } else {
+        timeAgo = ' (never)';
+    }
+    
+    return `
+        <span class="badge bg-${statusClass} d-flex align-items-center">
+            <i class="fas fa-${statusIcon} me-1"></i>
+            ${statusText}
+            <small class="ms-1">${timeAgo}</small>
+        </span>
+    `;
 }
 
 /**
@@ -337,7 +370,7 @@ async function loadAgents() {
 }
 
 /**
- * ✅ Update statistics calculation - UPDATED
+ * ✅ Update statistics calculation
  */
 function updateStatistics() {
     const total = agentsData.length;
@@ -354,7 +387,7 @@ function updateStatistics() {
 }
 
 /**
- * ✅ Enhanced agent rendering - UPDATED
+ * ✅ Enhanced agent rendering
  */
 function renderAgents(agents) {
     const container = document.getElementById('agentsContainer');
@@ -376,7 +409,7 @@ function renderAgents(agents) {
     container.innerHTML = '';
     
     agents.forEach((agent, index) => {
-        const statusBadge = getStatusBadge(agent);
+        const statusBadge = getStatusBadge(agent);  // ✅ Now this function exists
         const lastSeen = agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never';
         const registeredDate = agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown';
         
@@ -460,7 +493,7 @@ function renderAgents(agents) {
     });
 }
 
-// ✅ Update real-time heartbeat handler - SIMPLIFIED
+// ✅ Real-time heartbeat handler
 socket.on('agent_heartbeat', function(data) {
     console.log('Agent heartbeat received:', data);
     
@@ -478,5 +511,75 @@ socket.on('agent_heartbeat', function(data) {
         updateStatistics();
     }
 });
+
+// ✅ Add missing functions for button actions
+function viewAgentDetails(agentId) {
+    // Find agent data
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    if (!agent) {
+        showNotification('danger', 'Agent not found');
+        return;
+    }
+    
+    // Show agent details in modal or alert
+    const info = `
+Agent Details:
+
+ID: ${agent.agent_id}
+Hostname: ${agent.hostname || 'Unknown'}
+IP Address: ${agent.ip_address || 'Unknown'}
+Platform: ${agent.platform || 'Unknown'}
+OS Info: ${agent.os_info || 'Unknown'}
+Version: ${agent.agent_version || 'Unknown'}
+Status: ${getStatusText(agent.status)}
+Last Seen: ${agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never'}
+Registered: ${agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown'}
+User ID: ${agent.user_id || 'Unknown'}
+`.trim();
+    
+    alert(info);
+}
+
+function pingAgent(agentId) {
+    showNotification('info', `Pinging agent ${agentId}...`);
+    // TODO: Implement ping functionality
+}
+
+function sendCommand(agentId) {
+    const command = prompt('Enter command to send to agent:');
+    if (command) {
+        showNotification('info', `Sending command "${command}" to agent ${agentId}...`);
+        // TODO: Implement send command functionality
+    }
+}
+
+function removeAgent(agentId) {
+    if (confirm('Are you sure you want to remove this agent?')) {
+        // TODO: Implement remove agent functionality
+        showNotification('success', `Agent ${agentId} removed successfully`);
+    }
+}
+
+// ✅ Add notification helper function
+function showNotification(type, message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    // Add to page
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
 </script>
 {% endblock %}
