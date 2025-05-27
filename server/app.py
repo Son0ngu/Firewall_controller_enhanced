@@ -105,7 +105,7 @@ def create_app():
     
     # Services
     whitelist_service = WhitelistService(whitelist_model, socketio)
-    agent_service = AgentService(agent_model, db, socketio)
+    agent_service = AgentService(agent_model, socketio)  # ✅ FIXED: Remove db parameter
     log_service = LogService(log_model, socketio)
     
     # Controllers

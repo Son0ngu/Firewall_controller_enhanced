@@ -10,10 +10,9 @@ import pytz  # ✅ ADD TIMEZONE SUPPORT
 class WhitelistService:
     """Service class for whitelist business logic"""
     
-    def __init__(self, whitelist_model: WhitelistModel, socketio=None):
-        self.model = whitelist_model
+    def __init__(self, model, socketio=None):  # ✅ CORRECT: Only model and optional socketio
+        self.model = model
         self.socketio = socketio
-        # ✅ ADD TIMEZONE
         self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
     
     def _get_current_time(self):

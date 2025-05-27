@@ -11,12 +11,11 @@ import pytz  # ✅ ADD TIMEZONE SUPPORT
 class LogService:
     """Service class for log business logic"""
     
-    def __init__(self, log_model: LogModel, socketio=None):
+    def __init__(self, model, socketio=None):  # ✅ CORRECT: Only model and optional socketio
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.model = log_model
+        self.model = model
         self.socketio = socketio
-        # ✅ ADD TIMEZONE
-        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')
     
     def _get_current_time(self):
         """Get current time in configured timezone"""
