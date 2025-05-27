@@ -104,6 +104,15 @@ DEFAULT_CONFIG = {
         "create_allow_rules": False,  # ✅ THÊM: Có tạo allow rules hay không
     },
     
+    # Cấu hình heartbeat
+    "heartbeat": {
+        "enabled": True,          # Enable heartbeat
+        "interval": 60,           # Send heartbeat every 60 seconds
+        "timeout": 10,            # Heartbeat request timeout
+        "retry_interval": 30,     # Retry interval if heartbeat fails
+        "max_failures": 5         # Max consecutive failures before giving up
+    },
+    
     # Cấu hình chung
     "general": {
         "agent_name": "",  # Tên của agent, tự động tạo nếu để trống

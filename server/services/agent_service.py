@@ -109,10 +109,34 @@ class AgentService:
             self.logger.error(f"Agent registration failed: {e}")
             raise
     
+    def _calculate_agent_status(self, agent: Dict, current_time: datetime) -> str:
+        """
+        Calculate real-time agent status based on last heartbeat
+        
+        Status Logic:
+        - active: Last heartbeat within 3 minutes
+        - inactive: Last heartbeat 3-30 minutes ago
+        - offline: Last heartbeat > 30 minutes ago or never
+        """
+        last_heartbeat = agent.get("last_heartbeat")
+        
+        if not last_heartbeat:
+            return "offline"  # Never sent heartbeat
+        
+        # Calculate time difference in minutes
+        time_diff = (current_time - last_heartbeat).total_seconds() / 60
+        
+        if time_diff <= self.inactive_threshold:  # 3 minutes
+            return "active"
+        elif time_diff <= (self.inactive_threshold * 10):  # 30 minutes
+            return "inactive"
+        else:
+            return "offline"
+
     def process_heartbeat(self, agent_id: str, token: str, heartbeat_data: Dict, client_ip: str) -> Dict:
-        """Process agent heartbeat"""
+        """Process agent heartbeat with enhanced validation"""
         try:
-            # ✅ Validate agent using model only
+            # Validate agent and token
             agent = self.model.find_by_agent_id(agent_id)
             if not agent:
                 raise ValueError("Unknown agent")
@@ -120,27 +144,45 @@ class AgentService:
             if agent.get("agent_token") != token:
                 raise ValueError("Invalid token")
             
-            # ✅ Update agent record using model only
-            heartbeat_data["client_ip"] = client_ip
-            self.model.update_heartbeat(agent_id, heartbeat_data)
+            # Update heartbeat with comprehensive data
+            update_data = {
+                "client_ip": client_ip,
+                "metrics": heartbeat_data.get("metrics", {}),
+                "status": heartbeat_data.get("status", "active"),
+                "agent_version": heartbeat_data.get("agent_version"),
+                "last_heartbeat_data": heartbeat_data,
+                "platform": heartbeat_data.get("platform"),
+                "os_info": heartbeat_data.get("os_info")
+            }
             
-            # Emit SocketIO event
+            success = self.model.update_heartbeat(agent_id, update_data)
+            
+            if not success:
+                raise ValueError("Failed to update heartbeat")
+            
+            # Emit real-time status update
             if self.socketio:
                 self.socketio.emit("agent_heartbeat", {
                     "agent_id": agent_id,
                     "hostname": agent.get("hostname"),
-                    "status": heartbeat_data.get("status", "active"),
-                    "timestamp": datetime.utcnow().isoformat()
+                    "status": "active",
+                    "last_heartbeat": datetime.utcnow().isoformat(),
+                    "metrics": heartbeat_data.get("metrics", {}),
+                    "client_ip": client_ip
                 })
             
+            self.logger.debug(f"✅ Heartbeat processed for agent: {agent_id}")
+            
             return {
-                "status": "success",
-                "message": "Heartbeat received",
+                "agent_id": agent_id,
+                "status": "active",
+                "next_heartbeat": int((datetime.utcnow().timestamp() + 60) * 1000),  # Next heartbeat time in ms
+                "server_commands": [],  # TODO: Return pending commands
                 "server_time": datetime.utcnow().isoformat()
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing heartbeat for agent {agent_id}: {e}")
+            self.logger.error(f"Heartbeat processing failed: {e}")
             raise
     
     def get_agents(self, filters: Dict = None, limit: int = 100, skip: int = 0) -> Dict:

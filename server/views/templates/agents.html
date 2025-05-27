@@ -576,5 +576,191 @@ function showNotification(type, message) {
         }
     }, 5000);
 }
+
+// ✅ Listen for real-time heartbeat updates
+socket.on('agent_heartbeat', function(data) {
+    console.log('Agent heartbeat received:', data);
+    
+    // Find and update agent status in real-time
+    const agentCard = document.querySelector(`[data-agent-id="${data.agent_id}"]`);
+    if (agentCard) {
+        // Update status badge
+        const statusBadge = agentCard.querySelector('.badge');
+        if (statusBadge) {
+            statusBadge.className = 'badge bg-success me-2';
+            statusBadge.innerHTML = '<i class="fas fa-check-circle me-1"></i>Active';
+        }
+        
+        // Update last seen time
+        const lastSeenElement = agentCard.querySelector('.last-seen');
+        if (lastSeenElement) {
+            lastSeenElement.textContent = 'Last seen: Just now';
+        }
+        
+        // Update metrics if available
+        if (data.metrics) {
+            const metricsElement = agentCard.querySelector('.metrics');
+            if (metricsElement) {
+                metricsElement.innerHTML = `
+                    <small class="text-muted">
+                        CPU: ${data.metrics.cpu_percent || 0}% | 
+                        RAM: ${data.metrics.memory_percent || 0}% | 
+                        Uptime: ${Math.round((data.metrics.uptime_seconds || 0) / 3600)}h
+                    </small>
+                `;
+            }
+        }
+    }
+    
+    // Update statistics counters
+    updateStatistics();
+});
+
+// ✅ Improved status calculation
+function getStatusBadge(agent) {
+    const now = new Date();
+    const lastHeartbeat = agent.last_heartbeat ? new Date(agent.last_heartbeat) : null;
+    
+    let statusClass, statusText, statusIcon;
+    
+    if (!lastHeartbeat) {
+        statusClass = 'danger';
+        statusText = 'Offline';
+        statusIcon = 'times-circle';
+    } else {
+        const minutesSince = (now - lastHeartbeat) / (1000 * 60);
+        
+        if (minutesSince <= 3) {
+            statusClass = 'success';
+            statusText = 'Active';
+            statusIcon = 'check-circle';
+        } else if (minutesSince <= 30) {
+            statusClass = 'warning';
+            statusText = 'Inactive';
+            statusIcon = 'exclamation-triangle';
+        } else {
+            statusClass = 'danger';
+            statusText = 'Offline';
+            statusIcon = 'times-circle';
+        }
+    }
+    
+    const timeAgo = lastHeartbeat ? 
+        `(${Math.round((now - lastHeartbeat) / (1000 * 60))}m ago)` : 
+        '(never)';
+    
+    return `
+        <span class="badge bg-${statusClass} d-flex align-items-center">
+            <i class="fas fa-${statusIcon} me-1"></i>
+            ${statusText}
+            <small class="ms-1">${timeAgo}</small>
+        </span>
+    `;
+}
+
+// ✅ Enhanced agent rendering with metrics
+function renderAgents(agents) {
+    const container = document.getElementById('agentsContainer');
+    
+    if (agents.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-laptop-code fa-3x text-muted mb-3"></i>
+                <h5>No Agents Registered</h5>
+                <p class="text-muted">No agents have been registered yet.</p>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAgentModal">
+                    <i class="fas fa-plus me-1"></i>Add Your First Agent
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    agents.forEach((agent, index) => {
+        const statusBadge = getStatusBadge(agent);
+        const lastSeen = agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never';
+        const registeredDate = agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown';
+        
+        // Build metrics display
+        let metricsHtml = '';
+        if (agent.metrics) {
+            const m = agent.metrics;
+            metricsHtml = `
+                <div class="mt-1 metrics">
+                    <small class="text-muted">
+                        <i class="fas fa-microchip me-1"></i>CPU: ${m.cpu_percent || 0}% |
+                        <i class="fas fa-memory me-1"></i>RAM: ${m.memory_percent || 0}% |
+                        <i class="fas fa-clock me-1"></i>Uptime: ${Math.round((m.uptime_seconds || 0) / 3600)}h |
+                        <i class="fas fa-wifi me-1"></i>Connections: ${m.network_connections || 0}
+                    </small>
+                </div>
+            `;
+        }
+        
+        const agentElement = document.createElement('div');
+        agentElement.className = 'p-3 border-bottom';
+        agentElement.setAttribute('data-agent-id', agent.agent_id);
+        agentElement.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-desktop fa-2x text-primary"></i>
+                    </div>
+                    <div>
+                        <h6 class="mb-1">
+                            <i class="fas fa-server me-2"></i>
+                            ${agent.hostname || 'Unknown Host'}
+                        </h6>
+                        <div class="d-flex align-items-center text-muted mb-1">
+                            ${statusBadge}
+                            <small class="ms-2">
+                                <i class="fas fa-network-wired me-1"></i>
+                                ${agent.ip_address || 'Unknown IP'}
+                            </small>
+                        </div>
+                        <div class="d-flex align-items-center text-muted">
+                            <small class="me-3 last-seen">
+                                <i class="fas fa-clock me-1"></i>
+                                Last seen: ${lastSeen}
+                            </small>
+                            <small>
+                                <i class="fas fa-calendar me-1"></i>
+                                Registered: ${registeredDate}
+                            </small>
+                        </div>
+                        ${agent.agent_version ? `
+                            <div class="mt-1">
+                                <small class="text-muted">
+                                    <i class="fas fa-code-branch me-1"></i>
+                                    Version: ${agent.agent_version}
+                                </small>
+                            </div>
+                        ` : ''}
+                        ${metricsHtml}
+                    </div>
+                </div>
+                
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-primary" onclick="viewAgentDetails('${agent.agent_id}')" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-info" onclick="pingAgent('${agent.agent_id}')" title="Ping Agent">
+                        <i class="fas fa-wifi"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-success" onclick="sendCommand('${agent.agent_id}')" title="Send Command">
+                        <i class="fas fa-terminal"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="removeAgent('${agent.agent_id}')" title="Remove Agent">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(agentElement);
+    });
+}
 </script>
 {% endblock %}

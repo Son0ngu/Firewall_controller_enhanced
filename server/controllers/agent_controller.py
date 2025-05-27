@@ -23,6 +23,7 @@ class AgentController:
     def _register_routes(self):
         """Register routes for this controller"""
         self.blueprint.add_url_rule('/register', 'register_agent', self.register_agent, methods=['POST'])
+        self.blueprint.add_url_rule('/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])  # ✅ Add heartbeat route
         self.blueprint.add_url_rule('', 'list_agents', self.list_agents, methods=['GET'])
         self.blueprint.add_url_rule('/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
         self.blueprint.add_url_rule('/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
@@ -126,11 +127,15 @@ class AgentController:
             
             # Broadcast heartbeat via SocketIO
             if self.socketio:
+                agent = self.model.find_by_agent_id(data['agent_id'])
                 self.socketio.emit("agent_heartbeat", {
                     "agent_id": data['agent_id'],
-                    "user_id": client_ip,
-                    "status": data.get("status", "active"),
-                    "timestamp": result["server_time"]
+                    "hostname": agent.get("hostname") if agent else "Unknown",
+                    "status": "active",
+                    "last_heartbeat": datetime.utcnow().isoformat(),
+                    "metrics": data.get("metrics", {}),
+                    "client_ip": client_ip,
+                    "timestamp": datetime.utcnow().isoformat()
                 })
             
             return self._success_response(result)
