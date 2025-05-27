@@ -233,6 +233,10 @@ def register_main_routes(app):
         """Endpoint để tạo sample data trực tiếp trên server"""
         try:
             sample_entries = [
+                # ✅ THÊM: Server domain để agent không bị warning
+                {"type": "domain", "value": "firewall-controller-vu7f.onrender.com", "category": "system", "notes": "Firewall Controller Server", "priority": "critical"},
+                {"type": "domain", "value": "*.onrender.com", "category": "cloud", "notes": "Render platform", "priority": "high"},
+                
                 # Essential domains
                 {"type": "domain", "value": "google.com", "category": "search", "notes": "Google search engine", "priority": "high"},
                 {"type": "domain", "value": "*.google.com", "category": "search", "notes": "All Google services", "priority": "high"},
@@ -248,6 +252,9 @@ def register_main_routes(app):
                 {"type": "ip", "value": "8.8.8.8", "category": "dns", "notes": "Google DNS Primary", "priority": "high"},
                 {"type": "ip", "value": "8.8.4.4", "category": "dns", "notes": "Google DNS Secondary", "priority": "high"},
                 {"type": "ip", "value": "1.1.1.1", "category": "dns", "notes": "Cloudflare DNS", "priority": "high"},
+                
+                # Server IP (Render)
+                {"type": "ip", "value": "216.24.57.252", "category": "system", "notes": "Render server IP", "priority": "critical"},
                 
                 # API endpoints
                 {"type": "url", "value": "https://api.github.com/*", "category": "api", "notes": "GitHub API endpoints", "priority": "normal"},
