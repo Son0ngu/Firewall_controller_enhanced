@@ -321,26 +321,3 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
 
 # Khởi tạo biến cấu hình toàn cục
 _config = None
-
-
-# Ví dụ sử dụng (khi chạy file này trực tiếp)
-if __name__ == "__main__":
-    # Cấu hình logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Tải cấu hình
-    config = get_config()
-    
-    # In cấu hình
-    print("Current configuration:")
-    print(json.dumps(config, indent=2))
-    
-    # Ví dụ: Cập nhật và lưu cấu hình
-    if len(sys.argv) > 1 and sys.argv[1] == "--save-example":
-        config["server"]["url"] = "https://example.com/api"
-        config["auth"]["api_key"] = "example_key"
-        save_config(config, "example_config.json")
-        print("Example configuration saved to example_config.json")

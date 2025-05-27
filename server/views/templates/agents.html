@@ -241,6 +241,59 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
+ * ✅ Helper function to get status CSS class
+ */
+function getStatusClass(status) {
+    switch (status) {
+        case 'active':
+            return 'online';
+        case 'inactive':
+            return 'inactive';
+        case 'offline':
+            return 'offline';
+        default:
+            return 'offline';
+    }
+}
+
+/**
+ * ✅ Helper function to get status text
+ */
+function getStatusText(status) {
+    switch (status) {
+        case 'active':
+            return 'Active';
+        case 'inactive':
+            return 'Inactive';
+        case 'offline':
+            return 'Offline';
+        default:
+            return 'Unknown';
+    }
+}
+
+/**
+ * ✅ Helper function to get platform icon
+ */
+function getPlatformIcon(platform) {
+    if (!platform) return 'desktop';
+    
+    const p = platform.toLowerCase();
+    if (p.includes('windows')) return 'windows';
+    if (p.includes('linux')) return 'linux';
+    if (p.includes('darwin') || p.includes('mac')) return 'apple';
+    if (p.includes('android')) return 'android';
+    return 'desktop';
+}
+
+/**
+ * ✅ Refresh agents - wrapper for loadAgents
+ */
+function refreshAgents() {
+    loadAgents();
+}
+
+/**
  * Load agents from API
  */
 async function loadAgents() {
@@ -397,17 +450,63 @@ function renderAgents(agents) {
 }
 
 /**
- * Send command to agent
+ * ✅ Ping agent
  */
-function sendCommand(agentId) {
+function pingAgent(agentId) {
     const agent = agentsData.find(a => a.agent_id === agentId);
     if (!agent) {
         showNotification('danger', 'Agent not found');
         return;
     }
     
-    // Simple command for now
-    const command = prompt('Enter command type (e.g., "update_whitelist", "restart", "get_status"):');
+    showNotification('info', `Pinging ${agent.hostname}...`);
+    
+    // Send ping command
+    sendCommand(agentId, 'ping');
+}
+
+/**
+ * ✅ Remove agent
+ */
+function removeAgent(agentId) {
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    if (!agent) {
+        showNotification('danger', 'Agent not found');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to remove agent "${agent.hostname}"?`)) {
+        return;
+    }
+    
+    fetch(`/api/agents/${agentId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        showNotification('success', `Agent "${agent.hostname}" removed successfully`);
+        loadAgents(); // Refresh the list
+    })
+    .catch(error => {
+        showNotification('danger', 'Failed to remove agent: ' + error.message);
+    });
+}
+
+/**
+ * Send command to agent
+ */
+function sendCommand(agentId, commandType = null) {
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    if (!agent) {
+        showNotification('danger', 'Agent not found');
+        return;
+    }
+    
+    // Get command type if not provided
+    const command = commandType || prompt('Enter command type (e.g., "update_whitelist", "restart", "get_status"):');
     if (!command) return;
     
     fetch(`/api/agents/${agentId}/command`, {

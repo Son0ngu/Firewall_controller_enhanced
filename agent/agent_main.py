@@ -93,6 +93,11 @@ def initialize_components():
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
         
+        # ✅ SỬA: Đảm bảo config đã được load
+        if not config:
+            logger.error("Config chưa được khởi tạo!")
+            raise ValueError("Config is required")
+        
         # Get local IP address
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -101,7 +106,7 @@ def initialize_components():
         except:
             local_ip = "127.0.0.1"
         
-        # ✅ SỬA: Đăng ký agent với server trước
+        # ✅ SỬA: Đăng ký agent với server trước khi khởi tạo components
         agent_info = {
             "hostname": socket.gethostname(),
             "ip_address": local_ip,
@@ -113,20 +118,33 @@ def initialize_components():
         # Đăng ký với server
         try:
             import requests
-            register_url = f"{config['server']['url'].rstrip('/')}/agents/register"
+            register_url = f"{config['server']['url'].rstrip('/')}/api/agents/register"  # ✅ Thêm /api
+            logger.info(f"Registering agent with server: {register_url}")
+            
             response = requests.post(register_url, json=agent_info, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"Agent registered successfully with ID: {data.get('agent_id')}")
-                # Lưu agent_id và token vào config để sử dụng sau
-                config['agent_id'] = data.get('agent_id')
-                config['agent_token'] = data.get('token')
+                if data.get('success'):
+                    agent_data = data.get('data', {})
+                    logger.info(f"✅ Agent registered successfully with ID: {agent_data.get('agent_id')}")
+                    
+                    # ✅ Lưu agent_id và token vào config để sử dụng sau
+                    config['agent_id'] = agent_data.get('agent_id')
+                    config['agent_token'] = agent_data.get('token')
+                    config['user_id'] = agent_data.get('user_id')
+                    
+                    logger.info(f"Agent token: {config['agent_token'][:8]}...")
+                else:
+                    logger.warning(f"Registration failed: {data.get('error', 'Unknown error')}")
             else:
-                logger.warning(f"Failed to register agent: {response.status_code}")
+                logger.warning(f"Failed to register agent: HTTP {response.status_code}")
+                logger.warning(f"Response: {response.text}")
+        except requests.exceptions.ConnectionError:
+            logger.warning("Could not connect to server - agent will run without registration")
         except Exception as e:
             logger.warning(f"Could not register with server: {e}")
         
-        # Initialize whitelist với updated config
+        # ✅ Initialize whitelist với updated config
         whitelist = WhitelistManager(config)
         logger.info(f"Whitelist initialized for agent: {local_ip}")
         
@@ -151,6 +169,12 @@ def initialize_components():
             "max_queue_size": config["logging"]["sender"]["max_queue_size"],
             "send_interval": config["logging"]["sender"]["send_interval"]
         }
+        
+        # ✅ Thêm agent credentials vào log sender config
+        if config.get('agent_id') and config.get('agent_token'):
+            log_sender_config["agent_id"] = config['agent_id']
+            log_sender_config["agent_token"] = config['agent_token']
+        
         log_sender = LogSender(log_sender_config)
         log_sender.start()  # Bắt đầu luồng gửi log
         logger.info("Log sender đã khởi tạo và bắt đầu")
@@ -160,7 +184,7 @@ def initialize_components():
         packet_sniffer.start()  # Bắt đầu bắt gói tin
         logger.info("Packet sniffer đã khởi tạo và bắt đầu")
         
-        logger.info("Tất cả các thành phần của agent đã khởi tạo thành công")
+        logger.info("✅ Tất cả các thành phần của agent đã khởi tạo thành công")
         
     except Exception as e:
         # Ghi log nếu có lỗi trong quá trình khởi tạo
@@ -233,8 +257,10 @@ def main():
     global config, running
     
     try:
-        # Tải cấu hình từ file/environment
+        # ✅ SỬA: Tải cấu hình trước tiên
+        logger.info("Loading agent configuration...")
         config = get_config()
+        logger.info("✅ Configuration loaded successfully")
         
         # Áp dụng độ trễ khởi động nếu được cấu hình
         startup_delay = config["general"]["startup_delay"]
@@ -255,10 +281,9 @@ def main():
         initialize_components()
         
         # Gửi log thông báo khởi động
-        if log_sender:
-            import socket
-            import platform
+        if log_sender and config.get('agent_id'):
             startup_log = {
+                "agent_id": config['agent_id'],  # ✅ Thêm agent_id
                 "event_type": "agent_startup",  # Loại sự kiện: khởi động agent
                 "hostname": socket.gethostname(),  # Tên máy
                 "os": f"{platform.system()} {platform.version()}",  # Thông tin hệ điều hành

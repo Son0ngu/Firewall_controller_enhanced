@@ -420,33 +420,3 @@ class PacketSniffer:
         # Nếu vượt qua tất cả kiểm tra, hostname được coi là hợp lệ
         return True
 
-
-# Phần code kiểm thử - chỉ chạy khi file được thực thi trực tiếp
-if __name__ == "__main__":
-    # Cấu hình hệ thống ghi log
-    logging.basicConfig(
-        level=logging.INFO,  # Ghi log từ mức INFO trở lên
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Định dạng log
-    )
-    
-    # Định nghĩa hàm callback đơn giản để kiểm thử
-    # Hàm này sẽ được gọi mỗi khi phát hiện tên miền trong lưu lượng mạng
-    def domain_callback(record):
-        print(f"Detected domain: {record['domain']} (IP: {record['dest_ip']}:{record['dest_port']})")
-    
-    # Tạo và khởi động bộ bắt gói tin
-    sniffer = PacketSniffer(callback=domain_callback)
-    
-    try:
-        sniffer.start()
-        
-        # Giữ script chạy cho đến khi người dùng nhấn Ctrl+C
-        print("Sniffer running. Press Ctrl+C to stop...")
-        while True:
-            time.sleep(1)  # Tạm dừng 1 giây để giảm tải CPU
-    except KeyboardInterrupt:
-        # Bắt sự kiện người dùng nhấn Ctrl+C
-        print("Stopping sniffer...")
-    finally:
-        # Đảm bảo dừng sniffer dù có lỗi xảy ra
-        sniffer.stop()
