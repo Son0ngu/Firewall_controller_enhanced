@@ -89,6 +89,9 @@ def create_app(config_object=None):
         # Continue anyway for now
         mongo_client = MongoClient(mongo_uri)
     
+    # ✅ FIXED: Store mongo_client in app context for use in API endpoints
+    app.mongo_client = mongo_client
+    
     # Initialize modules with error handling
     try:
         users.init_app(app, mongo_client, socketio)
@@ -114,6 +117,9 @@ def create_app(config_object=None):
     except Exception as e:
         app.logger.error(f"Failed to initialize agents module: {e}")
     
+    # ✅ FIXED: Register agent API endpoints BEFORE error handlers
+    register_agent_api_routes(app)
+    
     # Register error handlers
     register_error_handlers(app)
     
@@ -138,14 +144,210 @@ def create_app(config_object=None):
     app.logger.info("Application initialized successfully")
     return app, socketio
 
+def register_agent_api_routes(app):
+    """✅ FIXED: Register API routes for agent communication."""
+    
+    # Sample whitelist data - replace with database queries later
+    SAMPLE_WHITELIST = {
+        "domains": [
+            "google.com",
+            "github.com", 
+            "stackoverflow.com",
+            "microsoft.com",
+            "python.org",
+            "pypi.org",
+            "openai.com",
+            "cloudflare.com",
+            "amazonaws.com",
+            "windowsupdate.microsoft.com",
+            "update.microsoft.com",
+            "download.microsoft.com",
+            "live.com",
+            "office.com",
+            "azure.com"
+        ]
+    }
+    
+    @app.route('/api/whitelist/agent-sync', methods=['GET'])
+    def agent_sync():
+        """
+        Agent whitelist sync endpoint - returns domains for agent
+        This is the endpoint your agent is trying to connect to
+        """
+        try:
+            # Get query parameters
+            since = request.args.get('since')
+            agent_id = request.args.get('agent_id', 'unknown')
+            
+            app.logger.info(f"🔄 Agent sync request from {agent_id}, since: {since}")
+            
+            # Try to get whitelist from database, fallback to sample
+            try:
+                db = app.mongo_client.get_database('firewall_controller')
+                whitelist_collection = db.whitelist
+                
+                # Get active domains from database
+                whitelist_docs = list(whitelist_collection.find({
+                    "status": "active",
+                    "type": "domain"
+                }))
+                
+                if whitelist_docs:
+                    domains = [doc.get("value", doc.get("domain", "")) for doc in whitelist_docs if doc.get("value") or doc.get("domain")]
+                    app.logger.info(f"📋 Loaded {len(domains)} domains from database")
+                else:
+                    domains = SAMPLE_WHITELIST["domains"]
+                    app.logger.info(f"📋 Using sample whitelist: {len(domains)} domains")
+                    
+            except Exception as db_error:
+                app.logger.warning(f"Database error, using sample whitelist: {db_error}")
+                domains = SAMPLE_WHITELIST["domains"]
+            
+            # Clean up domains (remove empty strings)
+            domains = [d.strip() for d in domains if d and d.strip()]
+            
+            response_data = {
+                "domains": domains,
+                "timestamp": datetime.utcnow().isoformat(),
+                "count": len(domains),
+                "type": "full"
+            }
+            
+            app.logger.info(f"✅ Returning {len(domains)} domains to agent {agent_id}")
+            return jsonify(response_data), 200
+            
+        except Exception as e:
+            app.logger.error(f"❌ Error in agent sync: {str(e)}")
+            return jsonify({
+                "error": "Sync failed", 
+                "domains": SAMPLE_WHITELIST["domains"],  # Fallback
+                "message": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }), 500
+    
+    @app.route('/api/logs', methods=['POST'])
+    def receive_agent_logs():
+        """
+        Receive logs from agents
+        Accepts batch of log entries from the firewall agent
+        """
+        try:
+            logs_data = request.get_json()
+            
+            if not logs_data or not isinstance(logs_data, list):
+                app.logger.warning("Invalid logs data received")
+                return jsonify({
+                    "success": False,
+                    "error": "Expected array of log entries"
+                }), 400
+            
+            app.logger.info(f"📊 Received {len(logs_data)} log entries from agent")
+            
+            # Try to save to database
+            try:
+                db = app.mongo_client.get_database('firewall_controller')
+                logs_collection = db.logs
+                
+                # Add server timestamp to each log
+                for log_entry in logs_data:
+                    log_entry['server_received_at'] = datetime.utcnow()
+                    
+                    # Log interesting events
+                    event_type = log_entry.get('event_type', 'unknown')
+                    domain = log_entry.get('domain', 'N/A')
+                    action = log_entry.get('action', 'N/A')
+                    
+                    if event_type in ['domain_blocked', 'domain_allowed']:
+                        app.logger.info(f"  🔍 {event_type}: {domain} -> {action}")
+                    elif event_type == 'agent_stats':
+                        uptime = log_entry.get('uptime_seconds', 0)
+                        packets = log_entry.get('packets_processed', 0)
+                        app.logger.info(f"  📈 Agent stats: uptime={uptime}s, packets={packets}")
+                
+                # Insert logs to database
+                if logs_data:
+                    result = logs_collection.insert_many(logs_data)
+                    app.logger.info(f"💾 Saved {len(result.inserted_ids)} logs to database")
+                
+            except Exception as db_error:
+                app.logger.error(f"Database error saving logs: {db_error}")
+                # Continue even if database save fails
+            
+            return jsonify({
+                "success": True,
+                "received": len(logs_data),
+                "timestamp": datetime.utcnow().isoformat()
+            }), 200
+            
+        except Exception as e:
+            app.logger.error(f"❌ Error receiving logs: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": "Internal server error",
+                "message": str(e)
+            }), 500
+    
+    @app.route('/api/agent/register', methods=['POST'])
+    def register_agent():
+        """Register a new agent or update existing agent info"""
+        try:
+            agent_data = request.get_json() or {}
+            
+            agent_info = {
+                "agent_id": agent_data.get('agent_id', 'unknown'),
+                "hostname": agent_data.get('hostname', 'unknown'),
+                "os": agent_data.get('os', 'unknown'),
+                "version": agent_data.get('version', '1.0'),
+                "ip_address": request.remote_addr,
+                "registered_at": datetime.utcnow(),
+                "last_seen": datetime.utcnow(),
+                "status": "active"
+            }
+            
+            try:
+                db = app.mongo_client.get_database('firewall_controller')
+                agents_collection = db.agents
+                
+                # Upsert agent info
+                agents_collection.update_one(
+                    {"agent_id": agent_info["agent_id"]},
+                    {"$set": agent_info},
+                    upsert=True
+                )
+                
+                app.logger.info(f"✅ Agent registered/updated: {agent_info['agent_id']} from {request.remote_addr}")
+                
+            except Exception as db_error:
+                app.logger.error(f"Database error registering agent: {db_error}")
+            
+            return jsonify({
+                "success": True,
+                "message": "Agent registered successfully",
+                "agent_id": agent_info['agent_id'],
+                "timestamp": datetime.utcnow().isoformat()
+            }), 200
+            
+        except Exception as e:
+            app.logger.error(f"❌ Error registering agent: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": "Registration failed",
+                "message": str(e)
+            }), 500
+
 def register_error_handlers(app):
     """Register custom error handlers for the application."""
     
     @app.errorhandler(404)
     def not_found(e):
-        app.logger.warning(f"404 Error: {request.path} not found")
+        app.logger.warning(f"404 Error: {request.path} not found - Method: {request.method}")
         if request.path.startswith('/api/'):
-            return jsonify({"error": "Not found", "message": "API endpoint not found"}), 404
+            return jsonify({
+                "error": "Not found", 
+                "message": "API endpoint not found",
+                "path": request.path,
+                "method": request.method
+            }), 404
         else:
             return render_template('404.html'), 404
     
@@ -153,7 +355,10 @@ def register_error_handlers(app):
     def server_error(e):
         app.logger.error(f"Server error: {str(e)}")
         if request.path.startswith('/api/'):
-            return jsonify({"error": "Internal server error", "message": "An internal error occurred"}), 500
+            return jsonify({
+                "error": "Internal server error", 
+                "message": "An internal error occurred"
+            }), 500
         else:
             return render_template('500.html'), 500
 
@@ -204,19 +409,23 @@ def register_main_routes(app):
     def health_check():
         """Health check endpoint."""
         try:
-            return jsonify({
-                "status": "healthy",
-                "version": "1.0.0",
-                "timestamp": datetime.utcnow().isoformat(),
-                "database": "connected"
-            }), 200
-        except Exception as e:
-            return jsonify({
-                "status": "unhealthy",
-                "version": "1.0.0",
-                "timestamp": datetime.utcnow().isoformat(),
-                "error": str(e)
-            }), 503
+            # Test database connection
+            app.mongo_client.admin.command('ping')
+            db_status = "connected"
+        except:
+            db_status = "disconnected"
+            
+        return jsonify({
+            "status": "healthy",
+            "version": "1.0.0",
+            "timestamp": datetime.utcnow().isoformat(),
+            "database": db_status,
+            "endpoints": {
+                "agent_sync": "/api/whitelist/agent-sync",
+                "logs": "/api/logs",
+                "register": "/api/agent/register"
+            }
+        }), 200
     
     @app.route('/api/config')
     def get_client_config():
@@ -256,9 +465,14 @@ if __name__ == "__main__":
     debug = os.environ.get('FLASK_ENV') == 'development'
     
     # Start server
-    logger.info(f"Starting Firewall Controller Server on {host}:{port}")
+    logger.info(f"🚀 Starting Firewall Controller Server on {host}:{port}")
     logger.info(f"Debug mode: {debug}")
     logger.info("No authentication required - all endpoints are public")
+    logger.info("📡 Agent API endpoints:")
+    logger.info("  - GET  /api/whitelist/agent-sync")
+    logger.info("  - POST /api/logs")
+    logger.info("  - POST /api/agent/register")
+    logger.info("  - GET  /api/health")
     
     try:
         socketio.run(
