@@ -4,7 +4,7 @@ from log_sender import LogSender
 
 # Cấu hình LogSender
 config = {
-    "server_url": "http://localhost:5000",
+    "server_url": "https://firewall-controller-vu7f.onrender.com",
     "batch_size": 10,
     "send_interval": 5
 }

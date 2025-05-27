@@ -337,7 +337,7 @@ if __name__ == "__main__":
     # Config đơn giản cho test
     test_config = {
         "server": {
-            "url": "http://localhost:5000"
+            "url": "https://firewall-controller-vu7f.onrender.com"
         },
         "whitelist": {
             "update_interval": 30,

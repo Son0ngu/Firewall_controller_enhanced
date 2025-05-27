@@ -42,7 +42,7 @@ CONFIG_PATHS = [
 DEFAULT_CONFIG = {
     # Cấu hình kết nối đến server
     "server": {
-        "url": "http://localhost:5000/api",  # URL cơ sở của API server
+        "url": "https://firewall-controller-vu7f.onrender.com/api",  # URL cơ sở của API server
         "connect_timeout": 10,  # Thời gian chờ kết nối tối đa (giây)
         "read_timeout": 30,  # Thời gian chờ đọc dữ liệu tối đa (giây)
         "retry_interval": 60,  # Thời gian chờ giữa các lần thử lại (giây)
