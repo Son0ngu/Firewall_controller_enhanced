@@ -142,7 +142,7 @@ class WhitelistManager:
                 url, 
                 params=params,
                 timeout=self.timeout,
-                headers={'User-Agent': 'FirewallController-Agent/1.0'}
+                headers={'User-Agent': 'FirewallController-Agent/0.1'}
             )
             
             if response.status_code == 200:
@@ -299,31 +299,6 @@ class WhitelistManager:
                 logger.error(f"Error in update loop: {e}")
                 time.sleep(self.retry_interval)
     
-    def _create_minimal_whitelist(self):
-        """Tạo whitelist tối thiểu khi không thể kết nối server"""
-        minimal_domains = {
-            # Essential services
-            "google.com", "www.google.com",
-            "microsoft.com", "www.microsoft.com", 
-            "github.com", "api.github.com",
-            "stackoverflow.com",
-            "wikipedia.org",
-            
-            # System updates
-            "windowsupdate.microsoft.com",
-            "update.microsoft.com",
-            "download.microsoft.com",
-            
-            # Security
-            "*.antivirus-vendors.com"  # Example wildcard
-        }
-        
-        with self.update_lock:
-            self.domains = minimal_domains
-            self.last_updated = datetime.now()
-        
-        logger.warning(f"Created minimal whitelist with {len(minimal_domains)} domains")
-    
     def get_stats(self) -> Dict:
         """Lấy thống kê về whitelist (useful for monitoring)"""
         with self.update_lock:
@@ -333,49 +308,3 @@ class WhitelistManager:
                 "is_running": self.running,
                 "server_url": self.server_url
             }
-
-# Test script đơn giản hơn
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Config đơn giản cho test
-    test_config = {
-        "server": {
-            "url": "https://firewall-controller-vu7f.onrender.com"
-        },
-        "whitelist": {
-            "update_interval": 30,
-            "retry_interval": 5,
-            "max_retries": 3,
-            "timeout": 10
-        }
-    }
-    
-    # Test WhitelistManager
-    whitelist = WhitelistManager(test_config)
-    
-    # Test domain checking
-    test_domains = ["google.com", "malware.example.com", "github.com"]
-    
-    print("\nTesting domain checks:")
-    for domain in test_domains:
-        allowed = whitelist.is_allowed(domain)
-        print(f"Domain {domain}: {'ALLOWED' if allowed else 'BLOCKED'}")
-    
-    # Show stats
-    print(f"\nWhitelist stats: {whitelist.get_stats()}")
-    
-    # Start periodic updates for demo
-    print(f"\nStarting periodic updates for 10 seconds...")
-    whitelist.start_periodic_updates()
-    
-    try:
-        time.sleep(10)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        whitelist.stop_periodic_updates()
-        print("Whitelist manager stopped.")

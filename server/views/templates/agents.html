@@ -246,6 +246,11 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadAgents() {
     try {
         const response = await fetch('/api/agents');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
         
         if (data.error) {
@@ -253,6 +258,8 @@ async function loadAgents() {
         }
         
         agentsData = data.agents || [];
+        console.log('Loaded agents:', agentsData); // Debug log
+        
         updateStatistics();
         renderAgents(agentsData);
         
@@ -267,7 +274,7 @@ async function loadAgents() {
                 <h5>Error Loading Agents</h5>
                 <p class="text-muted">${error.message}</p>
                 <button class="btn btn-primary" onclick="loadAgents()">
-                    <i class="fas fa-retry me-1"></i>Retry
+                    <i class="fas fa-redo me-1"></i>Retry
                 </button>
             </div>
         `;
@@ -281,7 +288,9 @@ function updateStatistics() {
     const total = agentsData.length;
     const active = agentsData.filter(a => a.status === 'active').length;
     const inactive = agentsData.filter(a => a.status === 'inactive').length;
-    const offline = total - active - inactive;
+    const offline = agentsData.filter(a => a.status === 'offline').length;
+    
+    console.log('Agent stats:', { total, active, inactive, offline }); // Debug log
     
     document.getElementById('totalAgentsCount').textContent = total;
     document.getElementById('activeAgentsCount').textContent = active;
@@ -315,6 +324,7 @@ function renderAgents(agents) {
         const statusClass = getStatusClass(agent.status);
         const statusText = getStatusText(agent.status);
         const lastSeen = agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never';
+        const registeredDate = agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown';
         
         const agentElement = document.createElement('div');
         agentElement.className = 'p-3 border-bottom';
@@ -327,9 +337,9 @@ function renderAgents(agents) {
                     <div>
                         <h6 class="mb-1">
                             <i class="fas fa-desktop me-2"></i>
-                            ${agent.hostname || agent.agent_id || 'Unknown'}
+                            ${agent.hostname || 'Unknown Host'}
                         </h6>
-                        <div class="d-flex align-items-center text-muted">
+                        <div class="d-flex align-items-center text-muted mb-1">
                             <span class="badge bg-${statusClass === 'online' ? 'success' : statusClass === 'offline' ? 'danger' : 'warning'} me-2">
                                 ${statusText}
                             </span>
@@ -344,23 +354,38 @@ function renderAgents(agents) {
                                 </small>
                             ` : ''}
                         </div>
-                        <div class="mt-1">
-                            <small class="text-muted">
+                        <div class="d-flex align-items-center text-muted">
+                            <small class="me-3">
                                 <i class="fas fa-clock me-1"></i>
                                 Last seen: ${lastSeen}
                             </small>
+                            <small>
+                                <i class="fas fa-calendar me-1"></i>
+                                Registered: ${registeredDate}
+                            </small>
                         </div>
+                        ${agent.agent_version ? `
+                            <div class="mt-1">
+                                <small class="text-muted">
+                                    <i class="fas fa-code-branch me-1"></i>
+                                    Version: ${agent.agent_version}
+                                </small>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
                 
                 <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-primary" onclick="viewAgentDetails('${agent.agent_id}')">
+                    <button type="button" class="btn btn-outline-primary" onclick="viewAgentDetails('${agent.agent_id}')" title="View Details">
                         <i class="fas fa-eye"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-info" onclick="pingAgent('${agent.agent_id}')">
+                    <button type="button" class="btn btn-outline-info" onclick="pingAgent('${agent.agent_id}')" title="Ping Agent">
                         <i class="fas fa-wifi"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-danger" onclick="removeAgent('${agent.agent_id}')">
+                    <button type="button" class="btn btn-outline-success" onclick="sendCommand('${agent.agent_id}')" title="Send Command">
+                        <i class="fas fa-terminal"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="removeAgent('${agent.agent_id}')" title="Remove Agent">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -372,52 +397,39 @@ function renderAgents(agents) {
 }
 
 /**
- * Get status CSS class
+ * Send command to agent
  */
-function getStatusClass(status) {
-    switch (status) {
-        case 'active': return 'online';
-        case 'inactive': return 'inactive';
-        default: return 'offline';
+function sendCommand(agentId) {
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    if (!agent) {
+        showNotification('danger', 'Agent not found');
+        return;
     }
-}
-
-/**
- * Get status display text
- */
-function getStatusText(status) {
-    switch (status) {
-        case 'active': return 'Online';
-        case 'inactive': return 'Inactive';
-        default: return 'Offline';
-    }
-}
-
-/**
- * Get platform icon
- */
-function getPlatformIcon(platform) {
-    if (!platform) return 'desktop';
-    const p = platform.toLowerCase();
-    if (p.includes('windows')) return 'windows';
-    if (p.includes('linux')) return 'linux';
-    if (p.includes('mac') || p.includes('darwin')) return 'apple';
-    return 'desktop';
-}
-
-/**
- * Refresh agents
- */
-function refreshAgents() {
-    document.getElementById('agentsContainer').innerHTML = `
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Refreshing agents...</span>
-            </div>
-            <p class="mt-2 text-muted">Refreshing agents...</p>
-        </div>
-    `;
-    loadAgents();
+    
+    // Simple command for now
+    const command = prompt('Enter command type (e.g., "update_whitelist", "restart", "get_status"):');
+    if (!command) return;
+    
+    fetch(`/api/agents/${agentId}/command`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            command_type: command,
+            description: `Manual command: ${command}`
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        showNotification('success', `Command "${command}" sent to ${agent.hostname}`);
+    })
+    .catch(error => {
+        showNotification('danger', 'Failed to send command: ' + error.message);
+    });
 }
 
 /**
@@ -430,59 +442,46 @@ function viewAgentDetails(agentId) {
         return;
     }
     
-    // Show details in a simple alert for now
-    const info = `Agent Details:
-    
+    // Create detailed info modal content
+    const info = `
+Agent Details:
+
+ID: ${agent.agent_id}
 Hostname: ${agent.hostname || 'Unknown'}
 IP Address: ${agent.ip_address || 'Unknown'}
 Platform: ${agent.platform || 'Unknown'}
+OS Info: ${agent.os_info || 'Unknown'}
+Version: ${agent.agent_version || 'Unknown'}
 Status: ${getStatusText(agent.status)}
-Last Seen: ${agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never'}`;
+Last Seen: ${agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never'}
+Registered: ${agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown'}
+User ID: ${agent.user_id || 'Unknown'}
+    `.trim();
     
     alert(info);
 }
 
 /**
- * Ping agent
+ * Show notification
  */
-async function pingAgent(agentId) {
-    try {
-        showNotification('info', 'Pinging agent...');
-        // For now, just show success
-        setTimeout(() => {
-            showNotification('success', 'Agent is reachable');
-        }, 1000);
-    } catch (error) {
-        showNotification('danger', 'Failed to ping agent: ' + error.message);
-    }
-}
-
-/**
- * Remove agent
- */
-async function removeAgent(agentId) {
-    if (!confirm('Are you sure you want to remove this agent?')) {
-        return;
-    }
+function showNotification(type, message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
     
-    try {
-        const response = await fetch(`/api/agents/${agentId}`, {
-            method: 'DELETE'
-        });
-        
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
+    document.body.appendChild(notification);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
         }
-        
-        showNotification('success', 'Agent removed successfully');
-        refreshAgents();
-        
-    } catch (error) {
-        console.error('Error removing agent:', error);
-        showNotification('danger', 'Failed to remove agent: ' + error.message);
-    }
+    }, 5000);
 }
 </script>
 {% endblock %}

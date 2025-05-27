@@ -17,7 +17,7 @@ class LogSender:
     def __init__(self, config: Dict):
         """Khởi tạo log sender với cấu hình cơ bản"""
         # Lưu cấu hình URL server
-        self.server_url = config.get("server_url", "https://firewall-controller-vu7f.onrender.com")
+        self.server_url = config.get("server_url", "http://localhost:5000")
         
         # Cấu hình hàng đợi log
         self.max_queue_size = config.get("max_queue_size", 1000)
