@@ -299,7 +299,7 @@ def agent_sync():
         since = request.args.get('since')  # ISO datetime string
         agent_id = request.args.get('agent_id')  # Optional agent identification
         
-        query = {"is_active": True}  # Only active entries
+        query = {}  # No restriction to is_active since we don't have that field yet
         
         # If 'since' parameter provided, return incremental update
         if since:
@@ -320,13 +320,14 @@ def agent_sync():
         # Extract domain values only (for agent efficiency)
         domains = []
         for entry in cursor:
-            value = entry.get("value")
-            if value and entry.get("type", "domain") == "domain":
+            value = entry.get("value") or entry.get("domain")  # Support both fields
+            if value:
                 domains.append(value)
         
         # Log the sync request
         logger.info(f"Agent sync request - returned {len(domains)} domains"
-                   f"{' (incremental)' if since else ' (full)'}")
+                   f"{' (incremental)' if since else ' (full)'}"
+                   f"{' for agent: ' + agent_id if agent_id else ''}")
         
         return jsonify({
             "domains": domains,
