@@ -20,11 +20,11 @@ import socket
 import platform
 
 # Import các module tự định nghĩa từ package agent
-from agent.config import get_config  # Đọc cấu hình từ file
-from agent.firewall_manager import FirewallManager  # Quản lý tường lửa
-from agent.log_sender import LogSender  # Gửi log tới server
-from agent.packet_sniffer import PacketSniffer  # Bắt gói tin mạng
-from agent.whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
+from config import get_config  # Đọc cấu hình từ file
+from firewall_manager import FirewallManager  # Quản lý tường lửa
+from log_sender import LogSender  # Gửi log tới server
+from packet_sniffer import PacketSniffer  # Bắt gói tin mạng
+from whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
 
 # Cấu hình hệ thống ghi log
 # - level=logging.INFO: Chỉ ghi những thông báo từ mức INFO trở lên
