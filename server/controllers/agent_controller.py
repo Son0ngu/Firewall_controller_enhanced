@@ -97,6 +97,7 @@ class AgentController:
                     "agent_id": result["agent_id"],
                     "user_id": result["user_id"],
                     "hostname": data.get("hostname"),
+                    "ip_address": data.get("ip_address"),
                     "status": "active",
                     "timestamp": result["server_time"]
                 })

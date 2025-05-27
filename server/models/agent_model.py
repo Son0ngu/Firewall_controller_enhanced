@@ -24,30 +24,16 @@ class AgentModel:
         try:
             # Unique index on agent_id
             self.collection.create_index([("agent_id", ASCENDING)], unique=True)
-            # ✅ Unique index on MAC address
-            self.collection.create_index([("mac_address", ASCENDING)], unique=True, sparse=True)
-            # Indexes for queries
+            # Indexes for queries (removed MAC index)
             self.collection.create_index([("hostname", ASCENDING)])
             self.collection.create_index([("ip_address", ASCENDING)])
             self.collection.create_index([("last_heartbeat", DESCENDING)])
             self.collection.create_index([("status", ASCENDING)])
+            # Compound index for hostname + IP combination
+            self.collection.create_index([("hostname", ASCENDING), ("ip_address", ASCENDING)])
             self.logger.info("Agent indexes created successfully")
         except Exception as e:
             self.logger.warning(f"Error creating indexes: {e}")
-
-    def find_by_mac_address(self, mac_address: str) -> Optional[Dict]:
-        """Find agent by MAC address"""
-        if not mac_address or mac_address == "unknown":
-            return None
-        
-        try:
-            result = self.collection.find_one({"mac_address": mac_address})
-            if result:
-                self.logger.debug(f"Found agent by MAC {mac_address}: {result.get('agent_id')}")
-            return result
-        except Exception as e:
-            self.logger.error(f"Error finding agent by MAC {mac_address}: {e}")
-            return None
 
     def register_agent(self, agent_data: Dict) -> Dict:
         """Register a new agent (CREATE only, not update)"""

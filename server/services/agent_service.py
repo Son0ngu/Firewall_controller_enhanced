@@ -23,50 +23,36 @@ class AgentService:
         self.inactive_threshold = 3  # minutes
     
     def register_agent(self, agent_data: Dict, client_ip: str) -> Dict:
-        """Register a new agent using MAC address as primary key"""
+        """Register a new agent using hostname+IP as identifier"""
         try:
             hostname = agent_data.get("hostname")
-            mac_address = agent_data.get("mac_address")
             
             self.logger.info(f"🔍 Agent registration: {hostname} from {client_ip}")
             
             if not hostname:
                 raise ValueError("Hostname is required")
             
-            # Validate and normalize MAC address
-            if not mac_address or mac_address in ["unknown", "null", ""]:
-                mac_address = "unknown"
-                self.logger.info(f"⚠️ No MAC address - using hostname+IP fallback")
-            elif len(mac_address) < 12:
-                mac_address = "unknown"
-                self.logger.info(f"⚠️ Invalid MAC format - using fallback")
-            else:
-                self.logger.info(f"✅ Valid MAC: {mac_address}")
-        
             # Use agent's reported IP if available
             agent_ip = agent_data.get("ip_address") or client_ip
             if agent_ip == "127.0.0.1" and client_ip != "127.0.0.1":
                 agent_ip = client_ip
         
-            # Check for existing agent
-            existing_agent = None
-            if mac_address != "unknown":
-                existing_agent = self.model.find_by_mac_address(mac_address)
-        
-            if not existing_agent:
-                # Try to find by hostname + IP
-                query = {"$or": [{"ip_address": agent_ip}, {"hostname": hostname}]}
-                agents = self.model.get_all_agents(query, limit=1)
-                if agents:
-                    existing_agent = agents[0]
-        
+            # Check for existing agent by hostname + IP
+            query = {"$or": [
+                {"ip_address": agent_ip}, 
+                {"hostname": hostname},
+                {"$and": [{"hostname": hostname}, {"ip_address": agent_ip}]}
+            ]}
+            
+            agents = self.model.get_all_agents(query, limit=1)
+            existing_agent = agents[0] if agents else None
+            
             if existing_agent:
                 # Update existing agent
                 agent_id = existing_agent.get("agent_id")
                 update_data = {
                     "hostname": hostname,
                     "ip_address": agent_ip,
-                    "mac_address": mac_address,
                     "platform": agent_data.get("platform"),
                     "os_info": agent_data.get("os_info"),
                     "agent_version": agent_data.get("agent_version"),
@@ -91,7 +77,6 @@ class AgentService:
                     "agent_id": agent_id,
                     "hostname": hostname,
                     "ip_address": agent_ip,
-                    "mac_address": mac_address,
                     "platform": agent_data.get("platform"),
                     "os_info": agent_data.get("os_info"),
                     "agent_version": agent_data.get("agent_version"),
@@ -107,11 +92,10 @@ class AgentService:
                     "agent_id": agent_id,
                     "hostname": hostname,
                     "ip_address": agent_ip,
-                    "mac_address": mac_address,
                     "status": "active",
                     "timestamp": datetime.utcnow().isoformat()
                 })
-            
+        
             return {
                 "agent_id": agent_id,
                 "user_id": agent_ip,
@@ -122,7 +106,7 @@ class AgentService:
             }
         
         except Exception as e:
-            self.logger.error(f"Error registering agent: {e}")
+            self.logger.error(f"Agent registration failed: {e}")
             raise
     
     def process_heartbeat(self, agent_id: str, token: str, heartbeat_data: Dict, client_ip: str) -> Dict:
@@ -206,7 +190,6 @@ class AgentService:
                     "agent_id": agent.get("agent_id"),
                     "hostname": agent.get("hostname", "Unknown"),
                     "ip_address": agent.get("ip_address", "Unknown"),
-                    "mac_address": agent.get("mac_address", "Unknown"),
                     "platform": agent.get("platform", "Unknown"),
                     "os_info": agent.get("os_info", "Unknown"),
                     "agent_version": agent.get("agent_version", "Unknown"),

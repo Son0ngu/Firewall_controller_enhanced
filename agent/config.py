@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
     # Cấu hình kết nối đến server
     "server": {
         # ✅ SỬA: Bỏ /api khỏi base URL
-        "url": "http://localhost:5000",  
+        "url": "https://firewall-controller-vu7f.onrender.com",  
         "connect_timeout": 10,  # Thời gian chờ kết nối tối đa (giây)
         "read_timeout": 30,  # Thời gian chờ đọc dữ liệu tối đa (giây)
         "retry_interval": 60,  # Thời gian chờ giữa các lần thử lại (giây)
