@@ -61,7 +61,8 @@ DEFAULT_CONFIG = {
         "update_interval": 300,  # 5 phút cập nhật 1 lần
         "retry_interval": 60,    # Thời gian retry khi lỗi
         "max_retries": 5,        # Số lần retry tối đa
-        "timeout": 10            # Timeout khi gọi API
+        "timeout": 10,           # Timeout khi gọi API
+        "auto_sync_firewall": True,  # ✅ THÊM: Tự động sync với firewall
     },
     
     # Cấu hình bắt gói tin mạng
@@ -97,10 +98,9 @@ DEFAULT_CONFIG = {
     "firewall": {
         "enabled": True,  # Có sử dụng tường lửa để chặn không
         "mode": "block",  # Chế độ: block (chặn), warn (cảnh báo), monitor (chỉ giám sát)
-        "rule_prefix": "sown",  # Tiền tố cho tên các quy tắc tường lửa
-        "include_domain_in_rule": True,  # Có đưa tên miền vào tên quy tắc không
+        "rule_prefix": "FirewallController",  # Tiền tố cho tên các quy tắc tường lửa
         "cleanup_on_exit": True,  # Có xóa các quy tắc khi thoát không
-        "block_timeout": 0,  # Thời gian chặn (giây), 0 = vĩnh viễn
+        "create_allow_rules": False,  # ✅ THÊM: Có tạo allow rules hay không
     },
     
     # Cấu hình chung

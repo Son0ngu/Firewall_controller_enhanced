@@ -34,13 +34,48 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
     _db = mongo_client[db_name]
     _whitelist_collection = _db.whitelist
     
-    # Create indexes
-    _whitelist_collection.create_index([("value", 1)], unique=True)
-    _whitelist_collection.create_index([("type", 1)])
-    _whitelist_collection.create_index([("category", 1)])
-    _whitelist_collection.create_index([("priority", DESCENDING)])
-    _whitelist_collection.create_index([("added_date", DESCENDING)])
-    _whitelist_collection.create_index([("expiry_date", 1)], sparse=True)
+    # Clean up invalid documents before creating indexes
+    try:
+        # Remove documents with null or empty values
+        cleanup_result = _whitelist_collection.delete_many({
+            "$or": [
+                {"value": None},
+                {"value": ""},
+                {"value": {"$exists": False}}
+            ]
+        })
+        if cleanup_result.deleted_count > 0:
+            logger.info(f"Cleaned up {cleanup_result.deleted_count} invalid whitelist documents")
+    except Exception as e:
+        logger.warning(f"Error cleaning up invalid documents: {e}")
+    
+    # Create indexes with error handling
+    try:
+        # Drop existing problematic index if it exists
+        try:
+            _whitelist_collection.drop_index("value_1")
+            logger.info("Dropped existing value index")
+        except Exception:
+            pass  # Index might not exist
+        
+        # Create unique index on value field (excluding null values)
+        _whitelist_collection.create_index(
+            [("value", 1)], 
+            unique=True,
+            partialFilterExpression={"value": {"$ne": None}}
+        )
+        logger.info("Created unique index on value field")
+        
+        # Create other indexes
+        _whitelist_collection.create_index([("type", 1)])
+        _whitelist_collection.create_index([("category", 1)])
+        _whitelist_collection.create_index([("priority", DESCENDING)])
+        _whitelist_collection.create_index([("added_date", DESCENDING)])
+        _whitelist_collection.create_index([("expiry_date", 1)], sparse=True)
+        
+    except Exception as e:
+        logger.error(f"Error creating indexes: {e}")
+        # Continue without indexes if creation fails
     
     app.register_blueprint(whitelist_bp, url_prefix='/api/whitelist')
     logger.info("Whitelist module initialized")
@@ -127,6 +162,11 @@ def add_entry():
         current_time = datetime.utcnow()
         client_ip = request.remote_addr
         
+        # Check for duplicates before inserting
+        existing = _whitelist_collection.find_one({"value": value})
+        if existing:
+            return jsonify({"error": "Entry already exists"}), 409
+        
         # Prepare entry data
         entry_data = {
             "type": entry_type,
@@ -163,14 +203,14 @@ def add_entry():
                     return jsonify({"error": f"DNS verification failed: {dns_result['message']}"}), 400
                 entry_data["dns_info"] = dns_result["info"]
             entry_data["dns_config"] = dns_config
-        
-        # Check for duplicates
-        existing = _whitelist_collection.find_one({"value": value})
-        if existing:
-            return jsonify({"error": "Entry already exists"}), 409
             
-        # Insert entry
-        result = _whitelist_collection.insert_one(entry_data)
+        # Insert entry with duplicate key handling
+        try:
+            result = _whitelist_collection.insert_one(entry_data)
+        except Exception as insert_error:
+            if "duplicate key" in str(insert_error).lower():
+                return jsonify({"error": "Entry already exists"}), 409
+            raise
         
         # Broadcast notification
         if socketio:
@@ -250,6 +290,54 @@ def dns_test():
     except Exception as e:
         logger.error(f"Error testing DNS: {str(e)}")
         return jsonify({"error": "DNS test failed"}), 500
+
+@whitelist_bp.route('/agent-sync', methods=['GET'])
+def agent_sync():
+    """Sync whitelist for agents - returns only active domains."""
+    try:
+        # Get query parameters
+        since = request.args.get('since')  # ISO datetime string
+        agent_id = request.args.get('agent_id')  # Optional agent identification
+        
+        query = {"is_active": True}  # Only active entries
+        
+        # If 'since' parameter provided, return incremental update
+        if since:
+            try:
+                since_date = datetime.fromisoformat(since)
+                query["$or"] = [
+                    {"added_date": {"$gte": since_date}},
+                    {"last_updated": {"$gte": since_date}}
+                ]
+            except ValueError:
+                logger.warning(f"Invalid 'since' parameter: {since}")
+        
+        # Clean up expired entries first
+        cleanup_expired_entries()
+        
+        cursor = _whitelist_collection.find(query)
+        
+        # Extract domain values only (for agent efficiency)
+        domains = []
+        for entry in cursor:
+            value = entry.get("value")
+            if value and entry.get("type", "domain") == "domain":
+                domains.append(value)
+        
+        # Log the sync request
+        logger.info(f"Agent sync request - returned {len(domains)} domains"
+                   f"{' (incremental)' if since else ' (full)'}")
+        
+        return jsonify({
+            "domains": domains,
+            "timestamp": datetime.utcnow().isoformat(),
+            "count": len(domains),
+            "type": "incremental" if since else "full"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in agent sync: {str(e)}")
+        return jsonify({"error": "Sync failed", "domains": []}), 500
 
 # Helper Functions
 

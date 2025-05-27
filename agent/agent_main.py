@@ -93,19 +93,15 @@ def initialize_components():
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
         
-        # ✅ THÊM: Gửi thông tin IP trong registration
-        
-
         # Get local IP address
         try:
-            # Connect to a remote address to get local IP
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 local_ip = s.getsockname()[0]
         except:
             local_ip = "127.0.0.1"
         
-        # ✅ SỬA: Thêm IP vào agent registration
+        # ✅ SỬA: Đăng ký agent với server trước
         agent_info = {
             "hostname": socket.gethostname(),
             "ip_address": local_ip,
@@ -114,17 +110,39 @@ def initialize_components():
             "agent_version": "1.0.0"
         }
         
-        # Initialize whitelist với agent info
-        whitelist = WhitelistManager(config, agent_info)
-        whitelist.start_periodic_updates()
-        logger.info(f"Whitelist initialized for user: {local_ip}")
+        # Đăng ký với server
+        try:
+            import requests
+            register_url = f"{config['server']['url'].rstrip('/')}/agents/register"
+            response = requests.post(register_url, json=agent_info, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"Agent registered successfully with ID: {data.get('agent_id')}")
+                # Lưu agent_id và token vào config để sử dụng sau
+                config['agent_id'] = data.get('agent_id')
+                config['agent_token'] = data.get('token')
+            else:
+                logger.warning(f"Failed to register agent: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Could not register with server: {e}")
+        
+        # Initialize whitelist với updated config
+        whitelist = WhitelistManager(config)
+        logger.info(f"Whitelist initialized for agent: {local_ip}")
         
         # Khởi tạo quản lý tường lửa nếu được bật trong cấu hình
         if config["firewall"]["enabled"]:
-            firewall = FirewallManager(config["firewall"]["rule_prefix"])  # Tiền tố cho quy tắc tường lửa
+            firewall = FirewallManager(config["firewall"]["rule_prefix"])
             logger.info(f"Firewall manager đã khởi tạo với {len(firewall.blocked_ips)} quy tắc chặn hiện có")
+            
+            # ✅ THÊM: Link firewall với whitelist để auto-sync
+            whitelist.set_firewall_manager(firewall)
+            logger.info("Linked firewall manager with whitelist for auto-sync")
         else:
             logger.info("Chức năng tường lửa bị vô hiệu hóa trong cấu hình")
+        
+        # Start whitelist updates AFTER linking firewall
+        whitelist.start_periodic_updates()
         
         # Khởi tạo module gửi log
         log_sender_config = {
