@@ -291,6 +291,7 @@ class FirewallManager:
                 command,
                 capture_output=True,
                 text=True,
+                timeout=30,  # ← Thêm timeout 30 giây
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
@@ -330,6 +331,8 @@ class FirewallManager:
             
             logger.info(f"Loaded {len(self.blocked_ips)} blocked IPs from existing firewall rules")
             
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout while loading existing firewall rules")
         except Exception as e:
             logger.error(f"Error loading existing firewall rules: {str(e)}")
     

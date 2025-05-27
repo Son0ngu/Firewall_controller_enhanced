@@ -16,6 +16,8 @@ import signal  # Xử lý tín hiệu hệ thống (để bắt sự kiện khi 
 import sys  # Để làm việc với môi trường hệ thống
 import time  # Để xử lý thời gian, tạm dừng
 from typing import Dict  # Hỗ trợ gợi ý kiểu dữ liệu cho dictionary
+import socket
+import platform
 
 # Import các module tự định nghĩa từ package agent
 from agent.config import get_config  # Đọc cấu hình từ file
@@ -85,26 +87,37 @@ def handle_domain_detection(record: Dict):
         logger.error(f"Lỗi trong hàm xử lý phát hiện tên miền: {str(e)}", exc_info=True)
 
 def initialize_components():
-    """
-    Khởi tạo tất cả các thành phần của agent dựa trên cấu hình.
-    Bao gồm: whitelist, firewall, log_sender và packet_sniffer.
-    """
+    """Khởi tạo tất cả các thành phần của agent."""
     global config, firewall, whitelist, log_sender, packet_sniffer
     
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
         
-        # Khởi tạo quản lý danh sách cho phép (whitelist)
-        whitelist_config = {
-            "server_url": config["server"]["url"],  # URL của server để tải whitelist
-            "api_key": config["auth"]["api_key"],  # Khóa API để xác thực với server
-            "whitelist_source": config["whitelist"]["source"],  # Nguồn whitelist (file/server)
-            "whitelist_file": config["whitelist"]["file"],  # Đường dẫn file whitelist local
-            "update_interval": config["whitelist"]["update_interval"]  # Thời gian cập nhật định kỳ
+        # ✅ THÊM: Gửi thông tin IP trong registration
+        
+
+        # Get local IP address
+        try:
+            # Connect to a remote address to get local IP
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+        except:
+            local_ip = "127.0.0.1"
+        
+        # ✅ SỬA: Thêm IP vào agent registration
+        agent_info = {
+            "hostname": socket.gethostname(),
+            "ip_address": local_ip,
+            "platform": platform.system(),
+            "os_info": f"{platform.system()} {platform.release()}",
+            "agent_version": "1.0.0"
         }
-        whitelist = WhitelistManager(whitelist_config)
-        whitelist.start_periodic_updates()  # Bắt đầu cập nhật định kỳ whitelist
-        logger.info(f"Whitelist đã được khởi tạo với {len(whitelist.domains)} tên miền")
+        
+        # Initialize whitelist với agent info
+        whitelist = WhitelistManager(config, agent_info)
+        whitelist.start_periodic_updates()
+        logger.info(f"Whitelist initialized for user: {local_ip}")
         
         # Khởi tạo quản lý tường lửa nếu được bật trong cấu hình
         if config["firewall"]["enabled"]:
@@ -115,12 +128,10 @@ def initialize_components():
         
         # Khởi tạo module gửi log
         log_sender_config = {
-            "server_url": config["server"]["url"],  # URL của server để gửi log
-            "api_key": config["auth"]["api_key"],  # Khóa API để xác thực
-            "batch_size": config["logging"]["sender"]["batch_size"],  # Số lượng log gửi mỗi lần
-            "max_queue_size": config["logging"]["sender"]["max_queue_size"],  # Kích thước tối đa của hàng đợi
-            "retry_interval": config["server"]["retry_interval"],  # Thời gian thử lại khi gửi thất bại
-            "max_retries": config["server"]["max_retries"]  # Số lần thử lại tối đa
+            "server_url": config["server"]["url"],
+            "batch_size": config["logging"]["sender"]["batch_size"],
+            "max_queue_size": config["logging"]["sender"]["max_queue_size"],
+            "send_interval": config["logging"]["sender"]["send_interval"]
         }
         log_sender = LogSender(log_sender_config)
         log_sender.start()  # Bắt đầu luồng gửi log

@@ -1,0 +1,1640 @@
+{% extends "base.html" %}
+
+{% block title %}Whitelist Management - Firewall Controller{% endblock %}
+
+{% block extra_css %}
+<style>
+    .domain-card {
+        transition: transform 0.2s;
+    }
+    .domain-card:hover {
+        transform: translateY(-2px);
+    }
+    .domain-item {
+        border-left: 4px solid #007bff;
+        background: #f8f9fa;
+    }
+    .domain-item.manual {
+        border-left-color: #28a745;
+    }
+    .domain-item.system {
+        border-left-color: #6c757d;
+    }
+    .domain-actions {
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .domain-item:hover .domain-actions {
+        opacity: 1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-list me-2"></i>
+                Whitelist Management
+            </h1>
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-outline-primary" onclick="refreshWhitelist()">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                    <i class="fas fa-plus me-1"></i>Add Domain
+                </button>
+                <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#importModal">
+                    <i class="fas fa-file-import me-1"></i>Import
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Whitelist Statistics -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-success">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Total Domains
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="totalDomainsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-list fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-primary">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Manual Entries
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="manualDomainsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-user-edit fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-secondary">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">
+                            System Entries
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="systemDomainsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-cog fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-info">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Last Modified
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="lastModified">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-clock fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filters -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label for="searchInput" class="form-label">Search Domains</label>
+                        <div class="input-group">
+                            <span class="input-group-text">
+                                <i class="fas fa-search"></i>
+                            </span>
+                            <input type="text" class="form-control" id="searchInput" placeholder="Search domains..." onkeyup="filterDomains()">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sourceFilter" class="form-label">Source</label>
+                        <select class="form-select" id="sourceFilter" onchange="filterDomains()">
+                            <option value="">All Sources</option>
+                            <option value="manual">Manual</option>
+                            <option value="system">System</option>
+                            <option value="imported">Imported</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sortSelect" class="form-label">Sort By</label>
+                        <select class="form-select" id="sortSelect" onchange="sortDomains()">
+                            <option value="domain">Domain Name</option>
+                            <option value="added_date">Date Added</option>
+                            <option value="added_by">Added By</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="d-grid">
+                            <button type="button" class="btn btn-outline-secondary" onclick="clearFilters()">
+                                <i class="fas fa-times me-1"></i>Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Actions -->
+<div class="row mb-3" id="bulkActionsRow" style="display: none;">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fas fa-check-square me-2"></i>
+                        <span id="selectedCount">0</span> domains selected
+                    </div>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDelete()">
+                            <i class="fas fa-trash me-1"></i>Delete Selected
+                        </button>
+                        <button type="button" class="btn btn-outline-info btn-sm" onclick="bulkExport()">
+                            <i class="fas fa-download me-1"></i>Export Selected
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearSelection()">
+                            <i class="fas fa-times me-1"></i>Clear Selection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Domains List -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <i class="fas fa-list me-2"></i>Whitelisted Domains
+                    </h6>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                        <label class="form-check-label" for="selectAll">
+                            Select All
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="domainsContainer">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading domains...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading whitelist...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Domain Modal - Updated with more options -->
+<div class="modal fade" id="addDomainModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus me-2"></i>Add Entry to Whitelist
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addDomainForm" onsubmit="addEntry(event)">
+                <div class="modal-body">
+                    <!-- Entry Type Selection -->
+                    <div class="mb-4">
+                        <label class="form-label">Entry Type *</label>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="entryType" id="typeDomain" value="domain" checked onchange="updateEntryForm()">
+                                    <label class="form-check-label" for="typeDomain">
+                                        <i class="fas fa-globe me-1"></i>Domain
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="entryType" id="typeIP" value="ip" onchange="updateEntryForm()">
+                                    <label class="form-check-label" for="typeIP">
+                                        <i class="fas fa-network-wired me-1"></i>IP Address
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="entryType" id="typeURL" value="url" onchange="updateEntryForm()">
+                                    <label class="form-check-label" for="typeURL">
+                                        <i class="fas fa-link me-1"></i>Full URL
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="entryType" id="typePattern" value="pattern" onchange="updateEntryForm()">
+                                    <label class="form-check-label" for="typePattern">
+                                        <i class="fas fa-code me-1"></i>Pattern
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Form Content -->
+                    <div id="domainForm">
+                        <div class="mb-3">
+                            <label for="domainInput" class="form-label">Domain Name *</label>
+                            <input type="text" class="form-control" id="domainInput" placeholder="example.com">
+                            <div class="form-text">Enter domain without protocol (http/https)</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="includeSubdomains">
+                                <label class="form-check-label" for="includeSubdomains">
+                                    Include all subdomains (*.example.com)
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Examples:</strong><br>
+                            • <code>google.com</code> - Allow google.com only<br>
+                            • <code>*.google.com</code> - Allow all Google subdomains<br>
+                            • <code>mail.google.com</code> - Allow specific subdomain
+                        </div>
+                    </div>
+
+                    <div id="ipForm" style="display: none;">
+                        <div class="mb-3">
+                            <label for="ipInput" class="form-label">IP Address *</label>
+                            <input type="text" class="form-control" id="ipInput" placeholder="192.168.1.1 or 2001:db8::1">
+                            <div class="form-text">Enter IPv4 or IPv6 address</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="portInput" class="form-label">Port (Optional)</label>
+                            <input type="number" class="form-control" id="portInput" placeholder="80" min="1" max="65535">
+                            <div class="form-text">Leave empty to allow all ports</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="isSubnet">
+                                <label class="form-check-label" for="isSubnet">
+                                    This is a subnet (CIDR notation)
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Examples:</strong><br>
+                            • <code>192.168.1.1</code> - Single IPv4 address<br>
+                            • <code>192.168.1.0/24</code> - IPv4 subnet<br>
+                            • <code>2001:db8::1</code> - Single IPv6 address<br>
+                            • <code>2001:db8::/32</code> - IPv6 subnet
+                        </div>
+                    </div>
+
+                    <div id="urlForm" style="display: none;">
+                        <div class="mb-3">
+                            <label for="urlInput" class="form-label">Full URL *</label>
+                            <input type="url" class="form-control" id="urlInput" placeholder="https://example.com/path">
+                            <div class="form-text">Enter complete URL including protocol</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="includeParams">
+                                <label class="form-check-label" for="includeParams">
+                                    Match URL parameters exactly
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Examples:</strong><br>
+                            • <code>https://api.example.com/v1/*</code> - API endpoint with wildcard<br>
+                            • <code>https://cdn.example.com/assets/</code> - CDN resources<br>
+                            • <code>https://secure.example.com/login</code> - Specific page
+                        </div>
+                    </div>
+
+                    <div id="patternForm" style="display: none;">
+                        <div class="mb-3">
+                            <label for="patternInput" class="form-label">Pattern *</label>
+                            <input type="text" class="form-control" id="patternInput" placeholder="*.example.* or regex:/pattern/">
+                            <div class="form-text">Use wildcards (*) or regex patterns</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="patternType" class="form-label">Pattern Type</label>
+                            <select class="form-select" id="patternType">
+                                <option value="wildcard">Wildcard (*)</option>
+                                <option value="regex">Regular Expression</option>
+                                <option value="glob">Glob Pattern</option>
+                            </select>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Advanced:</strong> Use patterns carefully. Invalid patterns may cause issues.
+                        </div>
+                    </div>
+
+                    <!-- Common Fields -->
+                    <div class="mb-3">
+                        <label for="categorySelect" class="form-label">Category</label>
+                        <select class="form-select" id="categorySelect">
+                            <option value="">Uncategorized</option>
+                            <option value="business">Business</option>
+                            <option value="social">Social Media</option>
+                            <option value="cdn">CDN/Assets</option>
+                            <option value="api">API Endpoints</option>
+                            <option value="security">Security Services</option>
+                            <option value="development">Development Tools</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="notesInput" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notesInput" rows="3" placeholder="Optional notes about this entry..."></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="prioritySelect" class="form-label">Priority</label>
+                        <select class="form-select" id="prioritySelect">
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                        <div class="form-text">Higher priority entries are checked first</div>
+                    </div>
+
+                    <!-- DNS Configuration (for domains) -->
+                    <div id="dnsConfig" class="border-top pt-3 mt-3">
+                        <h6><i class="fas fa-dns me-2"></i>DNS Configuration (Optional)</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="dnsServer" class="form-label">Custom DNS Server</label>
+                                    <input type="text" class="form-control" id="dnsServer" placeholder="8.8.8.8">
+                                    <div class="form-text">Leave empty to use system DNS</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="recordType" class="form-label">DNS Record Type</label>
+                                    <select class="form-select" id="recordType">
+                                        <option value="">Any</option>
+                                        <option value="A">A (IPv4)</option>
+                                        <option value="AAAA">AAAA (IPv6)</option>
+                                        <option value="CNAME">CNAME</option>
+                                        <option value="MX">MX</option>
+                                        <option value="TXT">TXT</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="verifyDNS">
+                                <label class="form-check-label" for="verifyDNS">
+                                    Verify DNS resolution before adding
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Options -->
+                    <div class="border-top pt-3 mt-3">
+                        <h6><i class="fas fa-cogs me-2"></i>Advanced Options</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="expiryDate" class="form-label">Expiry Date</label>
+                                    <input type="date" class="form-control" id="expiryDate">
+                                    <div class="form-text">Auto-remove after this date</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="maxRequests" class="form-label">Max Requests/Hour</label>
+                                    <input type="number" class="form-control" id="maxRequests" placeholder="1000">
+                                    <div class="form-text">Rate limiting (0 = unlimited)</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="enableLogging">
+                                <label class="form-check-label" for="enableLogging">
+                                    Enable detailed logging for this entry
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="isTemporary">
+                                <label class="form-check-label" for="isTemporary">
+                                    Temporary entry (auto-remove after 24 hours)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-info me-2" onclick="testEntry()">
+                        <i class="fas fa-vial me-1"></i>Test Entry
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-plus me-1"></i>Add to Whitelist
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-file-import me-2"></i>Import Domains
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="importFile" class="form-label">Upload File</label>
+                    <input type="file" class="form-control" id="importFile" accept=".txt,.csv,.json">
+                    <div class="form-text">Supported formats: TXT (one domain per line), CSV, JSON</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="importText" class="form-label">Or Paste Domains</label>
+                    <textarea class="form-control" id="importText" rows="10" placeholder="Enter domains, one per line:
+google.com
+github.com
+stackoverflow.com"></textarea>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="importNotes" class="form-label">Notes for Imported Domains</label>
+                    <input type="text" class="form-control" id="importNotes" placeholder="Bulk import from...">
+                </div>
+                
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Note:</strong> Duplicate domains will be skipped automatically.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-info" onclick="importDomains()">
+                    <i class="fas fa-file-import me-1"></i>Import Domains
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Domain Details Modal -->
+<div class="modal fade" id="domainDetailsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle me-2"></i>Domain Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="domainDetailsContent">
+                <!-- Content will be loaded dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-danger" id="deleteDomainBtn" onclick="deleteDomain()">
+                    <i class="fas fa-trash me-1"></i>Delete Domain
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let whitelistData = [];
+let selectedDomains = new Set();
+let selectedDomain = null;
+
+// Load whitelist when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadWhitelist();
+});
+
+/**
+ * Load whitelist from API
+ */
+async function loadWhitelist() {
+    try {
+        const response = await fetch('/api/whitelist');
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        whitelistData = data.domains || [];
+        updateStatistics();
+        renderDomains(whitelistData);
+        
+    } catch (error) {
+        console.error('Error loading whitelist:', error);
+        showNotification('danger', 'Failed to load whitelist: ' + error.message);
+        
+        // Show error state
+        document.getElementById('domainsContainer').innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                <h5>Error Loading Whitelist</h5>
+                <p class="text-muted">${error.message}</p>
+                <button class="btn btn-primary" onclick="loadWhitelist()">
+                    <i class="fas fa-retry me-1"></i>Retry
+                </button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Update statistics cards
+ */
+function updateStatistics() {
+    const total = whitelistData.length;
+    const manual = whitelistData.filter(d => d.added_by !== 'system').length;
+    const system = whitelistData.filter(d => d.added_by === 'system').length;
+    
+    // Find last modified
+    let lastModified = 'Never';
+    if (whitelistData.length > 0) {
+        const latest = whitelistData.reduce((latest, current) => {
+            const latestDate = new Date(latest.added_date || 0);
+            const currentDate = new Date(current.added_date || 0);
+            return currentDate > latestDate ? current : latest;
+        });
+        if (latest.added_date) {
+            lastModified = new Date(latest.added_date).toLocaleDateString();
+        }
+    }
+    
+    document.getElementById('totalDomainsCount').textContent = total;
+    document.getElementById('manualDomainsCount').textContent = manual;
+    document.getElementById('systemDomainsCount').textContent = system;
+    document.getElementById('lastModified').textContent = lastModified;
+}
+
+/**
+ * Render domains list
+ */
+function renderDomains(domains) {
+    const container = document.getElementById('domainsContainer');
+    
+    if (domains.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-list fa-3x text-muted mb-3"></i>
+                <h5>No Entries Found</h5>
+                <p class="text-muted">No domains, IPs, or URLs are currently whitelisted.</p>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                    <i class="fas fa-plus me-1"></i>Add Your First Entry
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    domains.forEach((entry, index) => {
+        const entryType = entry.type || 'domain';
+        const sourceClass = entry.added_by === 'system' ? 'system' : 'manual';
+        const sourceIcon = entry.added_by === 'system' ? 'cog' : 'user';
+        const sourceText = entry.added_by === 'system' ? 'System' : 'Manual';
+        
+        // Type-specific icons and colors
+        const typeInfo = {
+            domain: { icon: 'globe', color: 'primary', label: 'Domain' },
+            ip: { icon: 'network-wired', color: 'info', label: 'IP Address' },
+            url: { icon: 'link', color: 'success', label: 'URL' },
+            pattern: { icon: 'code', color: 'warning', label: 'Pattern' }
+        };
+        
+        const type = typeInfo[entryType] || typeInfo.domain;
+        const addedDate = entry.added_date ? new Date(entry.added_date).toLocaleDateString() : 'Unknown';
+        const value = entry.value || entry.domain || 'Unknown';
+        
+        // Priority indicator
+        const priorityBadge = entry.priority === 'high' ? 
+            '<span class="badge bg-warning ms-1">High</span>' : 
+            entry.priority === 'critical' ? 
+            '<span class="badge bg-danger ms-1">Critical</span>' : '';
+        
+        const entryElement = document.createElement('div');
+        entryElement.className = `domain-item ${sourceClass} p-3 border-bottom`;
+        entryElement.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="form-check me-3">
+                        <input class="form-check-input" type="checkbox" value="${value}" 
+                               onchange="toggleDomainSelection('${value}')">
+                    </div>
+                    <div>
+                        <h6 class="mb-1">
+                            <i class="fas fa-${type.icon} me-2 text-${type.color}"></i>
+                            ${value}
+                            ${priorityBadge}
+                        </h6>
+                        <div class="d-flex align-items-center text-muted">
+                            <span class="badge bg-${type.color} me-2">
+                                ${type.label}
+                            </span>
+                            <span class="badge bg-${sourceClass === 'system' ? 'secondary' : 'primary'} me-2">
+                                <i class="fas fa-${sourceIcon} me-1"></i>${sourceText}
+                            </span>
+                            ${entry.category ? `<span class="badge bg-light text-dark me-2">${entry.category}</span>` : ''}
+                            <small>
+                                <i class="fas fa-calendar me-1"></i>Added: ${addedDate}
+                                ${entry.added_by !== 'system' ? ` by ${entry.added_by}` : ''}
+                            </small>
+                        </div>
+                        ${entry.notes ? `
+                            <div class="mt-1">
+                                <small class="text-muted">
+                                    <i class="fas fa-sticky-note me-1"></i>
+                                    ${entry.notes}
+                                </small>
+                            </div>
+                        ` : ''}
+                        ${entry.expiry_date ? `
+                            <div class="mt-1">
+                                <small class="text-warning">
+                                    <i class="fas fa-clock me-1"></i>
+                                    Expires: ${new Date(entry.expiry_date).toLocaleDateString()}
+                                </small>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div class="domain-actions">
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-primary" onclick="viewDomainDetails('${value}')">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="editDomain('${value}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        ${entry.type === 'domain' ? `
+                            <button type="button" class="btn btn-outline-info" onclick="testDNS('${value}')">
+                                <i class="fas fa-dns"></i>
+                            </button>
+                        ` : ''}
+                        ${entry.added_by !== 'system' ? `
+                            <button type="button" class="btn btn-outline-danger" onclick="deleteSingleDomain('${value}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(entryElement);
+    });
+}
+
+/**
+ * Filter domains based on search and filters
+ */
+function filterDomains() {
+    const searchInput = document.getElementById('searchInput').value.toLowerCase();
+    const sourceFilter = document.getElementById('sourceFilter').value;
+    
+    let filtered = whitelistData;
+    
+    // Search filter
+    if (searchInput) {
+        filtered = filtered.filter(domain => 
+            domain.domain.toLowerCase().includes(searchInput) ||
+            (domain.notes && domain.notes.toLowerCase().includes(searchInput))
+        );
+    }
+    
+    // Source filter
+    if (sourceFilter) {
+        if (sourceFilter === 'manual') {
+            filtered = filtered.filter(domain => domain.added_by !== 'system');
+        } else if (sourceFilter === 'system') {
+            filtered = filtered.filter(domain => domain.added_by === 'system');
+        }
+    }
+    
+    renderDomains(filtered);
+}
+
+/**
+ * Sort domains
+ */
+function sortDomains() {
+    const sortBy = document.getElementById('sortSelect').value;
+    
+    let sorted = [...whitelistData];
+    
+    switch (sortBy) {
+        case 'domain':
+            sorted.sort((a, b) => a.domain.localeCompare(b.domain));
+            break;
+        case 'added_date':
+            sorted.sort((a, b) => new Date(b.added_date || 0) - new Date(a.added_date || 0));
+            break;
+        case 'added_by':
+            sorted.sort((a, b) => (a.added_by || '').localeCompare(b.added_by || ''));
+            break;
+    }
+    
+    whitelistData = sorted;
+    filterDomains(); // Apply current filters to sorted data
+}
+
+/**
+ * Clear all filters
+ */
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('sourceFilter').value = '';
+    renderDomains(whitelistData);
+}
+
+/**
+ * Toggle domain selection
+ */
+function toggleDomainSelection(domain) {
+    if (selectedDomains.has(domain)) {
+        selectedDomains.delete(domain);
+    } else {
+        selectedDomains.add(domain);
+    }
+    
+    updateBulkActions();
+}
+
+/**
+ * Toggle select all
+ */
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll').checked;
+    const checkboxes = document.querySelectorAll('.domain-item input[type="checkbox"]');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+        if (selectAll) {
+            selectedDomains.add(checkbox.value);
+        } else {
+            selectedDomains.delete(checkbox.value);
+        }
+    });
+    
+    updateBulkActions();
+}
+
+/**
+ * Update bulk actions visibility
+ */
+function updateBulkActions() {
+    const bulkActionsRow = document.getElementById('bulkActionsRow');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    if (selectedDomains.size > 0) {
+        bulkActionsRow.style.display = 'block';
+        selectedCount.textContent = selectedDomains.size;
+    } else {
+        bulkActionsRow.style.display = 'none';
+    }
+}
+
+/**
+ * Clear selection
+ */
+function clearSelection() {
+    selectedDomains.clear();
+    document.querySelectorAll('.domain-item input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    updateBulkActions();
+}
+
+/**
+ * Add domain
+ */
+async function addDomain(event) {
+    event.preventDefault();
+    
+    const domain = document.getElementById('domainInput').value.trim();
+    const notes = document.getElementById('notesInput').value.trim();
+    const includeSubdomains = document.getElementById('includeSubdomains').checked;
+    
+    if (!domain) {
+        showNotification('danger', 'Domain name is required');
+        return;
+    }
+    
+    // Format domain
+    let formattedDomain = domain.toLowerCase();
+    if (includeSubdomains && !formattedDomain.startsWith('*.')) {
+        formattedDomain = '*.' + formattedDomain;
+    }
+    
+    try {
+        const response = await fetch('/api/whitelist', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                domain: formattedDomain,
+                notes: notes || undefined
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', `Domain "${formattedDomain}" added to whitelist`);
+        
+        // Close modal and refresh
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addDomainModal'));
+        modal.hide();
+        
+        // Reset form
+        document.getElementById('addDomainForm').reset();
+        
+        refreshWhitelist();
+        
+    } catch (error) {
+        console.error('Error adding domain:', error);
+        showNotification('danger', 'Failed to add domain: ' + error.message);
+    }
+}
+
+/**
+ * Refresh whitelist
+ */
+function refreshWhitelist() {
+    document.getElementById('domainsContainer').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Refreshing whitelist...</span>
+            </div>
+            <p class="mt-2 text-muted">Refreshing whitelist...</p>
+        </div>
+    `;
+    loadWhitelist();
+}
+
+/**
+ * View domain details
+ */
+function viewDomainDetails(domainName) {
+    const domain = whitelistData.find(d => d.domain === domainName);
+    if (!domain) {
+        showNotification('danger', 'Domain not found');
+        return;
+    }
+    
+    selectedDomain = domain;
+    
+    const content = document.getElementById('domainDetailsContent');
+    content.innerHTML = `
+        <table class="table table-sm">
+            <tr>
+                <td><strong>Domain:</strong></td>
+                <td><code>${domain.domain}</code></td>
+            </tr>
+            <tr>
+                <td><strong>Added By:</strong></td>
+                <td>${domain.added_by || 'Unknown'}</td>
+            </tr>
+            <tr>
+                <td><strong>Date Added:</strong></td>
+                <td>${domain.added_date ? new Date(domain.added_date).toLocaleString() : 'Unknown'}</td>
+            </tr>
+            <tr>
+                <td><strong>Notes:</strong></td>
+                <td>${domain.notes || 'No notes'}</td>
+            </tr>
+        </table>
+    `;
+    
+    // Hide delete button for system domains
+    const deleteBtn = document.getElementById('deleteDomainBtn');
+    deleteBtn.style.display = domain.added_by === 'system' ? 'none' : 'inline-block';
+    
+    const modal = new bootstrap.Modal(document.getElementById('domainDetailsModal'));
+    modal.show();
+}
+
+/**
+ * Delete single domain
+ */
+async function deleteSingleDomain(domainName) {
+    if (!confirm(`Are you sure you want to remove "${domainName}" from the whitelist?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/whitelist/${encodeURIComponent(domainName)}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', 'Domain removed from whitelist');
+        refreshWhitelist();
+        
+    } catch (error) {
+        console.error('Error deleting domain:', error);
+        showNotification('danger', 'Failed to remove domain: ' + error.message);
+    }
+}
+
+/**
+ * Delete domain from modal
+ */
+async function deleteDomain() {
+    if (!selectedDomain) return;
+    
+    await deleteSingleDomain(selectedDomain.domain);
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('domainDetailsModal'));
+    modal.hide();
+}
+
+/**
+ * Import domains
+ */
+async function importDomains() {
+    const file = document.getElementById('importFile').files[0];
+    const text = document.getElementById('importText').value.trim();
+    const notes = document.getElementById('importNotes').value.trim();
+    
+    let domains = [];
+    
+    if (file) {
+        // Handle file upload
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            domains = parseDomainList(content);
+            submitImport(domains, notes);
+        };
+        reader.readAsText(file);
+    } else if (text) {
+        // Handle text input
+        domains = parseDomainList(text);
+        submitImport(domains, notes);
+    } else {
+        showNotification('danger', 'Please provide domains to import');
+    }
+}
+
+/**
+ * Parse domain list from text
+ */
+function parseDomainList(content) {
+    const lines = content.split('\n');
+    const domains = [];
+    
+    lines.forEach(line => {
+        const domain = line.trim().toLowerCase();
+        if (domain && !domain.startsWith('#') && domain.includes('.')) {
+            domains.push(domain);
+        }
+    });
+    
+    return [...new Set(domains)]; // Remove duplicates
+}
+
+/**
+ * Submit import request
+ */
+async function submitImport(domains, notes) {
+    if (domains.length === 0) {
+        showNotification('danger', 'No valid domains found to import');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/whitelist/bulk', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                domains: domains,
+                notes: notes || 'Bulk import'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', `Successfully imported ${data.added_count || domains.length} domains`);
+        
+        // Close modal and refresh
+        const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
+        modal.hide();
+        
+        // Reset form
+        document.getElementById('importFile').value = '';
+        document.getElementById('importText').value = '';
+        document.getElementById('importNotes').value = '';
+        
+        refreshWhitelist();
+        
+    } catch (error) {
+        console.error('Error importing domains:', error);
+        showNotification('danger', 'Failed to import domains: ' + error.message);
+    }
+}
+
+/**
+ * Bulk delete selected domains
+ */
+async function bulkDelete() {
+    if (selectedDomains.size === 0) {
+        showNotification('warning', 'No domains selected');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${selectedDomains.size} selected domains?`)) {
+        return;
+    }
+    
+    try {
+        const domainsArray = Array.from(selectedDomains);
+        
+        const response = await fetch('/api/whitelist/bulk', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                domains: domainsArray
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', `Successfully deleted ${data.deleted_count || domainsArray.length} domains`);
+        clearSelection();
+        refreshWhitelist();
+        
+    } catch (error) {
+        console.error('Error deleting domains:', error);
+        showNotification('danger', 'Failed to delete domains: ' + error.message);
+    }
+}
+
+/**
+ * Bulk export selected domains
+ */
+function bulkExport() {
+    if (selectedDomains.size === 0) {
+        showNotification('warning', 'No domains selected');
+        return;
+    }
+    
+    const domainsArray = Array.from(selectedDomains);
+    const content = domainsArray.join('\n');
+    
+    // Create and download file
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `whitelist-export-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    showNotification('success', `Exported ${domainsArray.length} domains`);
+}
+
+/**
+ * Edit domain (placeholder)
+ */
+function editDomain(domainName) {
+    showNotification('info', 'Edit functionality coming soon');
+}
+
+/**
+ * Update form based on entry type
+ */
+function updateEntryForm() {
+    const entryType = document.querySelector('input[name="entryType"]:checked').value;
+    
+    // Hide all forms
+    document.getElementById('domainForm').style.display = 'none';
+    document.getElementById('ipForm').style.display = 'none';
+    document.getElementById('urlForm').style.display = 'none';
+    document.getElementById('patternForm').style.display = 'none';
+    
+    // Show relevant form
+    document.getElementById(entryType + 'Form').style.display = 'block';
+    
+    // Show/hide DNS config (only for domains)
+    const dnsConfig = document.getElementById('dnsConfig');
+    dnsConfig.style.display = entryType === 'domain' ? 'block' : 'none';
+    
+    // Update modal title
+    const titles = {
+        domain: 'Add Domain to Whitelist',
+        ip: 'Add IP Address to Whitelist',
+        url: 'Add URL to Whitelist',
+        pattern: 'Add Pattern to Whitelist'
+    };
+    
+    document.querySelector('.modal-title').innerHTML = 
+        `<i class="fas fa-plus me-2"></i>${titles[entryType]}`;
+}
+
+/**
+ * Validate entry based on type
+ */
+function validateEntry(entryType, value) {
+    switch (entryType) {
+        case 'domain':
+            // Basic domain validation
+            const domainRegex = /^(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+            return domainRegex.test(value);
+            
+        case 'ip':
+            // IPv4 and IPv6 validation
+            const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+            const ipv6Regex = /^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}(\/\d{1,3})?$/i;
+            return ipv4Regex.test(value) || ipv6Regex.test(value);
+            
+        case 'url':
+            try {
+                new URL(value);
+                return true;
+            } catch {
+                return false;
+            }
+            
+        case 'pattern':
+            // Basic pattern validation
+            return value.length > 0;
+            
+        default:
+            return false;
+    }
+}
+
+/**
+ * Test entry before adding
+ */
+async function testEntry() {
+    const entryType = document.querySelector('input[name="entryType"]:checked').value;
+    let value = '';
+    
+    switch (entryType) {
+        case 'domain':
+            value = document.getElementById('domainInput').value.trim();
+            if (document.getElementById('includeSubdomains').checked && !value.startsWith('*.')) {
+                value = '*.' + value;
+            }
+            break;
+        case 'ip':
+            value = document.getElementById('ipInput').value.trim();
+            const port = document.getElementById('portInput').value.trim();
+            if (port) value += ':' + port;
+            break;
+        case 'url':
+            value = document.getElementById('urlInput').value.trim();
+            break;
+        case 'pattern':
+            value = document.getElementById('patternInput').value.trim();
+            break;
+    }
+    
+    if (!value) {
+        showNotification('warning', 'Please enter a value to test');
+        return;
+    }
+    
+    if (!validateEntry(entryType, value)) {
+        showNotification('danger', `Invalid ${entryType} format`);
+        return;
+    }
+    
+    try {
+        // Show testing notification
+        showNotification('info', `Testing ${entryType}: ${value}...`);
+        
+        const response = await fetch('/api/whitelist/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                type: entryType,
+                value: value,
+                dns_verify: document.getElementById('verifyDNS')?.checked || false
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        // Show test results
+        let message = `✅ Test passed for ${entryType}: ${value}`;
+        if (data.dns_info) {
+            message += `\n📍 DNS: ${data.dns_info.join(', ')}`;
+        }
+        if (data.reachable !== undefined) {
+            message += `\n🔗 Reachable: ${data.reachable ? 'Yes' : 'No'}`;
+        }
+        
+        showNotification('success', message);
+        
+    } catch (error) {
+        console.error('Error testing entry:', error);
+        showNotification('danger', `Test failed: ${error.message}`);
+    }
+}
+
+/**
+ * Add entry (updated version)
+ */
+async function addEntry(event) {
+    event.preventDefault();
+    
+    const entryType = document.querySelector('input[name="entryType"]:checked').value;
+    let value = '';
+    
+    // Get value based on type
+    switch (entryType) {
+        case 'domain':
+            value = document.getElementById('domainInput').value.trim();
+            if (document.getElementById('includeSubdomains').checked && !value.startsWith('*.')) {
+                value = '*.' + value;
+            }
+            break;
+        case 'ip':
+            value = document.getElementById('ipInput').value.trim();
+            const port = document.getElementById('portInput').value.trim();
+            if (port) value += ':' + port;
+            if (document.getElementById('isSubnet').checked && !value.includes('/')) {
+                showNotification('warning', 'Subnet selected but no CIDR notation provided');
+                return;
+            }
+            break;
+        case 'url':
+            value = document.getElementById('urlInput').value.trim();
+            break;
+        case 'pattern':
+            value = document.getElementById('patternInput').value.trim();
+            const patternType = document.getElementById('patternType').value;
+            if (patternType === 'regex' && !value.startsWith('regex:')) {
+                value = 'regex:' + value;
+            }
+            break;
+    }
+    
+    if (!value) {
+        showNotification('danger', `${entryType.charAt(0).toUpperCase() + entryType.slice(1)} is required`);
+        return;
+    }
+    
+    // Validate entry
+    if (!validateEntry(entryType, value)) {
+        showNotification('danger', `Invalid ${entryType} format`);
+        return;
+    }
+    
+    // Collect all form data
+    const entryData = {
+        type: entryType,
+        value: value,
+        category: document.getElementById('categorySelect').value || 'uncategorized',
+        notes: document.getElementById('notesInput').value.trim() || undefined,
+        priority: document.getElementById('prioritySelect').value || 'normal',
+        enable_logging: document.getElementById('enableLogging').checked,
+        is_temporary: document.getElementById('isTemporary').checked
+    };
+    
+    // Add expiry date if set
+    const expiryDate = document.getElementById('expiryDate').value;
+    if (expiryDate) {
+        entryData.expiry_date = expiryDate;
+    }
+    
+    // Add rate limiting if set
+    const maxRequests = document.getElementById('maxRequests').value;
+    if (maxRequests && parseInt(maxRequests) > 0) {
+        entryData.max_requests_per_hour = parseInt(maxRequests);
+    }
+    
+    // Add DNS config for domains
+    if (entryType === 'domain') {
+        const dnsServer = document.getElementById('dnsServer').value.trim();
+        const recordType = document.getElementById('recordType').value;
+        
+        if (dnsServer || recordType) {
+            entryData.dns_config = {
+                server: dnsServer || undefined,
+                record_type: recordType || undefined,
+                verify: document.getElementById('verifyDNS').checked
+            };
+        }
+    }
+    
+    try {
+        const response = await fetch('/api/whitelist', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(entryData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', `${entryType.charAt(0).toUpperCase() + entryType.slice(1)} "${value}" added to whitelist`);
+        
+        // Close modal and refresh
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addDomainModal'));
+        modal.hide();
+        
+        // Reset form
+        document.getElementById('addDomainForm').reset();
+        document.querySelector('input[name="entryType"][value="domain"]').checked = true;
+        updateEntryForm();
+        
+        refreshWhitelist();
+        
+    } catch (error) {
+        console.error('Error adding entry:', error);
+        showNotification('danger', 'Failed to add entry: ' + error.message);
+    }
+}
+
+/**
+ * Updated render function to show different entry types
+ */
+function renderDomains(domains) {
+    const container = document.getElementById('domainsContainer');
+    
+    if (domains.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-list fa-3x text-muted mb-3"></i>
+                <h5>No Entries Found</h5>
+                <p class="text-muted">No domains, IPs, or URLs are currently whitelisted.</p>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                    <i class="fas fa-plus me-1"></i>Add Your First Entry
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    domains.forEach((entry, index) => {
+        const entryType = entry.type || 'domain';
+        const sourceClass = entry.added_by === 'system' ? 'system' : 'manual';
+        const sourceIcon = entry.added_by === 'system' ? 'cog' : 'user';
+        const sourceText = entry.added_by === 'system' ? 'System' : 'Manual';
+        
+        // Type-specific icons and colors
+        const typeInfo = {
+            domain: { icon: 'globe', color: 'primary', label: 'Domain' },
+            ip: { icon: 'network-wired', color: 'info', label: 'IP Address' },
+            url: { icon: 'link', color: 'success', label: 'URL' },
+            pattern: { icon: 'code', color: 'warning', label: 'Pattern' }
+        };
+        
+        const type = typeInfo[entryType] || typeInfo.domain;
+        const addedDate = entry.added_date ? new Date(entry.added_date).toLocaleDateString() : 'Unknown';
+        const value = entry.value || entry.domain || 'Unknown';
+        
+        // Priority indicator
+        const priorityBadge = entry.priority === 'high' ? 
+            '<span class="badge bg-warning ms-1">High</span>' : 
+            entry.priority === 'critical' ? 
+            '<span class="badge bg-danger ms-1">Critical</span>' : '';
+        
+        const entryElement = document.createElement('div');
+        entryElement.className = `domain-item ${sourceClass} p-3 border-bottom`;
+        entryElement.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="form-check me-3">
+                        <input class="form-check-input" type="checkbox" value="${value}" 
+                               onchange="toggleDomainSelection('${value}')">
+                    </div>
+                    <div>
+                        <h6 class="mb-1">
+                            <i class="fas fa-${type.icon} me-2 text-${type.color}"></i>
+                            ${value}
+                            ${priorityBadge}
+                        </h6>
+                        <div class="d-flex align-items-center text-muted">
+                            <span class="badge bg-${type.color} me-2">
+                                ${type.label}
+                            </span>
+                            <span class="badge bg-${sourceClass === 'system' ? 'secondary' : 'primary'} me-2">
+                                <i class="fas fa-${sourceIcon} me-1"></i>${sourceText}
+                            </span>
+                            ${entry.category ? `<span class="badge bg-light text-dark me-2">${entry.category}</span>` : ''}
+                            <small>
+                                <i class="fas fa-calendar me-1"></i>Added: ${addedDate}
+                                ${entry.added_by !== 'system' ? ` by ${entry.added_by}` : ''}
+                            </small>
+                        </div>
+                        ${entry.notes ? `
+                            <div class="mt-1">
+                                <small class="text-muted">
+                                    <i class="fas fa-sticky-note me-1"></i>
+                                    ${entry.notes}
+                                </small>
+                            </div>
+                        ` : ''}
+                        ${entry.expiry_date ? `
+                            <div class="mt-1">
+                                <small class="text-warning">
+                                    <i class="fas fa-clock me-1"></i>
+                                    Expires: ${new Date(entry.expiry_date).toLocaleDateString()}
+                                </small>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div class="domain-actions">
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-primary" onclick="viewDomainDetails('${value}')">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="editDomain('${value}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        ${entry.type === 'domain' ? `
+                            <button type="button" class="btn btn-outline-info" onclick="testDNS('${value}')">
+                                <i class="fas fa-dns"></i>
+                            </button>
+                        ` : ''}
+                        ${entry.added_by !== 'system' ? `
+                            <button type="button" class="btn btn-outline-danger" onclick="deleteSingleDomain('${value}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(entryElement);
+    });
+}
+
+/**
+ * Test DNS resolution
+ */
+async function testDNS(domain) {
+    try {
+        showNotification('info', `Testing DNS for ${domain}...`);
+        
+        const response = await fetch('/api/whitelist/dns-test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ domain: domain })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        let message = `DNS Test Results for ${domain}:\n`;
+        if (data.ipv4) message += `IPv4: ${data.ipv4.join(', ')}\n`;
+        if (data.ipv6) message += `IPv6: ${data.ipv6.join(', ')}\n`;
+        if (data.cname) message += `CNAME: ${data.cname}\n`;
+        
+        showNotification('success', message);
+        
+    } catch (error) {
+        console.error('Error testing DNS:', error);
+        showNotification('danger', `DNS test failed: ${error.message}`);
+    }
+}
+
+// Initialize form on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateEntryForm();
+    loadWhitelist();
+});
+</script>
+{% endblock %}

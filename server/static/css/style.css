@@ -554,3 +554,93 @@ body {
 .dark-mode ::-webkit-scrollbar-thumb:hover {
   background: #6c6c6c;
 }
+
+/* Logs page specific styles */
+.domain-cell {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.domain-cell:hover {
+    background-color: rgba(0, 123, 255, 0.1);
+    border-radius: 3px;
+}
+
+.copyable {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.copyable:hover {
+    background-color: rgba(0, 123, 255, 0.1);
+    border-radius: 3px;
+}
+
+.status-allow {
+    color: #198754;
+    font-weight: 600;
+}
+
+.status-block {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.agent-name {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.table-row-highlight {
+    animation: highlightRow 2s ease-out;
+}
+
+@keyframes highlightRow {
+    0% { background-color: rgba(25, 135, 84, 0.3); }
+    100% { background-color: transparent; }
+}
+
+#activeFilters .badge {
+    font-size: 0.75em;
+}
+
+#connectionStatus {
+    font-size: 0.7em;
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1050;
+}
+
+.btn-group-sm .btn {
+    padding: 0.25rem 0.4rem;
+}
+
+/* Loading overlay */
+#logsLoading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.85em;
+    }
+    
+    .btn-group-sm .btn {
+        padding: 0.2rem 0.3rem;
+    }
+    
+    .btn-group-sm .btn i {
+        font-size: 0.8em;
+    }
+}

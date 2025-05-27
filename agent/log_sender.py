@@ -32,6 +32,9 @@ class LogSender:
         # Khởi tạo định danh agent
         self.agent_id = config.get("agent_id", self._generate_agent_id())
         
+        # ✅ Thêm tracking thời gian
+        self.last_send_time = time.time()
+        
         logger.info(f"LogSender initialized with agent_id: {self.agent_id}")
     
     def start(self):
@@ -80,12 +83,22 @@ class LogSender:
             return False
     
     def _sender_loop(self):
-        """Vòng lặp gửi log theo định kỳ"""
+        """Vòng lặp gửi log theo định kỳ với tối ưu hóa"""
         while self.running:
             try:
-                # Gửi log nếu có đủ batch_size hoặc định kỳ send_interval
-                if self.log_queue.qsize() >= self.batch_size:
+                # ✅ Thêm logic gửi định kỳ
+                current_time = time.time()
+                queue_size = self.log_queue.qsize()
+                
+                # Gửi nếu đủ batch_size HOẶC đã qua send_interval
+                should_send = (
+                    queue_size >= self.batch_size or 
+                    (queue_size > 0 and (current_time - self.last_send_time) >= self.send_interval)
+                )
+                
+                if should_send:
                     self._send_logs()
+                    self.last_send_time = current_time
                     
                 # Ngủ ngắn để không tốn CPU
                 time.sleep(1)
@@ -177,8 +190,7 @@ if __name__ == "__main__":
     test_config = {
         "server_url": "http://localhost:5000",  # URL server local để kiểm thử
         "api_key": "test_key",  # Khóa API giả cho kiểm thử
-        "batch_size": 10,  # Kích thước batch nhỏ để dễ theo dõi
-        "retry_interval": 10  # Thời gian thử lại ngắn để kiểm thử nhanh
+        "batch_size": 10  # Kích thước batch nhỏ để dễ theo dõi
     }
     
     # Tạo đối tượng LogSender

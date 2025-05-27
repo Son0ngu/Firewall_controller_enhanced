@@ -56,12 +56,12 @@ DEFAULT_CONFIG = {
         "jwt_refresh_interval": 3600,  # Thời gian làm mới token JWT (giây) - 1 giờ
     },
     
-    # Cấu hình whitelist (danh sách tên miền được phép)
+    # Cấu hình whitelist đơn giản hóa - chỉ từ server
     "whitelist": {
-        "source": "both",  # Nguồn whitelist: file (cục bộ), server (từ server), hoặc both (cả hai)
-        "file": "whitelist.json",  # Đường dẫn đến file whitelist cục bộ
-        "update_interval": 3600,  # Thời gian giữa các lần cập nhật từ server (giây) - 1 giờ
-        "max_size": 100000,  # Số tên miền tối đa trong whitelist
+        "update_interval": 300,  # 5 phút cập nhật 1 lần
+        "retry_interval": 60,    # Thời gian retry khi lỗi
+        "max_retries": 5,        # Số lần retry tối đa
+        "timeout": 10            # Timeout khi gọi API
     },
     
     # Cấu hình bắt gói tin mạng
@@ -263,27 +263,14 @@ def _validate_config(config: Dict) -> None:
         config: Configuration dictionary to validate
     """
     # Kiểm tra các trường bắt buộc
-    # URL server là quan trọng vì nhiều tính năng phụ thuộc vào nó
     if not config["server"]["url"]:
         logger.warning("Server URL is not configured")
     
-    # Kiểm tra xác thực
-    # Nếu dùng api_key nhưng không cung cấp key
-    if config["auth"]["auth_method"] == "api_key" and not config["auth"]["api_key"]:
-        logger.warning("API key authentication is enabled but no API key is provided")
-    
-    # Kiểm tra whitelist
-    # Nếu lấy whitelist từ server nhưng không có URL server
-    if config["whitelist"]["source"] in ["server", "both"] and not config["server"]["url"]:
-        logger.warning("Whitelist source includes 'server' but server URL is not configured")
-    
     # Kiểm tra engine bắt gói tin
-    # Đảm bảo engine được chọn là hợp lệ
     if config["packet_capture"]["engine"] not in ["scapy"]:
         logger.warning(f"Unknown packet capture engine: {config['packet_capture']['engine']}")
     
     # Kiểm tra chế độ tường lửa
-    # Đảm bảo mode tường lửa là hợp lệ
     if config["firewall"]["enabled"] and config["firewall"]["mode"] not in ["block", "warn", "monitor"]:
         logger.warning(f"Unknown firewall mode: {config['firewall']['mode']}")
 

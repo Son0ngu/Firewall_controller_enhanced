@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found - Firewall Controller{% endblock %}
+
+{% block extra_css %}
+<style>
+    .error-page {
+        min-height: 60vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .error-illustration {
+        font-size: 8rem;
+        color: #6c757d;
+        opacity: 0.5;
+    }
+    .error-code {
+        font-size: 6rem;
+        font-weight: bold;
+        color: #dc3545;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    .btn-home {
+        transition: all 0.3s ease;
+    }
+    .btn-home:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 text-center">
+                <!-- Error Icon -->
+                <div class="error-illustration mb-4">
+                    <i class="fas fa-search"></i>
+                </div>
+                
+                <!-- Error Code -->
+                <div class="error-code mb-3">404</div>
+                
+                <!-- Error Message -->
+                <h2 class="h3 mb-3">Oops! Page Not Found</h2>
+                <p class="lead text-muted mb-4">
+                    The page you are looking for might have been removed, 
+                    had its name changed, or is temporarily unavailable.
+                </p>
+                
+                <!-- Suggestions -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <i class="fas fa-home text-primary mb-2" style="font-size: 2rem;"></i>
+                                <h6>Go Home</h6>
+                                <small class="text-muted">Return to the dashboard</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <i class="fas fa-laptop-code text-info mb-2" style="font-size: 2rem;"></i>
+                                <h6>Check Agents</h6>
+                                <small class="text-muted">Manage your agents</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <i class="fas fa-list text-success mb-2" style="font-size: 2rem;"></i>
+                                <h6>View Whitelist</h6>
+                                <small class="text-muted">Manage domain whitelist</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="d-flex flex-column flex-sm-row justify-content-center gap-3">
+                    <a href="/" class="btn btn-primary btn-lg btn-home">
+                        <i class="fas fa-home me-2"></i>Back to Dashboard
+                    </a>
+                    <a href="/agents" class="btn btn-outline-primary btn-lg btn-home">
+                        <i class="fas fa-laptop-code me-2"></i>Manage Agents
+                    </a>
+                    <button onclick="history.back()" class="btn btn-outline-secondary btn-lg btn-home">
+                        <i class="fas fa-arrow-left me-2"></i>Go Back
+                    </button>
+                </div>
+                
+                <!-- Help Text -->
+                <div class="mt-5">
+                    <h6 class="text-muted">Need Help?</h6>
+                    <p class="small text-muted">
+                        If you believe this is an error, please check the URL or contact support.
+                        <br>
+                        You can also try refreshing the page or clearing your browser cache.
+                    </p>
+                </div>
+                
+                <!-- Common Links -->
+                <div class="mt-4">
+                    <h6 class="text-muted mb-3">Quick Links</h6>
+                    <div class="d-flex flex-wrap justify-content-center gap-3">
+                        <a href="/" class="text-decoration-none">
+                            <small><i class="fas fa-tachometer-alt me-1"></i>Dashboard</small>
+                        </a>
+                        <a href="/agents" class="text-decoration-none">
+                            <small><i class="fas fa-laptop-code me-1"></i>Agents</small>
+                        </a>
+                        <a href="/whitelist" class="text-decoration-none">
+                            <small><i class="fas fa-list me-1"></i>Whitelist</small>
+                        </a>
+                        <a href="/logs" class="text-decoration-none">
+                            <small><i class="fas fa-file-alt me-1"></i>Logs</small>
+                        </a>
+                        <a href="/api/health" class="text-decoration-none">
+                            <small><i class="fas fa-heartbeat me-1"></i>Health Check</small>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-redirect suggestion after 30 seconds
+let countdown = 30;
+let redirectTimer;
+
+function startRedirectCountdown() {
+    const countdownElement = document.createElement('div');
+    countdownElement.className = 'alert alert-info mt-4';
+    countdownElement.innerHTML = `
+        <i class="fas fa-info-circle me-2"></i>
+        <span id="countdown-text">Redirecting to dashboard in ${countdown} seconds...</span>
+        <button type="button" class="btn btn-sm btn-outline-info ms-2" onclick="cancelRedirect()">
+            Cancel
+        </button>
+    `;
+    
+    document.querySelector('.error-page .container').appendChild(countdownElement);
+    
+    redirectTimer = setInterval(() => {
+        countdown--;
+        document.getElementById('countdown-text').textContent = 
+            `Redirecting to dashboard in ${countdown} seconds...`;
+        
+        if (countdown <= 0) {
+            window.location.href = '/';
+        }
+    }, 1000);
+}
+
+function cancelRedirect() {
+    clearInterval(redirectTimer);
+    const countdownElement = document.querySelector('.alert-info');
+    if (countdownElement) {
+        countdownElement.remove();
+    }
+}
+
+// Start countdown after 10 seconds on page
+setTimeout(startRedirectCountdown, 10000);
+
+// Track 404 errors for analytics (optional)
+if (typeof gtag !== 'undefined') {
+    gtag('event', 'page_not_found', {
+        'page_location': window.location.href,
+        'page_title': document.title
+    });
+}
+
+console.log('404 Error: Page not found -', window.location.href);
+</script>
+{% endblock %}

@@ -1,8 +1,5 @@
 """
 Agent Management module for the Firewall Controller Server.
-
-This module handles agent registration, heartbeat monitoring, command distribution, 
-and overall management of firewall agents installed on client machines.
 """
 
 # Import các thư viện cần thiết
@@ -10,42 +7,14 @@ import logging  # Thư viện ghi log, giúp theo dõi hoạt động của modu
 import secrets  # Thư viện tạo token bảo mật
 import uuid  # Thư viện tạo ID độc nhất
 from datetime import datetime, timedelta  # Thư viện xử lý thời gian, cho timestamps và tính toán thời gian
-from functools import wraps  # Thêm dòng này
-from typing import Dict, List, Optional, Set, Union  # Thư viện kiểu dữ liệu tĩnh
+from typing import Dict, List, Optional  # Thư viện kiểu dữ liệu tĩnh
 
 from bson import ObjectId  # Thư viện làm việc với MongoDB ObjectId
-from flask import Blueprint, jsonify, request, session, g  # Framework Flask để tạo API
+from flask import Blueprint, jsonify, request  # Framework Flask để tạo API
 from flask_socketio import SocketIO  # Thư viện hỗ trợ WebSocket cho giao tiếp realtime
 from pymongo import MongoClient, DESCENDING  # Thư viện kết nối MongoDB và hằng số sắp xếp
 from pymongo.collection import Collection  # Kiểu Collection trong MongoDB
 from pymongo.database import Database  # Kiểu Database trong MongoDB
-
-# Bỏ import không còn tồn tại
-# from server.modules.auth import token_required, admin_required, operator_required
-
-# Thêm decorator xác thực đơn giản
-def check_admin():
-    """
-    Decorator đơn giản kiểm tra xem người dùng đã đăng nhập với vai trò admin chưa.
-    """
-    def decorator(f):
-        @wraps(f)  # Giữ lại metadata của hàm gốc
-        def wrapped(*args, **kwargs):
-            if 'user_id' not in session:
-                return jsonify({"error": "Authentication required"}), 401
-                
-            # Kiểm tra vai trò của người dùng
-            if session.get('role') != 'admin':
-                return jsonify({"error": "Admin privileges required"}), 403
-                
-            # Thiết lập thông tin người dùng để sử dụng trong hàm xử lý
-            g.user = {
-                'username': session.get('username', 'unknown')
-            }
-            
-            return f(*args, **kwargs)
-        return wrapped
-    return decorator
 
 # Cấu hình logging cho module
 logger = logging.getLogger("agents_module")
@@ -64,7 +33,7 @@ _agents_collection: Optional[Collection] = None  # Collection lưu thông tin ag
 # Khoảng thời gian để xác định một agent không hoạt động (phút)
 AGENT_INACTIVE_THRESHOLD = 5
 
-def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
+def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
     """
     Khởi tạo module agents với ứng dụng Flask và kết nối MongoDB.
     """
@@ -89,7 +58,7 @@ def init_app(app, mongo_client: MongoClient, socket_io: SocketIO):
     # Đăng ký blueprint với ứng dụng Flask
     app.register_blueprint(agents_bp, url_prefix='/api/agents')
     
-    logger.info("Agents module initialized with MongoDB connection")
+    logger.info("Agents module initialized")
 
 
 # ======== Các route API ========
@@ -118,78 +87,95 @@ def register_agent():
         return jsonify({"error": "Request must be JSON"}), 400
         
     data = request.json
-    
-    # Kiểm tra các trường bắt buộc
     if not data.get("hostname"):
         return jsonify({"error": "Hostname is required"}), 400
 
-    # Lấy hoặc tạo agent_id
-    agent_id = data.get("agent_id")
-    if not agent_id:
-        agent_id = str(uuid.uuid4())
-        
+    # ✅ SỬA: Sử dụng IP address làm user_id
+    client_ip = request.remote_addr or data.get("ip_address", "unknown")
+    agent_id = data.get("agent_id", str(uuid.uuid4()))
+    
     try:
-        # Tìm agent hiện có theo agent_id
+        # ✅ THÊM: Tự động tạo/cập nhật user trong users collection
+        users_collection = _db.users
+        
+        # Tìm user hiện có theo IP
+        existing_user = users_collection.find_one({"user_id": client_ip, "role": "agent"})
+        
+        # Tạo user data
+        user_data = {
+            "user_id": client_ip,  # IP làm user ID
+            "hostname": data.get("hostname"),
+            "ip_address": client_ip,
+            "platform": data.get("platform"),
+            "os_info": data.get("os_info"),
+            "agent_version": data.get("agent_version"),
+            "role": "agent",
+            "status": "active",
+            "last_heartbeat": datetime.utcnow(),
+            "last_seen": datetime.utcnow(),
+            "created_at": datetime.utcnow() if not existing_user else existing_user.get("created_at"),
+            "agent_token": secrets.token_hex(32)
+        }
+        
+        if existing_user:
+            # Giữ lại token cũ nếu có
+            if "agent_token" in existing_user:
+                user_data["agent_token"] = existing_user["agent_token"]
+            
+            # Cập nhật user
+            users_collection.update_one(
+                {"user_id": client_ip, "role": "agent"},
+                {"$set": user_data}
+            )
+            logger.info(f"Updated agent user: {client_ip} ({data.get('hostname')})")
+        else:
+            # Tạo user mới
+            users_collection.insert_one(user_data)
+            logger.info(f"Created new agent user: {client_ip} ({data.get('hostname')})")
+        
+        # ✅ SỬA: Cập nhật agents collection với user_id
         existing_agent = _agents_collection.find_one({"agent_id": agent_id})
         
-        # Tạo token an toàn cho agent (cho authentication)
-        agent_token = secrets.token_hex(32)
-        current_time = datetime.utcnow()
-        
-        # Chuẩn bị dữ liệu agent
         agent_data = {
             "agent_id": agent_id,
+            "user_id": client_ip,  # ← Link to user
             "hostname": data.get("hostname"),
-            "ip_address": data.get("ip_address"),
+            "ip_address": client_ip,
             "mac_address": data.get("mac_address"),
             "platform": data.get("platform"),
             "os_info": data.get("os_info"),
             "agent_version": data.get("agent_version"),
             "status": "active",
-            "last_heartbeat": current_time,
-            "last_heartbeat_ip": request.remote_addr,
-            "agent_token": agent_token,
-            "registered_date": current_time if not existing_agent else existing_agent.get("registered_date"),
-            "updated_date": current_time
+            "last_heartbeat": datetime.utcnow(),
+            "last_heartbeat_ip": client_ip,
+            "agent_token": user_data["agent_token"],
+            "registered_date": datetime.utcnow() if not existing_agent else existing_agent.get("registered_date"),
+            "updated_date": datetime.utcnow()
         }
         
-        # Thêm hoặc cập nhật agent trong database
         if existing_agent:
-            # Giữ lại token hiện tại nếu có
-            if "agent_token" in existing_agent:
-                agent_data["agent_token"] = existing_agent["agent_token"]
-                
-            # Cập nhật agent hiện có
-            _agents_collection.update_one(
-                {"agent_id": agent_id},
-                {"$set": agent_data}
-            )
-            logger.info(f"Updated agent: {agent_id} ({data.get('hostname')})")
+            _agents_collection.update_one({"agent_id": agent_id}, {"$set": agent_data})
         else:
-            # Tạo agent mới
             _agents_collection.insert_one(agent_data)
-            logger.info(f"Registered new agent: {agent_id} ({data.get('hostname')})")
             
-        # Phát sóng thông báo qua SocketIO
+        # Broadcast notification
         if socketio:
-            status_event = "agent_updated" if existing_agent else "agent_registered"
-            socketio.emit(status_event, {
+            socketio.emit("agent_registered", {
                 "agent_id": agent_id,
+                "user_id": client_ip,
                 "hostname": data.get("hostname"),
                 "status": "active",
-                "timestamp": current_time.isoformat()
+                "timestamp": datetime.utcnow().isoformat()
             })
             
-        # Chuẩn bị dữ liệu cho response
-        response_data = {
+        return jsonify({
             "agent_id": agent_id,
-            "token": agent_data["agent_token"],
+            "user_id": client_ip,
+            "token": user_data["agent_token"],
             "status": "active",
-            "message": "Agent registered successfully" if not existing_agent else "Agent updated successfully",
-            "server_time": current_time.isoformat()
-        }
-        
-        return jsonify(response_data), 200
+            "message": "Agent registered successfully",
+            "server_time": datetime.utcnow().isoformat()
+        }), 200
         
     except Exception as e:
         logger.error(f"Error registering agent: {str(e)}")
@@ -198,106 +184,68 @@ def register_agent():
 
 @agents_bp.route('/heartbeat', methods=['POST'])
 def heartbeat():
-    """
-    API nhận heartbeat từ agent để cập nhật trạng thái hoạt động.
-    
-    Request body:
-    {
-        "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-        "token": "abc123...",  # Token xác thực agent
-        "status": "active", # Trạng thái agent (active, busy, error)
-        "metrics": {  # Các thông số tùy chọn về hiệu suất và tài nguyên
-            "cpu_usage": 25.5,
-            "memory_usage": 42.3,
-            "blocked_count": 15,
-            "allowed_count": 150
-        }
-    }
-    
-    Returns:
-        JSON xác nhận heartbeat thành công
-    """
-    # Kiểm tra xem request có định dạng JSON không
+    """Agent heartbeat - updates both agents and users collections."""
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
         
     data = request.json
-    
-    # Kiểm tra các trường bắt buộc
     if not data.get("agent_id") or not data.get("token"):
         return jsonify({"error": "Agent ID and token are required"}), 400
         
     agent_id = data.get("agent_id")
     token = data.get("token")
+    client_ip = request.remote_addr
     
     try:
-        # Tìm agent theo ID
+        # Validate agent
         agent = _agents_collection.find_one({"agent_id": agent_id})
-        
-        # Kiểm tra xem agent có tồn tại không
         if not agent:
-            logger.warning(f"Heartbeat from unknown agent: {agent_id}")
             return jsonify({"error": "Unknown agent"}), 404
             
-        # Xác thực token
         if agent.get("agent_token") != token:
-            logger.warning(f"Invalid token for agent: {agent_id}")
             return jsonify({"error": "Invalid token"}), 401
             
         current_time = datetime.utcnow()
         
-        # Cập nhật thông tin heartbeat
-        update_data = {
+        # ✅ THÊM: Update user record
+        users_collection = _db.users
+        user_update = {
             "last_heartbeat": current_time,
-            "last_heartbeat_ip": request.remote_addr,
+            "last_seen": current_time,
+            "status": data.get("status", "active"),
+            "hostname": data.get("hostname", agent.get("hostname")),
+            "platform": data.get("platform", agent.get("platform"))
+        }
+        
+        users_collection.update_one(
+            {"user_id": client_ip, "role": "agent"},
+            {"$set": user_update},
+            upsert=True  # Create if not exists
+        )
+        
+        # Update agent record
+        agent_update = {
+            "last_heartbeat": current_time,
+            "last_heartbeat_ip": client_ip,
             "status": data.get("status", "active"),
             "updated_date": current_time
         }
         
-        # Cập nhật metrics nếu có
-        if "metrics" in data and isinstance(data["metrics"], dict):
-            update_data["metrics"] = data["metrics"]
-            # Lưu lịch sử metrics nếu cần
-            if "metrics_history" not in agent:
-                update_data["metrics_history"] = []
-                
-            # Thêm metrics hiện tại vào lịch sử
-            metrics_entry = {
-                "timestamp": current_time,
-                **data["metrics"]
-            }
-            update_data["$push"] = {
-                "metrics_history": {
-                    "$each": [metrics_entry],
-                    "$slice": -100  # Giữ 100 bản ghi gần nhất
-                }
-            }
-        
-        # Xác định nếu trạng thái đã thay đổi
-        status_changed = agent.get("status") != update_data["status"]
-        
-        # Cập nhật agent
+        if "metrics" in data:
+            agent_update["metrics"] = data["metrics"]
+            
         _agents_collection.update_one(
             {"agent_id": agent_id},
-            {"$set": update_data}
+            {"$set": agent_update}
         )
         
-        # Phát sóng thông báo qua SocketIO nếu trạng thái thay đổi
-        if socketio and status_changed:
-            socketio.emit("agent_status_change", {
+        # Broadcast updates
+        if socketio:
+            socketio.emit("agent_heartbeat", {
                 "agent_id": agent_id,
+                "user_id": client_ip,
                 "hostname": agent.get("hostname"),
-                "previous_status": agent.get("status"),
-                "current_status": update_data["status"],
-                "timestamp": current_time.isoformat()
-            })
-        
-        # Phát sóng cập nhật metrics qua SocketIO
-        if socketio and "metrics" in data:
-            socketio.emit("agent_metrics_update", {
-                "agent_id": agent_id,
-                "hostname": agent.get("hostname"),
-                "metrics": data["metrics"],
+                "status": data.get("status", "active"),
                 "timestamp": current_time.isoformat()
             })
         
@@ -499,7 +447,6 @@ def update_command_result():
 
 
 @agents_bp.route('', methods=['GET'])
-@check_admin()  # Thêm decorator kiểm tra quyền admin
 def list_agents():
     """
     API để lấy danh sách các agent và trạng thái của chúng.
@@ -591,7 +538,6 @@ def list_agents():
 
 
 @agents_bp.route('/<agent_id>', methods=['GET'])
-@check_admin()  # Thêm decorator kiểm tra quyền admin
 def get_agent(agent_id):
     """
     API để lấy thông tin chi tiết về một agent cụ thể.
@@ -685,7 +631,6 @@ def get_agent(agent_id):
 
 
 @agents_bp.route('/<agent_id>', methods=['DELETE'])
-@check_admin()
 def delete_agent(agent_id):
     """
     API để xóa một agent khỏi hệ thống.
@@ -733,7 +678,6 @@ def delete_agent(agent_id):
 
 
 @agents_bp.route('/<agent_id>/command', methods=['POST'])
-@check_admin()
 def send_command(agent_id):
     """
     API để gửi lệnh đến một agent cụ thể.
@@ -783,7 +727,7 @@ def send_command(agent_id):
                 }), 400
         
         # Lấy thông tin người dùng từ token
-        username = g.user.get('username', 'unknown')
+        username = "admin"  # Fixed username for simplicity
         
         # Chuẩn bị lệnh
         command = {
@@ -818,7 +762,7 @@ def send_command(agent_id):
             "status": "success",
             "message": "Command sent to agent",
             "command_id": command_id
-        }), 201
+        }, 201)
         
     except Exception as e:
         logger.error(f"Error sending command to agent: {str(e)}")
@@ -826,70 +770,38 @@ def send_command(agent_id):
 
 
 @agents_bp.route('/broadcast', methods=['POST'])
-@check_admin()
 def broadcast_command():
-    """
-    API để gửi lệnh đến tất cả các agent hoặc một nhóm agent.
-    Yêu cầu quyền admin.
-    
-    Request body:
-    {
-        "command_type": "update_whitelist",  # Loại lệnh
-        "parameters": {  # Các tham số cho lệnh
-            "force_sync": true
-        },
-        "filter": {  # Bộ lọc để chọn agent (tùy chọn)
-            "platform": "Windows",
-            "status": "active"
-        },
-        "priority": 2,  # Độ ưu tiên (1-5, 5 cao nhất)
-        "description": "Sync whitelist on all agents"  # Mô tả lệnh
-    }
-    
-    Returns:
-        JSON với danh sách agent đã gửi lệnh
-    """
-    # Kiểm tra xem request có định dạng JSON không
+    """Gửi lệnh đến tất cả agent hoặc nhóm agent."""
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
         
     data = request.json
-    
-    # Kiểm tra các trường bắt buộc
     if not data.get("command_type"):
         return jsonify({"error": "Command type is required"}), 400
         
     try:
-        # Xây dựng truy vấn dựa trên bộ lọc
+        # Xây dựng query lọc agent
         query = {}
-        
-        # Thêm bộ lọc nếu có
         if "filter" in data and isinstance(data["filter"], dict):
             for key, value in data["filter"].items():
-                if key != "status":  # Xử lý trạng thái riêng
+                if key == "status" and value == "active":
+                    inactive_threshold = datetime.utcnow() - timedelta(minutes=AGENT_INACTIVE_THRESHOLD)
+                    query["last_heartbeat"] = {"$gte": inactive_threshold}
+                else:
                     query[key] = value
         
-        # Lọc theo trạng thái active nếu được yêu cầu
-        if data.get("filter", {}).get("status") == "active":
-            inactive_threshold = datetime.utcnow() - timedelta(minutes=AGENT_INACTIVE_THRESHOLD)
-            query["last_heartbeat"] = {"$gte": inactive_threshold}
-            
-        # Tìm tất cả agent phù hợp
+        # Tìm agent phù hợp
         agents = list(_agents_collection.find(query))
-        
         if not agents:
-            return jsonify({"error": "No matching agents found"}), 404
+            return jsonify({"error": "No agents found"}), 404
             
-        # Lấy thông tin người dùng từ token
-        username = g.user.get('username', 'unknown')
-        current_time = datetime.utcnow()
-        
         # Gửi lệnh đến từng agent
+        username = "admin"  # Fixed username
+        current_time = datetime.utcnow()
         command_ids = []
         command_collection = _db.agent_commands
         
         for agent in agents:
-            # Chuẩn bị lệnh
             command = {
                 "agent_id": agent["agent_id"],
                 "command_type": data["command_type"],
@@ -898,22 +810,15 @@ def broadcast_command():
                 "description": data.get("description", ""),
                 "status": "pending",
                 "created_by": username,
-                "created_at": current_time,
-                "broadcast_id": str(ObjectId())  # ID chung cho broadcast này
+                "created_at": current_time
             }
             
-            # Lưu lệnh vào database
             result = command_collection.insert_one(command)
-            
-            command_ids.append({
-                "agent_id": agent["agent_id"],
-                "hostname": agent.get("hostname"),
-                "command_id": str(result.inserted_id)
-            })
+            command_ids.append(str(result.inserted_id))
         
-        # Phát sóng thông báo broadcast
+        # Broadcast notification
         if socketio:
-            socketio.emit("command_broadcast", {
+            socketio.emit("commands_broadcast", {
                 "command_type": data["command_type"],
                 "agent_count": len(agents),
                 "created_by": username,
@@ -922,8 +827,8 @@ def broadcast_command():
             
         return jsonify({
             "status": "success",
-            "message": f"Command broadcast to {len(agents)} agents",
-            "commands": command_ids
+            "message": f"Command sent to {len(agents)} agents",
+            "command_ids": command_ids
         }), 201
         
     except Exception as e:
@@ -932,64 +837,40 @@ def broadcast_command():
 
 
 @agents_bp.route('/commands/<command_id>', methods=['DELETE'])
-@check_admin()
 def cancel_command(command_id):
-    """
-    API để hủy một lệnh đang chờ xử lý.
-    Yêu cầu ít nhất quyền operator.
-    
-    Args:
-        command_id: ID của lệnh cần hủy
-    
-    Returns:
-        JSON xác nhận hủy thành công
-    """
+    """Hủy lệnh đang chờ xử lý."""
     try:
-        # Chuyển đổi command_id thành ObjectId
         try:
             command_object_id = ObjectId(command_id)
         except:
             return jsonify({"error": "Invalid command ID format"}), 400
-        
-        # Tìm lệnh
+            
+        # Tìm command
         command_collection = _db.agent_commands
         command = command_collection.find_one({"_id": command_object_id})
         
         if not command:
             return jsonify({"error": "Command not found"}), 404
             
-        # Không thể hủy lệnh đã hoàn thành hoặc đang xử lý
-        if command["status"] not in ["pending"]:
-            return jsonify({"error": f"Cannot cancel command in {command['status']} status"}), 400
+        # Chỉ có thể hủy lệnh pending
+        if command["status"] != "pending":
+            return jsonify({"error": "Can only cancel pending commands"}), 400
             
-        # Lấy thông tin người dùng từ token
-        username = g.user.get('username', 'unknown')
-        
-        # Cập nhật trạng thái lệnh
+        # Cập nhật status
+        username = "admin"  # Fixed username
         result = command_collection.update_one(
             {"_id": command_object_id},
-            {
-                "$set": {
-                    "status": "cancelled",
-                    "cancelled_by": username,
-                    "cancelled_at": datetime.utcnow()
-                }
-            }
+            {"$set": {
+                "status": "cancelled",
+                "cancelled_by": username,
+                "cancelled_at": datetime.utcnow()
+            }}
         )
         
         if result.modified_count:
-            # Phát sóng thông báo hủy lệnh
-            if socketio:
-                socketio.emit("command_cancelled", {
-                    "command_id": command_id,
-                    "agent_id": command["agent_id"],
-                    "cancelled_by": username,
-                    "cancelled_at": datetime.utcnow().isoformat()
-                })
-                
             return jsonify({
                 "status": "success",
-                "message": "Command cancelled successfully"
+                "message": "Command cancelled"
             }), 200
         else:
             return jsonify({"error": "Failed to cancel command"}), 500
@@ -999,85 +880,45 @@ def cancel_command(command_id):
         return jsonify({"error": "Failed to cancel command"}), 500
 
 
-@agents_bp.route('/commands', methods=['GET'])
-@check_admin()  # Thêm decorator kiểm tra quyền admin
+@agents_bp.route('/commands', methods=['GET'])  # ✅ Changed from /admin/commands
 def list_commands():
-    """
-    API để liệt kê lệnh của các agent.
-    Yêu cầu xác thực người dùng.
-    
-    Tham số truy vấn:
-    - agent_id: Lọc theo agent ID (tùy chọn)
-    - status: Lọc theo trạng thái (completed, failed, pending, cancelled)
-    - command_type: Lọc theo loại lệnh
-    - limit: Số lượng kết quả tối đa
-    - skip: Số lượng kết quả để bỏ qua (phân trang)
-    
-    Returns:
-        JSON với danh sách lệnh
-    """
+    """Liệt kê lệnh của các agent."""
     try:
-        # Phân tích tham số truy vấn
+        # Parse query params
         agent_id = request.args.get('agent_id')
         status = request.args.get('status')
         command_type = request.args.get('command_type')
-        limit = min(int(request.args.get('limit', 50)), 200)  # Tối đa 200 kết quả
+        limit = min(int(request.args.get('limit', 50)), 200)
         skip = int(request.args.get('skip', 0))
         
-        # Xây dựng truy vấn
+        # Build query
         query = {}
-        
-        # Lọc theo agent_id
         if agent_id:
             query["agent_id"] = agent_id
-            
-        # Lọc theo trạng thái
         if status:
             query["status"] = status
-            
-        # Lọc theo loại lệnh
         if command_type:
             query["command_type"] = command_type
             
-        # Thực hiện truy vấn
+        # Execute query
         command_collection = _db.agent_commands
         cursor = command_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
-        
-        # Đếm tổng số kết quả
         total_count = command_collection.count_documents(query)
         
-        # Chuẩn bị dữ liệu cho response
+        # Format results
         commands = []
-        
         for cmd in cursor:
-            # Tìm thông tin agent
-            agent = _agents_collection.find_one({"agent_id": cmd["agent_id"]})
-            hostname = agent["hostname"] if agent else "Unknown Agent"
-            
-            # Chuyển đổi các trường thời gian
-            created_at = cmd.get("created_at").isoformat() if cmd.get("created_at") else None
-            completed_at = cmd.get("completed_at").isoformat() if cmd.get("completed_at") else None
-            cancelled_at = cmd.get("cancelled_at").isoformat() if cmd.get("cancelled_at") else None
-            
-            # Chuẩn bị dữ liệu lệnh
-            command_data = {
+            cmd_data = {
                 "command_id": str(cmd["_id"]),
-                "agent_id": cmd["agent_id"],
-                "hostname": hostname,
+                "agent_id": cmd.get("agent_id"),
                 "command_type": cmd.get("command_type"),
-                "parameters": cmd.get("parameters"),
                 "status": cmd.get("status"),
-                "priority": cmd.get("priority"),
-                "description": cmd.get("description"),
+                "created_at": cmd.get("created_at").isoformat() if cmd.get("created_at") else None,
                 "created_by": cmd.get("created_by"),
-                "created_at": created_at,
-                "completed_at": completed_at,
-                "cancelled_at": cancelled_at,
-                "result": cmd.get("result"),
-                "execution_time": cmd.get("execution_time")
+                "parameters": cmd.get("parameters"),
+                "priority": cmd.get("priority")
             }
-            
-            commands.append(command_data)
+            commands.append(cmd_data)
             
         return jsonify({
             "commands": commands,

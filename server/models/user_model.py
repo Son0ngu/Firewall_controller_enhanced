@@ -1,11 +1,15 @@
-# Import các thư viện cần thiết
-import re  # Thư viện xử lý biểu thức chính quy
-from datetime import datetime  # Thư viện xử lý thời gian
-from enum import Enum  # Thư viện để định nghĩa các giá trị liệt kê
-from typing import Dict, List, Optional, Set, Union, Any  # Thư viện cho kiểu dữ liệu tĩnh
+"""
+Simplified User Model for Firewall Controller.
+Only 2 types: Admin (for monitoring) and Agent (auto-created by IP).
+"""
 
-from bson import ObjectId  # Thư viện để làm việc với MongoDB ObjectId
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict  # Thư viện Pydantic
+import re
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+
+from bson import ObjectId
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 
 
 class PyObjectId(ObjectId):
@@ -35,35 +39,31 @@ class PyObjectId(ObjectId):
 
 
 class UserRole(str, Enum):
-    """
-    Vai trò người dùng trong hệ thống.
-    """
-    ADMIN = "admin"  # Quản trị viên: có toàn quyền và có thể đăng nhập để monitoring
-    USER = "user"    # Người dùng thông thường: agent gửi log và whitelist
+    """Simplified user roles."""
+    ADMIN = "admin"    # Admin user for monitoring and whitelist management
+    AGENT = "agent"    # Agent user (auto-created by IP)
 
 
 class UserStatus(str, Enum):
-    """
-    Liệt kê các trạng thái tài khoản người dùng.
-    """
-    ACTIVE = "active"    # Hoạt động: có thể gửi log và whitelist
-    INACTIVE = "inactive"  # Không hoạt động: bị vô hiệu hóa
+    """User account status."""
+    ACTIVE = "active"
+    INACTIVE = "inactive"
 
 
 class AdminUser(BaseModel):
     """
-    Model cho tài khoản admin duy nhất.
-    Có đầy đủ thông tin xác thực và quyền quản trị.
+    Admin user model for monitoring dashboard and whitelist management.
+    Only one admin user needed for this small project.
     """
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     username: str = Field(..., min_length=3, max_length=50)
-    password_hash: str  # Mật khẩu đã được mã hóa
+    password_hash: str  # Hashed password
     email: Optional[EmailStr] = None
-    role: UserRole = UserRole.ADMIN  # Luôn là admin
+    role: UserRole = UserRole.ADMIN
+    status: UserStatus = UserStatus.ACTIVE
     last_login: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Cấu hình
     model_config = ConfigDict(
         populate_by_alias=True,
         arbitrary_types_allowed=True,
@@ -71,55 +71,39 @@ class AdminUser(BaseModel):
     )
 
 
-class Agent(BaseModel):
+class AgentUser(BaseModel):
     """
-    Model cho các agent gửi log và whitelist lên server.
-    Chỉ cần username để định danh, không cần mật khẩu.
+    Agent user model - auto-created when agent connects.
+    User ID = Agent's IP address for simplicity.
     """
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    username: str = Field(..., min_length=3, max_length=50)  # Tên định danh của agent
-    hostname: Optional[str] = None  # Tên máy chủ agent đang chạy
-    ip_address: Optional[str] = None  # Địa chỉ IP của agent
-    platform: Optional[str] = None  # Thông tin nền tảng (Windows, Linux, etc)
+    user_id: str = Field(..., description="Agent IP address as user ID")  # IP address
+    hostname: Optional[str] = None
+    ip_address: str  # Same as user_id
+    platform: Optional[str] = None
+    os_info: Optional[str] = None
+    agent_version: Optional[str] = None
+    role: UserRole = UserRole.AGENT
     status: UserStatus = UserStatus.ACTIVE
-    role: UserRole = UserRole.USER  # Luôn là user
     
-    # Thông tin giám sát
-    last_seen: Optional[datetime] = None  # Thời điểm cuối cùng agent gửi log
-    last_ip: Optional[str] = None  # IP cuối cùng của agent khi gửi log
+    # Agent-specific info
+    agent_token: Optional[str] = None  # For authentication
+    last_heartbeat: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Agent key để xác thực API
-    api_key: Optional[str] = None
+    @field_validator('user_id')
+    def validate_ip_format(cls, v):
+        """Validate that user_id is a valid IP address."""
+        import ipaddress
+        try:
+            ipaddress.ip_address(v)
+            return v
+        except ValueError:
+            raise ValueError('user_id must be a valid IP address')
     
-    @field_validator('username')
-    def username_alphanumeric(cls, v):
-        """Xác thực username chỉ chứa ký tự chữ, số, gạch dưới và gạch ngang."""
-        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
-            raise ValueError('Username must contain only alphanumeric characters, underscores, or hyphens')
-        return v
-    
-    # Cấu hình
     model_config = ConfigDict(
         populate_by_alias=True,
         arbitrary_types_allowed=True,
         json_encoders={ObjectId: str}
     )
-
-
-class UserLogin(BaseModel):
-    """
-    Schema cho việc đăng nhập admin.
-    """
-    username: str  # Tên người dùng đăng nhập
-    password: str  # Mật khẩu đăng nhập (gốc, chưa mã hóa)
-
-
-class AgentRegistration(BaseModel):
-    """
-    Schema cho việc đăng ký agent mới.
-    """
-    username: str  # Tên định danh của agent
-    hostname: str  # Tên máy chủ
-    ip_address: str  # Địa chỉ IP
-    platform: str  # Thông tin nền tảng

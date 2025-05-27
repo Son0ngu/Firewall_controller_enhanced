@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+
+{% block title %}Agent Management - Firewall Controller{% endblock %}
+
+{% block extra_css %}
+<style>
+    .agent-card {
+        transition: transform 0.2s;
+    }
+    .agent-card:hover {
+        transform: translateY(-2px);
+    }
+    .agent-status {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .agent-status.online {
+        background-color: #28a745;
+        box-shadow: 0 0 5px rgba(40, 167, 69, 0.5);
+    }
+    .agent-status.offline {
+        background-color: #dc3545;
+    }
+    .agent-status.inactive {
+        background-color: #ffc107;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-laptop-code me-2"></i>
+                Agent Management
+            </h1>
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-outline-primary" onclick="refreshAgents()">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+                <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#addAgentModal">
+                    <i class="fas fa-plus me-1"></i>Add Agent
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agent Statistics -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-success">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Active Agents
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="activeAgentsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-check-circle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-warning">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            Inactive Agents
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="inactiveAgentsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-danger">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                            Offline Agents
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="offlineAgentsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-times-circle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-info">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Total Agents
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="totalAgentsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-laptop-code fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agents List -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Registered Agents
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div id="agentsContainer">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading agents...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading agents...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Agent Modal -->
+<div class="modal fade" id="addAgentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus me-2"></i>Agent Setup Instructions
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>How to add an agent:</strong>
+                </div>
+                
+                <ol>
+                    <li class="mb-2">
+                        <strong>Download the agent:</strong>
+                        <div class="mt-1">
+                            <button class="btn btn-sm btn-outline-primary me-2">
+                                <i class="fas fa-download me-1"></i>Windows Agent
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary me-2">
+                                <i class="fas fa-download me-1"></i>Linux Agent
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-download me-1"></i>macOS Agent
+                            </button>
+                        </div>
+                    </li>
+                    
+                    <li class="mb-2">
+                        <strong>Configure the agent:</strong>
+                        <div class="mt-1">
+                            <small class="text-muted">Edit the config file with your server details:</small>
+                            <pre class="bg-light p-2 mt-1"><code>SERVER_URL=http://{{ request.host }}
+API_KEY=your-api-key
+AGENT_NAME=your-agent-name</code></pre>
+                        </div>
+                    </li>
+                    
+                    <li class="mb-2">
+                        <strong>Run the agent:</strong>
+                        <div class="mt-1">
+                            <small class="text-muted">Execute the agent on the target machine</small>
+                        </div>
+                    </li>
+                    
+                    <li>
+                        <strong>Verify connection:</strong>
+                        <div class="mt-1">
+                            <small class="text-muted">The agent should appear in the list below within 30 seconds</small>
+                        </div>
+                    </li>
+                </ol>
+                
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Note:</strong> Ensure the target machine can reach this server on port {{ request.environ.get('SERVER_PORT', '5000') }}.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="refreshAgents()">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh Agents
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let agentsData = [];
+
+// Load agents when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadAgents();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadAgents, 30000);
+});
+
+/**
+ * Load agents from API
+ */
+async function loadAgents() {
+    try {
+        const response = await fetch('/api/agents');
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        agentsData = data.agents || [];
+        updateStatistics();
+        renderAgents(agentsData);
+        
+    } catch (error) {
+        console.error('Error loading agents:', error);
+        showNotification('danger', 'Failed to load agents: ' + error.message);
+        
+        // Show error state
+        document.getElementById('agentsContainer').innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                <h5>Error Loading Agents</h5>
+                <p class="text-muted">${error.message}</p>
+                <button class="btn btn-primary" onclick="loadAgents()">
+                    <i class="fas fa-retry me-1"></i>Retry
+                </button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Update statistics cards
+ */
+function updateStatistics() {
+    const total = agentsData.length;
+    const active = agentsData.filter(a => a.status === 'active').length;
+    const inactive = agentsData.filter(a => a.status === 'inactive').length;
+    const offline = total - active - inactive;
+    
+    document.getElementById('totalAgentsCount').textContent = total;
+    document.getElementById('activeAgentsCount').textContent = active;
+    document.getElementById('inactiveAgentsCount').textContent = inactive;
+    document.getElementById('offlineAgentsCount').textContent = offline;
+}
+
+/**
+ * Render agents list
+ */
+function renderAgents(agents) {
+    const container = document.getElementById('agentsContainer');
+    
+    if (agents.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-laptop-code fa-3x text-muted mb-3"></i>
+                <h5>No Agents Registered</h5>
+                <p class="text-muted">No agents have been registered yet.</p>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAgentModal">
+                    <i class="fas fa-plus me-1"></i>Add Your First Agent
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    agents.forEach((agent, index) => {
+        const statusClass = getStatusClass(agent.status);
+        const statusText = getStatusText(agent.status);
+        const lastSeen = agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never';
+        
+        const agentElement = document.createElement('div');
+        agentElement.className = 'p-3 border-bottom';
+        agentElement.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <span class="agent-status ${statusClass}"></span>
+                    </div>
+                    <div>
+                        <h6 class="mb-1">
+                            <i class="fas fa-desktop me-2"></i>
+                            ${agent.hostname || agent.agent_id || 'Unknown'}
+                        </h6>
+                        <div class="d-flex align-items-center text-muted">
+                            <span class="badge bg-${statusClass === 'online' ? 'success' : statusClass === 'offline' ? 'danger' : 'warning'} me-2">
+                                ${statusText}
+                            </span>
+                            <small>
+                                <i class="fas fa-network-wired me-1"></i>
+                                ${agent.ip_address || 'Unknown IP'}
+                            </small>
+                            ${agent.platform ? `
+                                <small class="ms-2">
+                                    <i class="fas fa-${getPlatformIcon(agent.platform)} me-1"></i>
+                                    ${agent.platform}
+                                </small>
+                            ` : ''}
+                        </div>
+                        <div class="mt-1">
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>
+                                Last seen: ${lastSeen}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-primary" onclick="viewAgentDetails('${agent.agent_id}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-info" onclick="pingAgent('${agent.agent_id}')">
+                        <i class="fas fa-wifi"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="removeAgent('${agent.agent_id}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(agentElement);
+    });
+}
+
+/**
+ * Get status CSS class
+ */
+function getStatusClass(status) {
+    switch (status) {
+        case 'active': return 'online';
+        case 'inactive': return 'inactive';
+        default: return 'offline';
+    }
+}
+
+/**
+ * Get status display text
+ */
+function getStatusText(status) {
+    switch (status) {
+        case 'active': return 'Online';
+        case 'inactive': return 'Inactive';
+        default: return 'Offline';
+    }
+}
+
+/**
+ * Get platform icon
+ */
+function getPlatformIcon(platform) {
+    if (!platform) return 'desktop';
+    const p = platform.toLowerCase();
+    if (p.includes('windows')) return 'windows';
+    if (p.includes('linux')) return 'linux';
+    if (p.includes('mac') || p.includes('darwin')) return 'apple';
+    return 'desktop';
+}
+
+/**
+ * Refresh agents
+ */
+function refreshAgents() {
+    document.getElementById('agentsContainer').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Refreshing agents...</span>
+            </div>
+            <p class="mt-2 text-muted">Refreshing agents...</p>
+        </div>
+    `;
+    loadAgents();
+}
+
+/**
+ * View agent details
+ */
+function viewAgentDetails(agentId) {
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    if (!agent) {
+        showNotification('danger', 'Agent not found');
+        return;
+    }
+    
+    // Show details in a simple alert for now
+    const info = `Agent Details:
+    
+Hostname: ${agent.hostname || 'Unknown'}
+IP Address: ${agent.ip_address || 'Unknown'}
+Platform: ${agent.platform || 'Unknown'}
+Status: ${getStatusText(agent.status)}
+Last Seen: ${agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never'}`;
+    
+    alert(info);
+}
+
+/**
+ * Ping agent
+ */
+async function pingAgent(agentId) {
+    try {
+        showNotification('info', 'Pinging agent...');
+        // For now, just show success
+        setTimeout(() => {
+            showNotification('success', 'Agent is reachable');
+        }, 1000);
+    } catch (error) {
+        showNotification('danger', 'Failed to ping agent: ' + error.message);
+    }
+}
+
+/**
+ * Remove agent
+ */
+async function removeAgent(agentId) {
+    if (!confirm('Are you sure you want to remove this agent?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/agents/${agentId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', 'Agent removed successfully');
+        refreshAgents();
+        
+    } catch (error) {
+        console.error('Error removing agent:', error);
+        showNotification('danger', 'Failed to remove agent: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

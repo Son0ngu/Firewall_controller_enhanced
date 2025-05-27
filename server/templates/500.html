@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - Firewall Controller{% endblock %}
+
+{% block extra_css %}
+<style>
+    .error-page {
+        min-height: 60vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .error-illustration {
+        font-size: 8rem;
+        color: #dc3545;
+        opacity: 0.7;
+        animation: pulse 2s infinite;
+    }
+    .error-code {
+        font-size: 6rem;
+        font-weight: bold;
+        color: #dc3545;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    .btn-retry {
+        transition: all 0.3s ease;
+    }
+    .btn-retry:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    @keyframes pulse {
+        0% { opacity: 0.7; }
+        50% { opacity: 1; }
+        100% { opacity: 0.7; }
+    }
+    .error-details {
+        background: #f8f9fa;
+        border-left: 4px solid #dc3545;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 text-center">
+                <!-- Error Icon -->
+                <div class="error-illustration mb-4">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                
+                <!-- Error Code -->
+                <div class="error-code mb-3">500</div>
+                
+                <!-- Error Message -->
+                <h2 class="h3 mb-3">Internal Server Error</h2>
+                <p class="lead text-muted mb-4">
+                    Something went wrong on our end. We're working to fix this issue.
+                    Please try again in a few moments.
+                </p>
+                
+                <!-- Error Details (only show in debug mode) -->
+                {% if config.DEBUG %}
+                <div class="error-details text-start">
+                    <h6><i class="fas fa-bug me-2"></i>Debug Information</h6>
+                    <small class="text-muted">
+                        This information is only visible in debug mode.
+                        <br>
+                        <strong>Error:</strong> Internal server error occurred
+                        <br>
+                        <strong>Time:</strong> {{ moment().format('YYYY-MM-DD HH:mm:ss') }}
+                        <br>
+                        <strong>Request:</strong> {{ request.method }} {{ request.url }}
+                    </small>
+                </div>
+                {% endif %}
+                
+                <!-- Status Check -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <i class="fas fa-server text-danger mb-2" style="font-size: 2rem;"></i>
+                                <h6>Server Status</h6>
+                                <small class="text-muted">Checking system health...</small>
+                                <div id="server-status" class="mt-2">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <i class="fas fa-database text-warning mb-2" style="font-size: 2rem;"></i>
+                                <h6>Database</h6>
+                                <small class="text-muted">MongoDB connection</small>
+                                <div id="db-status" class="mt-2">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <i class="fas fa-bolt text-info mb-2" style="font-size: 2rem;"></i>
+                                <h6>Real-time</h6>
+                                <small class="text-muted">Socket.IO connection</small>
+                                <div id="socket-status" class="mt-2">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="d-flex flex-column flex-sm-row justify-content-center gap-3">
+                    <button onclick="retryPage()" class="btn btn-primary btn-lg btn-retry">
+                        <i class="fas fa-redo me-2"></i>Try Again
+                    </button>
+                    <a href="/" class="btn btn-outline-primary btn-lg btn-retry">
+                        <i class="fas fa-home me-2"></i>Back to Dashboard
+                    </a>
+                    <button onclick="reportIssue()" class="btn btn-outline-danger btn-lg btn-retry">
+                        <i class="fas fa-bug me-2"></i>Report Issue
+                    </button>
+                </div>
+                
+                <!-- Help Information -->
+                <div class="mt-5">
+                    <h6 class="text-muted">What can you do?</h6>
+                    <div class="row text-start">
+                        <div class="col-md-6">
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <i class="fas fa-redo text-primary me-2"></i>
+                                    <strong>Refresh the page</strong> - The issue might be temporary
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-clock text-info me-2"></i>
+                                    <strong>Wait a moment</strong> - Server might be restarting
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <i class="fas fa-home text-success me-2"></i>
+                                    <strong>Return to dashboard</strong> - Continue from main page
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-bug text-warning me-2"></i>
+                                    <strong>Report the issue</strong> - Help us improve the system
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Technical Information -->
+                <div class="mt-4">
+                    <details class="text-start">
+                        <summary class="btn btn-link p-0 text-muted">
+                            <small><i class="fas fa-info-circle me-1"></i>Technical Details</small>
+                        </summary>
+                        <div class="mt-2 p-3 bg-light rounded">
+                            <small class="text-muted">
+                                <strong>Error Code:</strong> HTTP 500 Internal Server Error<br>
+                                <strong>Timestamp:</strong> <span id="error-timestamp"></span><br>
+                                <strong>Session ID:</strong> <span id="session-id">Loading...</span><br>
+                                <strong>User Agent:</strong> <span id="user-agent"></span><br>
+                                <strong>Referer:</strong> <span id="referer"></span>
+                            </small>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Fill technical details
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('error-timestamp').textContent = new Date().toLocaleString();
+    document.getElementById('session-id').textContent = 'SES-' + Math.random().toString(36).substr(2, 9);
+    document.getElementById('user-agent').textContent = navigator.userAgent.substring(0, 100) + '...';
+    document.getElementById('referer').textContent = document.referrer || 'Direct access';
+    
+    // Check system health
+    checkSystemHealth();
+});
+
+/**
+ * Retry current page
+ */
+function retryPage() {
+    // Show loading state
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Retrying...';
+    btn.disabled = true;
+    
+    // Wait a moment then reload
+    setTimeout(() => {
+        window.location.reload();
+    }, 1000);
+}
+
+/**
+ * Report issue
+ */
+function reportIssue() {
+    const errorInfo = {
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+        referer: document.referrer
+    };
+    
+    // For now, just show an alert with the info
+    // In production, this would send to an error reporting service
+    alert(`Issue Report Generated:
+    
+Timestamp: ${errorInfo.timestamp}
+URL: ${errorInfo.url}
+Browser: ${navigator.userAgent.substring(0, 50)}...
+
+Please save this information and contact support if the issue persists.`);
+    
+    console.error('500 Error Report:', errorInfo);
+}
+
+/**
+ * Check system health
+ */
+async function checkSystemHealth() {
+    // Check server health
+    try {
+        const response = await fetch('/api/health');
+        const data = await response.json();
+        
+        if (response.ok) {
+            document.getElementById('server-status').innerHTML = 
+                '<small class="text-success"><i class="fas fa-check me-1"></i>Online</small>';
+        } else {
+            throw new Error('Health check failed');
+        }
+    } catch (error) {
+        document.getElementById('server-status').innerHTML = 
+            '<small class="text-danger"><i class="fas fa-times me-1"></i>Error</small>';
+    }
+    
+    // Check database (through health endpoint)
+    try {
+        const response = await fetch('/api/health');
+        const data = await response.json();
+        
+        if (data.database === 'connected') {
+            document.getElementById('db-status').innerHTML = 
+                '<small class="text-success"><i class="fas fa-check me-1"></i>Connected</small>';
+        } else {
+            throw new Error('Database not connected');
+        }
+    } catch (error) {
+        document.getElementById('db-status').innerHTML = 
+            '<small class="text-danger"><i class="fas fa-times me-1"></i>Disconnected</small>';
+    }
+    
+    // Check Socket.IO
+    try {
+        if (typeof io !== 'undefined') {
+            const socket = io();
+            
+            socket.on('connect', function() {
+                document.getElementById('socket-status').innerHTML = 
+                    '<small class="text-success"><i class="fas fa-check me-1"></i>Connected</small>';
+                socket.disconnect();
+            });
+            
+            socket.on('connect_error', function() {
+                document.getElementById('socket-status').innerHTML = 
+                    '<small class="text-danger"><i class="fas fa-times me-1"></i>Error</small>';
+            });
+            
+            // Timeout check
+            setTimeout(() => {
+                if (document.getElementById('socket-status').innerHTML.includes('spinner')) {
+                    document.getElementById('socket-status').innerHTML = 
+                        '<small class="text-warning"><i class="fas fa-exclamation me-1"></i>Timeout</small>';
+                }
+            }, 5000);
+        } else {
+            document.getElementById('socket-status').innerHTML = 
+                '<small class="text-warning"><i class="fas fa-exclamation me-1"></i>Not Available</small>';
+        }
+    } catch (error) {
+        document.getElementById('socket-status').innerHTML = 
+            '<small class="text-danger"><i class="fas fa-times me-1"></i>Error</small>';
+    }
+}
+
+// Track 500 errors for analytics (optional)
+if (typeof gtag !== 'undefined') {
+    gtag('event', 'server_error', {
+        'page_location': window.location.href,
+        'page_title': document.title
+    });
+}
+
+console.error('500 Error: Internal server error -', window.location.href);
+</script>
+{% endblock %}

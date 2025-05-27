@@ -90,33 +90,44 @@ class PacketSniffer:
         logger.info("Packet sniffer stopped")
     
     def _capture_packets(self):
-        """Main packet capture loop using Scapy's sniff function."""
-        try:
-            # Xây dựng bộ lọc BPF (Berkeley Packet Filter) cho gói tin
-            # Chỉ bắt gói tin TCP đi ra và có cổng đích là 80 (HTTP) hoặc 443 (HTTPS)
-            # BPF là định dạng lọc gói tin chuẩn được sử dụng bởi nhiều công cụ bắt gói tin
-            filter_str = "tcp and (dst port 80 or dst port 443)"
-            
-            # Ghi log thông tin về bộ lọc đang sử dụng
-            logger.info("Started packet capture with filter: %s", filter_str)
-            
-            # Bắt đầu bắt gói tin với Scapy
-            # Các tham số:
-            # - filter: Chuỗi bộ lọc BPF, xác định gói tin nào sẽ được bắt
-            # - prn: Hàm xử lý cho mỗi gói tin được bắt
-            # - store=0: Không lưu gói tin trong bộ nhớ (tiết kiệm bộ nhớ)
-            # - stop_filter: Hàm kiểm tra khi nào dừng bắt gói tin
-            sniff(
-                filter=filter_str,
-                prn=self._process_packet,  # Gọi _process_packet cho mỗi gói tin
-                store=0,  # Không lưu gói tin vào bộ nhớ để tránh tràn bộ nhớ
-                stop_filter=lambda _: not self.running  # Dừng khi self.running = False
-            )
+        """Main packet capture loop với error recovery"""
+        max_retries = 3
+        retry_count = 0
         
-        except Exception as e:
-            # Bắt và xử lý mọi ngoại lệ có thể xảy ra trong quá trình bắt gói tin
-            # Ghi log lỗi để theo dõi và khắc phục
-            logger.error("Error in packet capture: %s", str(e))
+        while self.running and retry_count < max_retries:
+            try:
+                # Xây dựng bộ lọc BPF (Berkeley Packet Filter) cho gói tin
+                # Chỉ bắt gói tin TCP đi ra và có cổng đích là 80 (HTTP) hoặc 443 (HTTPS)
+                # BPF là định dạng lọc gói tin chuẩn được sử dụng bởi nhiều công cụ bắt gói tin
+                filter_str = "tcp and (dst port 80 or dst port 443)"
+                
+                # Ghi log thông tin về bộ lọc đang sử dụng
+                logger.info("Started packet capture with filter: %s", filter_str)
+                
+                # Bắt đầu bắt gói tin với Scapy
+                # Các tham số:
+                # - filter: Chuỗi bộ lọc BPF, xác định gói tin nào sẽ được bắt
+                # - prn: Hàm xử lý cho mỗi gói tin được bắt
+                # - store=0: Không lưu gói tin trong bộ nhớ (tiết kiệm bộ nhớ)
+                # - stop_filter: Hàm kiểm tra khi nào dừng bắt gói tin
+                sniff(
+                    filter=filter_str,
+                    prn=self._process_packet,  # Gọi _process_packet cho mỗi gói tin
+                    store=0,  # Không lưu gói tin vào bộ nhớ để tránh tràn bộ nhớ
+                    stop_filter=lambda _: not self.running  # Dừng khi self.running = False
+                )
+                break  # Thành công, thoát loop
+                
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"Error in packet capture (attempt {retry_count}/{max_retries}): {str(e)}")
+                
+                if retry_count < max_retries and self.running:
+                    logger.info(f"Retrying packet capture in 5 seconds...")
+                    time.sleep(5)
+                else:
+                    logger.error("Failed to start packet capture after all retries")
+                    break
     
     def _process_packet(self, packet: Packet):
         """
@@ -262,7 +273,7 @@ class PacketSniffer:
                 # Kiểm tra loại bản ghi TLS (0x16 = handshake) và phiên bản
                 if payload[0] != 0x16:  # Không phải handshake
                     return None
-                    
+                
                 # Kiểm tra nếu đây là bản tin ClientHello (loại handshake = 1)
                 if len(payload) <= 5 or payload[5] != 0x01:
                     return None

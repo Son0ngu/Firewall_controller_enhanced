@@ -1,898 +1,380 @@
-# Import các thư viện cần thiết
+"""
+Whitelist Management module with support for domains, IPs, URLs, and patterns.
+"""
+
 import logging
 import re
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Union
-from functools import wraps
+import socket
+import ipaddress
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 from bson import ObjectId
-from flask import Blueprint, jsonify, request, current_app, g, session
+from flask import Blueprint, jsonify, request
 from flask_socketio import SocketIO
 from pymongo import MongoClient, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 
-# Cấu hình logging cho module
 logger = logging.getLogger("whitelist_module")
-
-# Khởi tạo Blueprint cho các route API
 whitelist_bp = Blueprint('whitelist', __name__)
 
-# Biến socketio sẽ được khởi tạo từ bên ngoài với instance Flask-SocketIO
+# Global variables
 socketio: Optional[SocketIO] = None
-
-# Các biến kết nối MongoDB (được khởi tạo trong hàm init_app)
-_db: Optional[Database] = None  # Database MongoDB
-_whitelist_collection: Optional[Collection] = None  # Collection lưu trữ whitelist
-
-# Định nghĩa các decorator xác thực đơn giản hơn
-def check_admin():
-    """
-    Decorator đơn giản kiểm tra xem người dùng đã đăng nhập với vai trò admin chưa.
-    """
-    def decorator(f):
-        @wraps(f)  # Giữ lại metadata của hàm gốc
-        def wrapped(*args, **kwargs):
-            if 'user_id' not in session:
-                return jsonify({"error": "Authentication required"}), 401
-                
-            # Kiểm tra vai trò của người dùng
-            if session.get('role') != 'admin':
-                return jsonify({"error": "Admin privileges required"}), 403
-                
-            # Thiết lập thông tin người dùng để sử dụng trong hàm xử lý
-            g.user = {
-                'username': session.get('username', 'unknown')
-            }
-            
-            return f(*args, **kwargs)
-        return wrapped
-    return decorator
-
+_db: Optional[Database] = None
+_whitelist_collection: Optional[Collection] = None
 
 def init_app(app, mongo_client: MongoClient, socket_io: SocketIO = None):
-    """
-    Khởi tạo module whitelist với ứng dụng Flask và kết nối MongoDB.
-    
-    Args:
-        app: Instance ứng dụng Flask
-        mongo_client: Instance MongoClient của PyMongo để kết nối đến MongoDB
-        socket_io: Instance Flask-SocketIO cho thông báo realtime
-    """
+    """Initialize whitelist module."""
     global _db, _whitelist_collection, socketio
     
-    # Lưu trữ instance SocketIO nếu được cung cấp
     socketio = socket_io
-    
-    # Sử dụng tên database từ cấu hình
     db_name = app.config.get('MONGO_DBNAME', 'Monitoring')
     _db = mongo_client[db_name]
-    
-    # Lấy collection whitelist từ database
     _whitelist_collection = _db.whitelist
     
-    # Tạo các chỉ mục (index) để tối ưu hiệu suất truy vấn
-    _whitelist_collection.create_index([("domain", 1)], unique=True)
+    # Create indexes
+    _whitelist_collection.create_index([("value", 1)], unique=True)
+    _whitelist_collection.create_index([("type", 1)])
+    _whitelist_collection.create_index([("category", 1)])
+    _whitelist_collection.create_index([("priority", DESCENDING)])
     _whitelist_collection.create_index([("added_date", DESCENDING)])
-    _whitelist_collection.create_index([("added_by", 1)])
+    _whitelist_collection.create_index([("expiry_date", 1)], sparse=True)
     
-    # Đăng ký blueprint với ứng dụng Flask
-    app.register_blueprint(whitelist_bp, url_prefix='/api')
-    
-    # Tạo whitelist mặc định nếu chưa có dữ liệu
-    if _whitelist_collection.count_documents({}) == 0:
-        _create_default_whitelist()
-    
+    app.register_blueprint(whitelist_bp, url_prefix='/api/whitelist')
     logger.info("Whitelist module initialized")
 
-
-# ======== Các route API ========
-
-@whitelist_bp.route('/whitelist', methods=['GET'])
-@check_admin()  # Chỉ admin mới có thể xem whitelist
-def get_whitelist():
-    """
-    Lấy danh sách whitelist với tùy chọn lọc.
-    
-    Tham số truy vấn:
-    - search: Lọc theo tên miền (khớp một phần)
-    - since: Chuỗi datetime ISO để lọc các bản ghi sau một thời điểm
-    - limit: Số lượng bản ghi tối đa để trả về (mặc định: 1000)
-    - skip: Số lượng bản ghi để bỏ qua (cho phân trang, mặc định: 0)
-    
-    Returns:
-        JSON với mảng domains và metadata
-    """
+@whitelist_bp.route('', methods=['GET'])
+def list_whitelist():
+    """Get all whitelist entries."""
     try:
-        # Phân tích các tham số truy vấn
-        search = request.args.get('search', '')  # Từ khóa tìm kiếm, mặc định rỗng
-        since_str = request.args.get('since')  # Thời gian bắt đầu lọc
-        limit = min(int(request.args.get('limit', 1000)), 2000)  # Giới hạn tối đa 2000 bản ghi
-        skip = int(request.args.get('skip', 0))  # Số bản ghi bỏ qua cho phân trang
-        
-        # Xây dựng truy vấn MongoDB
         query = {}
         
-        # Thêm điều kiện tìm kiếm theo tên miền nếu có
-        # Sử dụng regex để tìm kiếm một phần tên miền, không phân biệt hoa thường
+        # Filter by type
+        entry_type = request.args.get('type')
+        if entry_type:
+            query["type"] = entry_type
+            
+        # Filter by category
+        category = request.args.get('category')
+        if category:
+            query["category"] = category
+            
+        # Search
+        search = request.args.get('search')
         if search:
-            query["domain"] = {"$regex": search, "$options": "i"}
-            
-        # Phân tích thời gian để lọc
-        if since_str:
-            try:
-                # Chuyển đổi chuỗi ISO thành đối tượng datetime
-                since = datetime.fromisoformat(since_str.replace('Z', '+00:00'))
-                # Lọc các bản ghi được thêm sau mốc thời gian này
-                query["added_date"] = {"$gte": since}
-            except ValueError:
-                # Bỏ qua nếu định dạng thời gian không hợp lệ
-                pass
-                
-        # Thực hiện truy vấn từ database
-        cursor = _whitelist_collection.find(query)
+            query["$or"] = [
+                {"value": {"$regex": search, "$options": "i"}},
+                {"notes": {"$regex": search, "$options": "i"}}
+            ]
         
-        # Lấy tổng số bản ghi phù hợp với điều kiện (trước khi phân trang)
-        total_count = _whitelist_collection.count_documents(query)
+        # Clean up expired entries
+        cleanup_expired_entries()
         
-        # Áp dụng sắp xếp theo tên miền và phân trang
-        cursor = cursor.sort("domain", 1).skip(skip).limit(limit)
+        cursor = _whitelist_collection.find(query).sort([
+            ("priority", DESCENDING),
+            ("added_date", DESCENDING)
+        ])
         
-        # Chuyển kết quả thành danh sách và chuẩn bị cho response JSON
-        domains = []
+        entries = []
         for entry in cursor:
-            # Chuyển ObjectId thành chuỗi để có thể serialize
-            entry["_id"] = str(entry["_id"])
-            
-            # Chuyển datetime thành chuỗi ISO
-            if "added_date" in entry and isinstance(entry["added_date"], datetime):
-                entry["added_date"] = entry["added_date"].isoformat()
-                
-            domains.append(entry)
-            
-        # Tạo danh sách đơn giản chỉ chứa tên miền (không có metadata)
-        # Hữu ích cho client đơn giản không cần chi tiết
-        simple_domains = [entry["domain"] for entry in domains]
-            
-        # Trả về kết quả với metadata
-        return jsonify({
-            "domains": domains,  # Danh sách đầy đủ với metadata
-            "simple_domains": simple_domains,  # Danh sách đơn giản chỉ có tên miền
-            "total": total_count  # Tổng số bản ghi thỏa mãn điều kiện
-        }), 200
-        
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi truy vấn
-        logger.error(f"Error retrieving whitelist: {str(e)}")
-        return jsonify({"error": "Failed to retrieve whitelist"}), 500
-
-
-@whitelist_bp.route('/whitelist', methods=['POST'])
-@check_admin()  # Chỉ admin mới có thể thêm vào whitelist
-def add_domain():
-    """
-    Thêm một tên miền vào whitelist.
-    
-    Request body:
-    {
-        "domain": "example.com",   # Bắt buộc
-        "notes": "Example domain", # Tùy chọn
-    }
-    
-    Returns:
-        JSON response với trạng thái và dữ liệu tên miền
-    """
-    # Kiểm tra xem request có định dạng JSON không
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-        
-    # Lấy dữ liệu từ request
-    data = request.json
-    # Kiểm tra cấu trúc dữ liệu và trường bắt buộc domain
-    if not isinstance(data, dict) or "domain" not in data:
-        return jsonify({"error": "Invalid request format, 'domain' field required"}), 400
-        
-    # Lấy domain và làm sạch (loại bỏ khoảng trắng, chuyển thành chữ thường)
-    domain = data.get("domain", "").strip().lower()
-    
-    # Xác thực định dạng tên miền
-    if not is_valid_domain(domain):
-        return jsonify({"error": "Invalid domain format"}), 400
-        
-    # Kiểm tra xem tên miền đã tồn tại chưa
-    if _whitelist_collection.find_one({"domain": domain}):
-        return jsonify({"error": "Domain already exists in whitelist"}), 409
-        
-    # Lấy thông tin người dùng từ token xác thực
-    # g.user được đặt bởi decorator token_required
-    username = g.user.get('username', 'unknown')
-    
-    # Chuẩn bị bản ghi để thêm vào database
-    entry = {
-        "domain": domain,
-        "notes": data.get("notes", ""),  # Ghi chú, mặc định rỗng
-        "added_by": username,  # Người thêm
-        "added_date": datetime.utcnow()  # Thời điểm thêm
-    }
-    
-    try:
-        # Chèn bản ghi vào database
-        result = _whitelist_collection.insert_one(entry)
-        
-        # Chuẩn bị dữ liệu cho response
-        entry["_id"] = str(result.inserted_id)  # Chuyển ObjectId thành chuỗi
-        entry["added_date"] = entry["added_date"].isoformat()  # Chuyển datetime thành chuỗi ISO
-        
-        # Phát sóng thông báo qua SocketIO
-        # Thông báo cho tất cả client đang kết nối rằng whitelist đã được cập nhật
-        if socketio:
-            socketio.emit('whitelist_updated', {
-                "action": "add",  # Loại hành động: thêm
-                "domain": entry["domain"],  # Tên miền đã thêm
-                "entry": entry  # Dữ liệu đầy đủ của bản ghi
-            })
-        
-        # Ghi log hoạt động
-        logger.info(f"Domain {domain} added to whitelist by {username}")
-        
-        # Trả về thành công với dữ liệu bản ghi
-        return jsonify({
-            "status": "success",
-            "message": "Domain added to whitelist",
-            "domain": entry
-        }), 201  # 201 Created: resource đã được tạo thành công
-        
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi thêm vào database
-        logger.error(f"Error adding domain to whitelist: {str(e)}")
-        return jsonify({"error": "Failed to add domain to whitelist"}), 500
-
-
-@whitelist_bp.route('/whitelist/<domain_id>', methods=['PUT'])
-@check_admin()
-def update_domain(domain_id):
-    """
-    Cập nhật một bản ghi tên miền trong whitelist.
-    
-    Args:
-        domain_id: ID của bản ghi tên miền cần cập nhật
-    
-    Request body:
-    {
-        "notes": "Ghi chú mới",    # Tùy chọn
-        "domain": "example.com"    # Tùy chọn, nhưng phải hợp lệ nếu được cung cấp
-    }
-    
-    Returns:
-        JSON response với trạng thái và dữ liệu đã cập nhật
-    """
-    # Kiểm tra xem request có định dạng JSON không
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-        
-    # Lấy dữ liệu từ request
-    data = request.json
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid request format"}), 400
-        
-    try:
-        # Chuyển đổi chuỗi ID thành ObjectId MongoDB
-        try:
-            object_id = ObjectId(domain_id)
-        except:
-            return jsonify({"error": "Invalid domain ID format"}), 400
-            
-        # Lấy bản ghi hiện tại từ database
-        current = _whitelist_collection.find_one({"_id": object_id})
-        if not current:
-            return jsonify({"error": "Domain entry not found"}), 404
-            
-        # Lấy thông tin người dùng từ token xác thực
-        username = g.user.get('username', 'unknown')
-        
-        # Xây dựng truy vấn cập nhật
-        update = {}
-        
-        # Cập nhật ghi chú nếu được cung cấp
-        if "notes" in data:
-            update["notes"] = data["notes"]
-            
-        # Cập nhật tên miền nếu được cung cấp
-        if "domain" in data:
-            # Làm sạch tên miền (loại bỏ khoảng trắng, chuyển thành chữ thường)
-            domain = data["domain"].strip().lower()
-            
-            # Xác thực định dạng tên miền
-            if not is_valid_domain(domain):
-                return jsonify({"error": "Invalid domain format"}), 400
-                
-            # Kiểm tra xem tên miền mới đã tồn tại chưa (chỉ nếu khác tên miền hiện tại)
-            if domain != current["domain"] and _whitelist_collection.find_one({"domain": domain}):
-                return jsonify({"error": "Domain already exists in whitelist"}), 409
-                
-            update["domain"] = domain
-            
-        # Nếu không có gì để cập nhật, trả về thành công
-        if not update:
-            return jsonify({"status": "success", "message": "No changes made"}), 200
-            
-        # Thêm thông tin cập nhật cuối cùng
-        update["last_updated"] = datetime.utcnow()  # Thời điểm cập nhật
-        update["last_updated_by"] = username  # Người cập nhật
-        
-        # Cập nhật bản ghi trong database
-        result = _whitelist_collection.update_one(
-            {"_id": object_id},
-            {"$set": update}
-        )
-        
-        # Kiểm tra xem có bản ghi nào được cập nhật không
-        if result.modified_count:
-            # Lấy bản ghi đã cập nhật
-            updated = _whitelist_collection.find_one({"_id": object_id})
-            
-            # Chuẩn bị dữ liệu cho response
-            updated["_id"] = str(updated["_id"])  # Chuyển ObjectId thành chuỗi
-            # Chuyển các trường datetime thành chuỗi ISO
-            if "added_date" in updated and isinstance(updated["added_date"], datetime):
-                updated["added_date"] = updated["added_date"].isoformat()
-            if "last_updated" in updated and isinstance(updated["last_updated"], datetime):
-                updated["last_updated"] = updated["last_updated"].isoformat()
-            
-            # Phát sóng thông báo qua SocketIO
-            if socketio:
-                socketio.emit('whitelist_updated', {
-                    "action": "update",  # Loại hành động: cập nhật
-                    "domain": updated["domain"],  # Tên miền đã cập nhật
-                    "entry": updated  # Dữ liệu đầy đủ của bản ghi
-                })
-            
-            # Ghi log hoạt động
-            logger.info(f"Domain entry {domain_id} updated by {username}")
-            
-            # Trả về thành công với dữ liệu đã cập nhật
-            return jsonify({
-                "status": "success", 
-                "message": "Domain entry updated",
-                "domain": updated
-            }), 200
-        else:
-            # Không có bản ghi nào được cập nhật
-            return jsonify({"status": "warning", "message": "No changes made"}), 200
-            
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi cập nhật
-        logger.error(f"Error updating domain entry: {str(e)}")
-        return jsonify({"error": "Failed to update domain entry"}), 500
-
-
-@whitelist_bp.route('/whitelist/<domain_id>', methods=['DELETE'])
-@check_admin()
-def delete_domain(domain_id):
-    """
-    Xóa một tên miền khỏi whitelist.
-    
-    Args:
-        domain_id: ID của tên miền cần xóa
-    
-    Returns:
-        JSON response với trạng thái
-    """
-    try:
-        # Chuyển đổi chuỗi ID thành ObjectId MongoDB
-        try:
-            object_id = ObjectId(domain_id)
-        except:
-            return jsonify({"error": "Invalid domain ID format"}), 400
-            
-        # Lấy thông tin người dùng từ token xác thực
-        username = g.user.get('username', 'unknown')
-        
-        # Lấy thông tin tên miền trước khi xóa (để sử dụng cho thông báo)
-        domain_entry = _whitelist_collection.find_one({"_id": object_id})
-        if not domain_entry:
-            return jsonify({"error": "Domain not found"}), 404
-            
-        # Xóa tên miền khỏi database
-        result = _whitelist_collection.delete_one({"_id": object_id})
-        
-        # Kiểm tra xem có bản ghi nào bị xóa không
-        if result.deleted_count:
-            # Phát sóng thông báo qua SocketIO
-            if socketio:
-                socketio.emit('whitelist_updated', {
-                    "action": "delete",  # Loại hành động: xóa
-                    "domain": domain_entry["domain"],  # Tên miền đã xóa
-                    "entry_id": str(object_id)  # ID của bản ghi đã xóa
-                })
-            
-            # Ghi log hoạt động
-            logger.info(f"Domain {domain_entry['domain']} removed from whitelist by {username}")
-            
-            # Trả về thành công
-            return jsonify({
-                "status": "success", 
-                "message": "Domain removed from whitelist"
-            }), 200
-        else:
-            # Không tìm thấy tên miền để xóa
-            return jsonify({"status": "error", "message": "Domain not found"}), 404
-            
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi xóa
-        logger.error(f"Error deleting domain: {str(e)}")
-        return jsonify({"error": "Failed to delete domain"}), 500
-
-
-@whitelist_bp.route('/whitelist/domain/<domain>', methods=['DELETE'])
-@check_admin()
-def delete_domain_by_name(domain):
-    """
-    Xóa một tên miền khỏi whitelist theo tên.
-    
-    Args:
-        domain: Tên miền cần xóa
-    
-    Returns:
-        JSON response với trạng thái
-    """
-    try:
-        # Làm sạch tên miền (loại bỏ khoảng trắng, chuyển thành chữ thường)
-        domain = domain.strip().lower()
-        
-        # Lấy thông tin người dùng từ token xác thực
-        username = g.user.get('username', 'unknown')
-        
-        # Tìm tên miền trong database
-        domain_entry = _whitelist_collection.find_one({"domain": domain})
-        if not domain_entry:
-            return jsonify({"error": "Domain not found in whitelist"}), 404
-            
-        # Xóa tên miền khỏi database
-        result = _whitelist_collection.delete_one({"domain": domain})
-        
-        # Kiểm tra xem có bản ghi nào bị xóa không
-        if result.deleted_count:
-            # Phát sóng thông báo qua SocketIO
-            if socketio:
-                socketio.emit('whitelist_updated', {
-                    "action": "delete",  # Loại hành động: xóa
-                    "domain": domain,  # Tên miền đã xóa
-                    "entry_id": str(domain_entry["_id"])  # ID của bản ghi đã xóa
-                })
-            
-            # Ghi log hoạt động
-            logger.info(f"Domain {domain} removed from whitelist by {username}")
-            
-            # Trả về thành công
-            return jsonify({
-                "status": "success", 
-                "message": "Domain removed from whitelist"
-            }), 200
-        else:
-            # Không tìm thấy tên miền để xóa
-            return jsonify({"status": "error", "message": "Domain not found"}), 404
-            
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi xóa
-        logger.error(f"Error deleting domain: {str(e)}")
-        return jsonify({"error": "Failed to delete domain"}), 500
-
-
-@whitelist_bp.route('/whitelist/check/<domain>', methods=['GET'])
-def check_domain(domain):
-    """
-    Kiểm tra xem một tên miền có trong whitelist không.
-    Endpoint này là công khai (không yêu cầu xác thực) để cho phép agent kiểm tra mà không cần đăng nhập.
-    
-    Args:
-        domain: Tên miền cần kiểm tra
-    
-    Returns:
-        JSON response với kết quả
-    """
-    try:
-        # Làm sạch tên miền (loại bỏ khoảng trắng, chuyển thành chữ thường)
-        domain = domain.strip().lower()
-        
-        # Kiểm tra khớp chính xác
-        if _whitelist_collection.find_one({"domain": domain}):
-            return jsonify({
-                "domain": domain,
-                "allowed": True,  # Tên miền được cho phép
-                "match_type": "exact"  # Loại khớp: chính xác
-            }), 200
-            
-        # Kiểm tra khớp wildcard (ví dụ: *.example.com khớp với a.example.com)
-        parts = domain.split('.')
-        for i in range(1, len(parts)):
-            # Tạo wildcard domain từ phần còn lại của tên miền
-            # Ví dụ: Từ a.example.com, tạo *.example.com
-            wildcard = f"*.{'.'.join(parts[i:])}"
-            if _whitelist_collection.find_one({"domain": wildcard}):
-                return jsonify({
-                    "domain": domain,
-                    "allowed": True,  # Tên miền được cho phép
-                    "match_type": "wildcard",  # Loại khớp: wildcard
-                    "wildcard": wildcard  # Tên miền wildcard khớp
-                }), 200
-        
-        # Không tìm thấy trong whitelist
-        return jsonify({
-            "domain": domain,
-            "allowed": False  # Tên miền không được cho phép
-        }), 200
-            
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi kiểm tra
-        logger.error(f"Error checking domain: {str(e)}")
-        return jsonify({"error": "Failed to check domain"}), 500
-
-
-@whitelist_bp.route('/whitelist/bulk', methods=['POST'])
-@check_admin()
-def bulk_add_domains():
-    """
-    Thêm nhiều tên miền vào whitelist cùng lúc.
-    
-    Request body:
-    {
-        "domains": [
-            "example.com", 
-            "example.org"
-        ],
-        "notes": "Bulk import"      # Tùy chọn, áp dụng cho tất cả các tên miền
-    }
-    
-    Returns:
-        JSON response với số lượng tên miền đã thêm và bỏ qua
-    """
-    # Kiểm tra xem request có định dạng JSON không
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-        
-    # Lấy dữ liệu từ request
-    data = request.json
-    # Kiểm tra cấu trúc dữ liệu và trường bắt buộc domains
-    if not isinstance(data, dict) or "domains" not in data or not isinstance(data["domains"], list):
-        return jsonify({"error": "Invalid request format, 'domains' array required"}), 400
-        
-    # Lấy thông tin người dùng từ token xác thực
-    username = g.user.get('username', 'unknown')
-    
-    # Lấy ghi chú chung cho tất cả các tên miền
-    notes = data.get("notes", "Bulk import")
-    
-    try:
-        # Xử lý từng tên miền
-        added = []  # Danh sách tên miền đã thêm thành công
-        skipped = []  # Danh sách tên miền đã bỏ qua
-        
-        for domain in data["domains"]:
-            # Bỏ qua nếu không phải chuỗi
-            if not isinstance(domain, str):
-                continue
-                
-            # Làm sạch và xác thực tên miền
-            domain = domain.strip().lower()
-            if not is_valid_domain(domain):
-                # Thêm vào danh sách bỏ qua với lý do định dạng không hợp lệ
-                skipped.append({"domain": domain, "reason": "invalid_format"})
-                continue
-                
-            # Kiểm tra xem tên miền đã tồn tại chưa
-            if _whitelist_collection.find_one({"domain": domain}):
-                # Thêm vào danh sách bỏ qua với lý do đã tồn tại
-                skipped.append({"domain": domain, "reason": "already_exists"})
-                continue
-                
-            # Chuẩn bị bản ghi để thêm vào database
-            entry = {
-                "domain": domain,
-                "notes": notes,
-                "added_by": username,
-                "added_date": datetime.utcnow()
+            entry_data = {
+                "id": str(entry["_id"]),
+                "type": entry.get("type", "domain"),
+                "value": entry.get("value"),
+                "domain": entry.get("value"),  # Backwards compatibility
+                "category": entry.get("category"),
+                "notes": entry.get("notes"),
+                "priority": entry.get("priority", "normal"),
+                "added_by": entry.get("added_by"),
+                "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None,
+                "expiry_date": entry.get("expiry_date").isoformat() if entry.get("expiry_date") else None,
+                "max_requests_per_hour": entry.get("max_requests_per_hour"),
+                "enable_logging": entry.get("enable_logging", False),
+                "is_temporary": entry.get("is_temporary", False),
+                "dns_config": entry.get("dns_config"),
+                "usage_count": entry.get("usage_count", 0),
+                "last_used": entry.get("last_used").isoformat() if entry.get("last_used") else None
             }
+            entries.append(entry_data)
             
-            # Thêm vào whitelist
-            result = _whitelist_collection.insert_one(entry)
-            # Thêm vào danh sách đã thêm thành công
-            added.append({
-                "domain": domain,
-                "id": str(result.inserted_id)
-            })
+        return jsonify({"domains": entries}), 200  # Keep "domains" for backwards compatibility
         
-        # Phát sóng thông báo qua SocketIO nếu có tên miền nào được thêm
-        if added and socketio:
-            socketio.emit('whitelist_bulk_updated', {
-                "action": "bulk_add",  # Loại hành động: thêm hàng loạt
-                "count": len(added)  # Số lượng tên miền đã thêm
-            })
-        
-        # Ghi log hoạt động
-        logger.info(f"Bulk import: {len(added)} domains added by {username}")
-        
-        # Trả về thành công với thống kê
-        return jsonify({
-            "status": "success",
-            "added": len(added),  # Số lượng tên miền đã thêm
-            "skipped": len(skipped),  # Số lượng tên miền đã bỏ qua
-            "added_domains": added,  # Chi tiết các tên miền đã thêm
-            "skipped_domains": skipped  # Chi tiết các tên miền đã bỏ qua và lý do
-        }), 201
-            
     except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi thêm hàng loạt
-        logger.error(f"Error in bulk domain add: {str(e)}")
-        return jsonify({"error": "Failed to process bulk domain addition"}), 500
+        logger.error(f"Error listing whitelist: {str(e)}")
+        return jsonify({"error": "Failed to list whitelist"}), 500
 
-
-@whitelist_bp.route('/whitelist/agent-sync', methods=['GET'])
-def agent_whitelist_sync():
-    """
-    Endpoint cho các agent đồng bộ whitelist của họ.
-    Endpoint này có thể truy cập mà không cần xác thực người dùng nhưng yêu cầu token agent hợp lệ.
+@whitelist_bp.route('', methods=['POST'])
+def add_entry():
+    """Add new entry to whitelist."""
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+        
+    data = request.json
+    entry_type = data.get("type", "domain")
+    value = data.get("value", "").strip().lower()
     
-    Tham số truy vấn:
-    - since: Chuỗi datetime ISO để lọc các bản ghi sau một thời điểm
-    - agent_id: ID agent bắt buộc để theo dõi
-    - agent_token: Token xác thực agent bắt buộc
+    if not value:
+        return jsonify({"error": "Value is required"}), 400
     
-    Returns:
-        JSON với mảng domains và metadata
-    """
+    # Validate based on type
+    validation_result = validate_entry(entry_type, value)
+    if not validation_result["valid"]:
+        return jsonify({"error": validation_result["message"]}), 400
+    
     try:
-        # Phân tích các tham số truy vấn
-        since_str = request.args.get('since')  # Thời gian bắt đầu lọc
-        agent_id = request.args.get('agent_id')  # ID của agent
-        agent_token = request.args.get('agent_token')  # Token xác thực
+        current_time = datetime.utcnow()
+        client_ip = request.remote_addr
         
-        # Xác thực agent_id (cơ bản cho bây giờ)
-        if not agent_id:
-            return jsonify({"error": "Agent ID is required"}), 400
+        # Prepare entry data
+        entry_data = {
+            "type": entry_type,
+            "value": value,
+            "category": data.get("category", "uncategorized"),
+            "notes": data.get("notes"),
+            "priority": data.get("priority", "normal"),
+            "added_by": client_ip,
+            "added_date": current_time,
+            "enable_logging": data.get("enable_logging", False),
+            "is_temporary": data.get("is_temporary", False),
+            "usage_count": 0
+        }
         
-        # TODO: Triển khai xác thực agent đúng cách
-        # Hiện tại giữ đơn giản để tương thích
-        
-        # Xây dựng truy vấn MongoDB
-        query = {}
-        
-        # Phân tích lọc thời gian
-        if since_str:
+        # Add expiry date
+        if data.get("expiry_date"):
             try:
-                # Chuyển đổi chuỗi ISO thành đối tượng datetime
-                since = datetime.fromisoformat(since_str.replace('Z', '+00:00'))
-                # Lọc các bản ghi được thêm sau mốc thời gian này
-                query["added_date"] = {"$gte": since}
+                entry_data["expiry_date"] = datetime.fromisoformat(data["expiry_date"])
             except ValueError:
-                # Bỏ qua nếu định dạng thời gian không hợp lệ
-                pass
-        
-        # Tìm tất cả tên miền phù hợp với điều kiện
-        cursor = _whitelist_collection.find(query)
-        
-        # Lấy thời gian cập nhật gần nhất cho toàn bộ whitelist
-        # Sắp xếp theo added_date giảm dần và lấy bản ghi đầu tiên
-        last_update = _whitelist_collection.find_one(
-            {}, 
-            sort=[("added_date", DESCENDING)]
-        )
-        
-        # Lấy thời gian cập nhật cuối cùng
-        last_update_time = None
-        if last_update and "added_date" in last_update:
-            last_update_time = last_update["added_date"].isoformat()
-        
-        # Chuyển đổi thành danh sách các chuỗi tên miền để response nhẹ hơn
-        domains = []
-        for entry in cursor:
-            domains.append(entry["domain"])
+                return jsonify({"error": "Invalid expiry date format"}), 400
+        elif data.get("is_temporary"):
+            entry_data["expiry_date"] = current_time + timedelta(hours=24)
             
-        # Ghi log sự kiện đồng bộ
-        logger.info(f"Agent {agent_id} synced whitelist. Returned {len(domains)} domains.")
-        
-        # Trả về kết quả
-        return jsonify({
-            "domains": domains,  # Danh sách tên miền
-            "count": len(domains),  # Số lượng tên miền
-            "last_updated": last_update_time  # Thời gian cập nhật cuối cùng
-        }), 200
-        
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi đồng bộ
-        logger.error(f"Error in agent whitelist sync: {str(e)}")
-        return jsonify({"error": "Failed to sync whitelist"}), 500
-
-
-# ======== Các hàm hỗ trợ ========
-
-def is_valid_domain(domain: str) -> bool:
-    """
-    Xác thực xem một chuỗi có phải là tên miền được định dạng đúng không.
-    
-    Args:
-        domain: Tên miền cần xác thực
-        
-    Returns:
-        bool: True nếu định dạng tên miền hợp lệ
-    """
-    # Kiểm tra tên miền rỗng hoặc quá dài
-    if not domain or len(domain) > 253:
-        return False
-        
-    # Cho phép tên miền wildcard (ví dụ: *.example.com)
-    if domain.startswith("*."):
-        # Loại bỏ phần "*." để kiểm tra phần còn lại
-        domain = domain[2:]
-        
-    # Xác thực định dạng tên miền cơ bản
-    # Mẫu regex này kiểm tra:
-    # - Bắt đầu bằng chữ cái hoặc số
-    # - Có thể chứa chữ cái, số, dấu gạch ngang (tối đa 63 ký tự mỗi phần)
-    # - Có ít nhất 2 phần (ví dụ: example.com)
-    # - Phần mở rộng (com, org, ...) chỉ chứa chữ cái và ít nhất 2 ký tự
-    pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, domain))
-
-
-def add_domain_programmatically(domain: str, notes: str = "", added_by: str = "system") -> Optional[str]:
-    """
-    Thêm một tên miền vào whitelist lập trình (sử dụng nội bộ).
-    
-    Args:
-        domain: Tên miền cần thêm
-        notes: Ghi chú tùy chọn về tên miền này
-        added_by: Người/hệ thống đã thêm tên miền này
-        
-    Returns:
-        str: ID của tên miền đã chèn, hoặc None nếu việc chèn thất bại
-    """
-    try:
-        # Làm sạch và xác thực tên miền
-        domain = domain.strip().lower()
-        if not is_valid_domain(domain):
-            # Ghi log lỗi nếu định dạng tên miền không hợp lệ
-            logger.error(f"Invalid domain format: {domain}")
-            return None
+        # Add rate limiting
+        if data.get("max_requests_per_hour"):
+            entry_data["max_requests_per_hour"] = int(data["max_requests_per_hour"])
             
-        # Kiểm tra xem tên miền đã tồn tại chưa
-        if _whitelist_collection.find_one({"domain": domain}):
-            # Ghi log debug nếu tên miền đã tồn tại
-            logger.debug(f"Domain already exists in whitelist: {domain}")
-            return None
+        # Add DNS config for domains
+        if entry_type == "domain" and data.get("dns_config"):
+            dns_config = data["dns_config"]
+            if dns_config.get("verify"):
+                dns_result = verify_dns(value, dns_config.get("server"))
+                if not dns_result["valid"]:
+                    return jsonify({"error": f"DNS verification failed: {dns_result['message']}"}), 400
+                entry_data["dns_info"] = dns_result["info"]
+            entry_data["dns_config"] = dns_config
+        
+        # Check for duplicates
+        existing = _whitelist_collection.find_one({"value": value})
+        if existing:
+            return jsonify({"error": "Entry already exists"}), 409
             
-        # Chuẩn bị bản ghi để thêm vào database
-        entry = {
-            "domain": domain,
-            "notes": notes,
-            "added_by": added_by,
-            "added_date": datetime.utcnow()
-        }
+        # Insert entry
+        result = _whitelist_collection.insert_one(entry_data)
         
-        # Chèn bản ghi vào database
-        result = _whitelist_collection.insert_one(entry)
-        
-        # Phát sóng thông báo qua SocketIO
+        # Broadcast notification
         if socketio:
-            # Chuẩn bị dữ liệu cho SocketIO
-            entry["_id"] = str(result.inserted_id)  # Chuyển ObjectId thành chuỗi
-            entry["added_date"] = entry["added_date"].isoformat()  # Chuyển datetime thành chuỗi ISO
-            
-            # Gửi thông báo
-            socketio.emit('whitelist_updated', {
-                "action": "add",  # Loại hành động: thêm
-                "domain": domain,  # Tên miền đã thêm
-                "entry": entry  # Dữ liệu đầy đủ của bản ghi
+            socketio.emit("whitelist_added", {
+                "type": entry_type,
+                "value": value,
+                "category": entry_data["category"],
+                "added_by": client_ip,
+                "timestamp": current_time.isoformat()
             })
             
-        # Trả về ID của bản ghi đã chèn
-        return str(result.inserted_id)
-            
+        logger.info(f"Added {entry_type} entry: {value} by {client_ip}")
+        
+        return jsonify({
+            "id": str(result.inserted_id),
+            "message": f"{entry_type.capitalize()} added to whitelist"
+        }), 201
+        
     except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi thêm tên miền
-        logger.error(f"Error adding domain programmatically: {str(e)}")
-        return None
+        logger.error(f"Error adding entry: {str(e)}")
+        return jsonify({"error": "Failed to add entry"}), 500
 
-
-def check_domain_allowed(domain: str) -> bool:
-    """
-    Kiểm tra xem một tên miền có được cho phép theo whitelist không.
+@whitelist_bp.route('/test', methods=['POST'])
+def test_entry():
+    """Test an entry before adding it."""
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+        
+    data = request.json
+    entry_type = data.get("type")
+    value = data.get("value", "").strip()
     
-    Args:
-        domain: Tên miền cần kiểm tra
-        
-    Returns:
-        bool: True nếu tên miền được cho phép
-    """
+    if not entry_type or not value:
+        return jsonify({"error": "Type and value are required"}), 400
+    
     try:
-        # Làm sạch tên miền
-        domain = domain.strip().lower()
+        # Validate entry
+        validation_result = validate_entry(entry_type, value)
+        if not validation_result["valid"]:
+            return jsonify({"error": validation_result["message"]}), 400
         
-        # Kiểm tra khớp chính xác
-        if _whitelist_collection.find_one({"domain": domain}):
-            return True
+        result = {"valid": True, "type": entry_type, "value": value}
+        
+        # DNS verification for domains
+        if entry_type == "domain" and data.get("dns_verify"):
+            dns_result = verify_dns(value)
+            result["dns_info"] = dns_result.get("info", [])
+            result["dns_valid"] = dns_result["valid"]
             
-        # Kiểm tra khớp wildcard
-        parts = domain.split('.')
-        for i in range(1, len(parts)):
-            # Tạo wildcard domain từ phần còn lại của tên miền
-            wildcard = f"*.{'.'.join(parts[i:])}"
-            if _whitelist_collection.find_one({"domain": wildcard}):
-                return True
+        # Reachability test for IPs and URLs
+        if entry_type in ["ip", "url"]:
+            reachable = test_reachability(entry_type, value)
+            result["reachable"] = reachable
+            
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error testing entry: {str(e)}")
+        return jsonify({"error": "Test failed"}), 500
+
+@whitelist_bp.route('/dns-test', methods=['POST'])
+def dns_test():
+    """Test DNS resolution for a domain."""
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+        
+    data = request.json
+    domain = data.get("domain", "").strip()
+    
+    if not domain:
+        return jsonify({"error": "Domain is required"}), 400
+    
+    try:
+        result = verify_dns(domain)
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error testing DNS: {str(e)}")
+        return jsonify({"error": "DNS test failed"}), 500
+
+# Helper Functions
+
+def validate_entry(entry_type: str, value: str) -> Dict:
+    """Validate entry based on type."""
+    try:
+        if entry_type == "domain":
+            # Remove wildcard for validation
+            domain_to_check = value.replace("*.", "")
+            # Basic domain validation
+            domain_regex = re.compile(
+                r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$',
+                re.IGNORECASE
+            )
+            if not domain_regex.match(domain_to_check):
+                return {"valid": False, "message": "Invalid domain format"}
                 
-        # Không tìm thấy trong whitelist
-        return False
-        
-    except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi kiểm tra
-        logger.error(f"Error checking if domain is allowed: {str(e)}")
-        return False
-
-
-def get_domain_list() -> List[str]:
-    """
-    Lấy danh sách tất cả tên miền trong whitelist (sử dụng nội bộ).
-    
-    Returns:
-        List[str]: Danh sách tên miền
-    """
-    try:
-        domains = []
-        # Truy vấn tất cả tên miền, chỉ lấy trường domain
-        cursor = _whitelist_collection.find({}, {"domain": 1})
-        
-        # Thêm từng tên miền vào danh sách
-        for doc in cursor:
-            domains.append(doc["domain"])
+        elif entry_type == "ip":
+            # Extract IP and port
+            if ':' in value and not value.startswith('['):
+                # IPv4 with port
+                parts = value.rsplit(':', 1)
+                ip_part = parts[0]
+                try:
+                    port = int(parts[1])
+                    if not (1 <= port <= 65535):
+                        return {"valid": False, "message": "Port must be between 1 and 65535"}
+                except ValueError:
+                    return {"valid": False, "message": "Invalid port number"}
+            else:
+                ip_part = value
+                
+            # Validate IP address (supports CIDR)
+            try:
+                if '/' in ip_part:
+                    ipaddress.ip_network(ip_part, strict=False)
+                else:
+                    ipaddress.ip_address(ip_part)
+            except ValueError:
+                return {"valid": False, "message": "Invalid IP address format"}
+                
+        elif entry_type == "url":
+            try:
+                parsed = urlparse(value)
+                if not parsed.scheme or not parsed.netloc:
+                    return {"valid": False, "message": "Invalid URL format"}
+            except Exception:
+                return {"valid": False, "message": "Invalid URL format"}
+                
+        elif entry_type == "pattern":
+            if len(value) < 1:
+                return {"valid": False, "message": "Pattern cannot be empty"}
+            # Additional pattern validation could be added here
             
-        return domains
+        return {"valid": True, "message": "Valid"}
         
     except Exception as e:
-        # Ghi log lỗi nếu có vấn đề khi lấy danh sách
-        logger.error(f"Error getting domain list: {str(e)}")
-        return []
+        return {"valid": False, "message": f"Validation error: {str(e)}"}
 
-
-def _create_default_whitelist():
-    """Tạo whitelist mặc định với các tên miền an toàn phổ biến."""
-    # Danh sách các tên miền an toàn phổ biến
-    default_domains = [
-        "google.com", "www.google.com",  # Google
-        "microsoft.com", "www.microsoft.com",  # Microsoft
-        "github.com", "www.github.com",  # GitHub
-        "wikipedia.org", "www.wikipedia.org",  # Wikipedia
-        "stackoverflow.com", "www.stackoverflow.com",  # Stack Overflow
-        "cloudflare.com", "www.cloudflare.com",  # Cloudflare
-        "apple.com", "www.apple.com",  # Apple
-        "amazon.com", "www.amazon.com",  # Amazon
-        "office.com", "www.office.com",  # Office
-        "live.com", "login.live.com",  # Microsoft Live
-        "windows.com", "update.microsoft.com",  # Windows
-        "mozilla.org", "www.mozilla.org",  # Mozilla
-        "firefox.com", "www.firefox.com",  # Firefox
-        "ubuntu.com", "www.ubuntu.com",  # Ubuntu
-        "python.org", "www.python.org",  # Python
-        "npmjs.com", "www.npmjs.com"  # npm
-    ]
-    
-    # Đếm số tên miền đã thêm thành công
-    added_count = 0
-    for domain in default_domains:
-        # Chuẩn bị bản ghi cho mỗi tên miền
-        entry = {
-            "domain": domain,
-            "notes": "Default whitelist entry",  # Ghi chú
-            "added_by": "system",  # Người thêm
-            "added_date": datetime.utcnow()  # Thời điểm thêm
-        }
+def verify_dns(domain: str, dns_server: str = None) -> Dict:
+    """Verify DNS resolution for a domain."""
+    try:
+        # Remove wildcard prefix
+        domain_to_check = domain.replace("*.", "")
         
+        result = {"valid": True, "info": []}
+        
+        # IPv4 resolution
         try:
-            # Thêm tên miền vào database
-            _whitelist_collection.insert_one(entry)
-            added_count += 1
-        except Exception as e:
-            # Ghi log lỗi nếu có vấn đề khi thêm tên miền mặc định
-            logger.error(f"Error adding default domain {domain}: {str(e)}")
+            ipv4_addresses = socket.getaddrinfo(domain_to_check, None, socket.AF_INET)
+            ipv4_list = list(set([addr[4][0] for addr in ipv4_addresses]))
+            if ipv4_list:
+                result["ipv4"] = ipv4_list
+                result["info"].extend([f"IPv4: {ip}" for ip in ipv4_list])
+        except socket.gaierror:
+            pass
+            
+        # IPv6 resolution
+        try:
+            ipv6_addresses = socket.getaddrinfo(domain_to_check, None, socket.AF_INET6)
+            ipv6_list = list(set([addr[4][0] for addr in ipv6_addresses]))
+            if ipv6_list:
+                result["ipv6"] = ipv6_list
+                result["info"].extend([f"IPv6: {ip}" for ip in ipv6_list])
+        except socket.gaierror:
+            pass
+            
+        if not result["info"]:
+            result["valid"] = False
+            result["message"] = "No DNS records found"
+            
+        return result
+        
+    except Exception as e:
+        return {"valid": False, "message": f"DNS verification failed: {str(e)}"}
+
+def test_reachability(entry_type: str, value: str) -> bool:
+    """Test if an IP or URL is reachable."""
+    try:
+        if entry_type == "ip":
+            # Extract IP from value
+            ip_part = value.split(':')[0]
+            host = ipaddress.ip_address(ip_part)
+            # Simple ping-like test (you might want to implement actual ping)
+            socket.create_connection((str(host), 80), timeout=5)
+            return True
+        elif entry_type == "url":
+            # You could use requests library here for HTTP testing
+            # For now, just return True
+            return True
+    except Exception:
+        return False
     
-    # Ghi log số lượng tên miền đã thêm
-    logger.info(f"Created default whitelist with {added_count} domains")
+    return False
+
+def cleanup_expired_entries():
+    """Remove expired entries from whitelist."""
+    try:
+        current_time = datetime.utcnow()
+        result = _whitelist_collection.delete_many({
+            "expiry_date": {"$lt": current_time}
+        })
+        
+        if result.deleted_count > 0:
+            logger.info(f"Cleaned up {result.deleted_count} expired entries")
+            
+    except Exception as e:
+        logger.error(f"Error cleaning up expired entries: {str(e)}")

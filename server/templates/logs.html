@@ -1,0 +1,377 @@
+{# filepath: c:\Users\sonbx\firewall-controller\server\templates\logs.html #}
+{% extends "base.html" %}
+
+{% block title %}System Logs - Firewall Controller{% endblock %}
+
+{% block extra_css %}
+<style>
+    .log-entry {
+        transition: background-color 0.2s;
+    }
+    .log-entry:hover {
+        background-color: #f8f9fa;
+    }
+    .log-level-info {
+        color: #17a2b8;
+    }
+    .log-level-warning {
+        color: #ffc107;
+    }
+    .log-level-error {
+        color: #dc3545;
+    }
+    .log-level-success {
+        color: #28a745;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-file-alt me-2"></i>System Logs
+            </h1>
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-outline-primary" onclick="refreshLogs()">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+                <button type="button" class="btn btn-outline-secondary" onclick="clearLogs()">
+                    <i class="fas fa-trash me-1"></i>Clear Logs
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Statistics -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-info">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Total Logs
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="totalLogsCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-list fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-success">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Allowed Requests
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="allowedCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-check-circle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-danger">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                            Blocked Requests
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="blockedCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-ban fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6">
+        <div class="card border-start-warning">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            Errors
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="errorCount">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <i class="fas fa-history me-2"></i>Recent Activity
+                    </h6>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-secondary" onclick="filterLogs('all')">All</button>
+                        <button type="button" class="btn btn-outline-success" onclick="filterLogs('allow')">Allowed</button>
+                        <button type="button" class="btn btn-outline-danger" onclick="filterLogs('block')">Blocked</button>
+                        <button type="button" class="btn btn-outline-warning" onclick="filterLogs('error')">Errors</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="logsContainer">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading logs...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading system logs...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let logsData = [];
+let currentFilter = 'all';
+
+// Load logs when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadLogs, 30000);
+});
+
+/**
+ * Load logs from API
+ */
+async function loadLogs() {
+    try {
+        const response = await fetch('/api/logs');
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        logsData = data.logs || [];
+        updateStatistics();
+        renderLogs(logsData);
+        
+    } catch (error) {
+        console.error('Error loading logs:', error);
+        showNotification('danger', 'Failed to load logs: ' + error.message);
+        
+        // Show error state
+        document.getElementById('logsContainer').innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                <h5>Error Loading Logs</h5>
+                <p class="text-muted">${error.message}</p>
+                <button class="btn btn-primary" onclick="loadLogs()">
+                    <i class="fas fa-redo me-1"></i>Retry
+                </button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Update statistics cards
+ */
+function updateStatistics() {
+    const total = logsData.length;
+    const allowed = logsData.filter(log => log.action === 'allow').length;
+    const blocked = logsData.filter(log => log.action === 'block').length;
+    const errors = logsData.filter(log => log.level === 'error').length;
+    
+    document.getElementById('totalLogsCount').textContent = total;
+    document.getElementById('allowedCount').textContent = allowed;
+    document.getElementById('blockedCount').textContent = blocked;
+    document.getElementById('errorCount').textContent = errors;
+}
+
+/**
+ * Render logs list
+ */
+function renderLogs(logs) {
+    const container = document.getElementById('logsContainer');
+    
+    // Filter logs based on current filter
+    let filteredLogs = logs;
+    if (currentFilter !== 'all') {
+        filteredLogs = logs.filter(log => {
+            switch (currentFilter) {
+                case 'allow': return log.action === 'allow';
+                case 'block': return log.action === 'block';
+                case 'error': return log.level === 'error';
+                default: return true;
+            }
+        });
+    }
+    
+    if (filteredLogs.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5>No Logs Found</h5>
+                <p class="text-muted">No logs match the current filter.</p>
+                <button class="btn btn-primary" onclick="filterLogs('all')">
+                    <i class="fas fa-list me-1"></i>Show All Logs
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    // Create table
+    const tableHtml = `
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Time</th>
+                        <th>Domain/URL</th>
+                        <th>Agent</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredLogs.slice(0, 100).map(log => createLogRow(log)).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    container.innerHTML = tableHtml;
+}
+
+/**
+ * Create a log row
+ */
+function createLogRow(log) {
+    const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A';
+    const domain = log.domain || log.url || 'N/A';
+    const agent = log.agent_hostname || log.agent_id || 'System';
+    
+    let actionBadge = '';
+    switch (log.action) {
+        case 'allow':
+            actionBadge = '<span class="badge bg-success">ALLOWED</span>';
+            break;
+        case 'block':
+            actionBadge = '<span class="badge bg-danger">BLOCKED</span>';
+            break;
+        case 'error':
+            actionBadge = '<span class="badge bg-warning">ERROR</span>';
+            break;
+        default:
+            actionBadge = `<span class="badge bg-secondary">${(log.action || 'UNKNOWN').toUpperCase()}</span>`;
+    }
+    
+    const details = log.reason || log.message || log.details || '-';
+    
+    return `
+        <tr class="log-entry">
+            <td><small>${timestamp}</small></td>
+            <td>${domain}</td>
+            <td><small>${agent}</small></td>
+            <td>${actionBadge}</td>
+            <td><small class="text-muted">${details}</small></td>
+        </tr>
+    `;
+}
+
+/**
+ * Filter logs by type
+ */
+function filterLogs(filter) {
+    currentFilter = filter;
+    
+    // Update button states
+    document.querySelectorAll('.btn-group .btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    event.target.classList.add('active');
+    
+    // Re-render logs with filter
+    renderLogs(logsData);
+}
+
+/**
+ * Refresh logs
+ */
+function refreshLogs() {
+    document.getElementById('logsContainer').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Refreshing logs...</span>
+            </div>
+            <p class="mt-2 text-muted">Refreshing logs...</p>
+        </div>
+    `;
+    loadLogs();
+}
+
+/**
+ * Clear logs
+ */
+async function clearLogs() {
+    if (!confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/logs', {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        showNotification('success', 'Logs cleared successfully');
+        refreshLogs();
+        
+    } catch (error) {
+        console.error('Error clearing logs:', error);
+        showNotification('danger', 'Failed to clear logs: ' + error.message);
+    }
+}
+</script>
+{% endblock %}
