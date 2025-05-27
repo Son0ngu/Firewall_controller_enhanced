@@ -5,11 +5,15 @@ import threading
 import time
 from datetime import datetime
 from typing import Dict, List
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 import requests
 
 # Cấu hình logger
 logger = logging.getLogger("log_sender")
+
+# ✅ SET TIMEZONE
+LOCAL_TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
 
 class LogSender:
     """Gửi log từ agent lên server trung tâm"""
@@ -32,7 +36,10 @@ class LogSender:
         # Khởi tạo định danh agent
         self.agent_id = config.get("agent_id", self._generate_agent_id())
         
-        # ✅ Thêm tracking thời gian
+        # ✅ ADD TIMEZONE
+        self.timezone = LOCAL_TIMEZONE
+        
+        # ✅ Thêm tracking thời gian với timezone
         self.last_send_time = time.time()
         
         logger.info(f"LogSender initialized with agent_id: {self.agent_id}")
@@ -65,6 +72,10 @@ class LogSender:
             
         logger.info("Log sender stopped")
     
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
+    
     def queue_log(self, log_data: Dict) -> bool:
         """Thêm log vào hàng đợi để gửi"""
         try:
@@ -73,7 +84,8 @@ class LogSender:
                 log_data["agent_id"] = self.agent_id
                 
             if "timestamp" not in log_data:
-                log_data["timestamp"] = datetime.now().isoformat()
+                # ✅ USE TIMEZONE-AWARE TIMESTAMP
+                log_data["timestamp"] = self._get_current_time().isoformat()
             
             # Thêm log vào hàng đợi
             self.log_queue.put_nowait(log_data)

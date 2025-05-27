@@ -5,6 +5,7 @@ Whitelist Service - Business logic for whitelist operations
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from models.whitelist_model import WhitelistModel
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 class WhitelistService:
     """Service class for whitelist business logic"""
@@ -12,6 +13,12 @@ class WhitelistService:
     def __init__(self, whitelist_model: WhitelistModel, socketio=None):
         self.model = whitelist_model
         self.socketio = socketio
+        # ✅ ADD TIMEZONE
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
+    
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
     
     def get_all_entries(self, filters: Dict = None) -> Dict:
         """Get all whitelist entries with optional filtering"""
@@ -69,8 +76,8 @@ class WhitelistService:
         if existing:
             raise ValueError("Entry already exists")
         
-        # Prepare entry data
-        current_time = datetime.utcnow()
+        # ✅ USE TIMEZONE-AWARE TIME
+        current_time = self._get_current_time()
         processed_entry = {
             "type": entry_type,
             "value": value,
@@ -85,7 +92,15 @@ class WhitelistService:
         # Add expiry date
         if entry_data.get("expiry_date"):
             try:
-                processed_entry["expiry_date"] = datetime.fromisoformat(entry_data["expiry_date"])
+                # ✅ HANDLE TIMEZONE-AWARE EXPIRY
+                expiry_str = entry_data["expiry_date"]
+                if expiry_str.endswith('Z'):
+                    expiry_dt = datetime.fromisoformat(expiry_str[:-1]).replace(tzinfo=pytz.UTC)
+                else:
+                    expiry_dt = datetime.fromisoformat(expiry_str)
+                    if expiry_dt.tzinfo is None:
+                        expiry_dt = self.timezone.localize(expiry_dt)
+                processed_entry["expiry_date"] = expiry_dt
             except ValueError:
                 raise ValueError("Invalid expiry date format")
         elif entry_data.get("is_temporary"):
@@ -115,7 +130,7 @@ class WhitelistService:
                 "value": value,
                 "category": processed_entry["category"],
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()
+                "timestamp": current_time.isoformat()  # ✅ TIMEZONE-AWARE
             })
         
         return {
@@ -163,16 +178,27 @@ class WhitelistService:
         since_date = None
         if since:
             try:
-                since_date = datetime.fromisoformat(since)
+                # ✅ PARSE TIMEZONE-AWARE DATETIME
+                if since.endswith('Z'):
+                    since_date = datetime.fromisoformat(since[:-1]).replace(tzinfo=pytz.UTC)
+                else:
+                    since_date = datetime.fromisoformat(since)
+                    if since_date.tzinfo is None:
+                        since_date = self.timezone.localize(since_date)
+                # Convert to local timezone for comparison
+                since_date = since_date.astimezone(self.timezone)
             except ValueError:
                 pass  # Invalid date format, ignore
         
         # Get domains from model
         domains = self.model.get_entries_for_sync(since_date)
         
+        # ✅ USE TIMEZONE-AWARE TIMESTAMP
+        current_time = self._get_current_time()
+        
         return {
             "domains": domains,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": current_time.isoformat(),
             "count": len(domains),
             "type": "incremental" if since else "full"
         }
@@ -251,6 +277,9 @@ class WhitelistService:
             except Exception as e:
                 errors.append(f"Entry {i+1}: {str(e)}")
         
+        # ✅ USE TIMEZONE-AWARE TIME FOR BULK OPERATIONS
+        current_time = self._get_current_time()
+        
         # Insert valid entries using model
         inserted_ids = []
         if processed_entries:
@@ -261,7 +290,7 @@ class WhitelistService:
             self.socketio.emit("whitelist_bulk_added", {
                 "count": len(inserted_ids),
                 "added_by": client_ip,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": current_time.isoformat()  # ✅ TIMEZONE-AWARE
             })
         
         return {

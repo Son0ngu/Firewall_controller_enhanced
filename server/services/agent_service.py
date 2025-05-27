@@ -5,7 +5,8 @@ Agent Service - Business logic for agent operations
 import uuid
 import secrets
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import pytz
 from typing import Dict, List, Optional
 from bson import ObjectId
 from models.agent_model import AgentModel
@@ -13,15 +14,19 @@ from models.agent_model import AgentModel
 class AgentService:
     """Service class for agent business logic"""
     
-    def __init__(self, agent_model: AgentModel, db, socketio=None):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.model = agent_model  # ✅ Only use agent_model
-        self.db = db
+    def __init__(self, model: AgentModel, socketio=None):
+        self.model = model
         self.socketio = socketio
-        
-        self.commands_collection = db.agent_commands
-        self.inactive_threshold = 3  # minutes
-    
+        self.logger = logging.getLogger(self.__class__.__name__)
+        # ✅ SET SAME TIMEZONE AS MODEL
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
+        self.inactive_threshold = 2    # 2 minutes
+        self.offline_threshold = 10    # 10 minutes
+
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
+
     def register_agent(self, agent_data: Dict, client_ip: str) -> Dict:
         """Register a new agent using hostname+IP as identifier"""
         try:
@@ -110,7 +115,7 @@ class AgentService:
             raise
     
     def get_agents(self, filters: Dict = None, limit: int = 100, skip: int = 0) -> Dict:
-        """Get agents with filtering and status calculation"""
+        """Get agents with timezone-aware status calculation"""
         try:
             # Build query for model
             query = {}
@@ -118,23 +123,23 @@ class AgentService:
                 if filters.get("status"):
                     status = filters["status"]
                     if status == "inactive":
-                        inactive_threshold = datetime.utcnow() - timedelta(minutes=self.inactive_threshold)
+                        inactive_threshold = self._get_current_time() - timedelta(minutes=self.inactive_threshold)
                         query["last_heartbeat"] = {"$lt": inactive_threshold}
                     elif status == "active":
-                        inactive_threshold = datetime.utcnow() - timedelta(minutes=self.inactive_threshold)
+                        inactive_threshold = self._get_current_time() - timedelta(minutes=self.inactive_threshold)
                         query["last_heartbeat"] = {"$gte": inactive_threshold}
                     else:
                         query["status"] = status
                 
                 if filters.get("hostname"):
                     query["hostname"] = {"$regex": filters["hostname"], "$options": "i"}
-        
+            
             # Get agents from model
             agents = self.model.get_all_agents(query, limit, skip)
             total_count = self.model.count_agents(query)
             
-            # ✅ CALCULATE REAL-TIME STATUS FOR EACH AGENT
-            current_time = datetime.utcnow()
+            # ✅ CALCULATE REAL-TIME STATUS WITH TIMEZONE AWARENESS
+            current_time = self._get_current_time()
             agents_list = []
             
             for agent in agents:
@@ -143,8 +148,15 @@ class AgentService:
                 
                 # Calculate time since last heartbeat
                 time_since_heartbeat = None
-                if agent.get("last_heartbeat"):
-                    time_since_heartbeat = (current_time - agent["last_heartbeat"]).total_seconds() / 60
+                last_heartbeat = agent.get("last_heartbeat")
+                if last_heartbeat:
+                    # Handle timezone conversion
+                    if hasattr(last_heartbeat, 'tzinfo') and last_heartbeat.tzinfo is None:
+                        last_heartbeat = self.timezone.localize(last_heartbeat)
+                    elif isinstance(last_heartbeat, datetime) and last_heartbeat.tzinfo != current_time.tzinfo:
+                        last_heartbeat = last_heartbeat.astimezone(current_time.tzinfo)
+                    
+                    time_since_heartbeat = (current_time - last_heartbeat).total_seconds() / 60
                 
                 # Format agent data
                 agent_data = {
@@ -156,8 +168,8 @@ class AgentService:
                     "agent_version": agent.get("agent_version", "Unknown"),
                     "status": actual_status,  # ✅ Use calculated status
                     "registered_date": agent.get("registered_date").isoformat() if agent.get("registered_date") else None,
-                    "last_heartbeat": agent.get("last_heartbeat").isoformat() if agent.get("last_heartbeat") else None,
-                    "time_since_heartbeat": time_since_heartbeat,  # ✅ Add time since heartbeat
+                    "last_heartbeat": last_heartbeat.isoformat() if last_heartbeat else None,
+                    "time_since_heartbeat": time_since_heartbeat,
                     "metrics": agent.get("metrics"),
                     "user_id": agent.get("ip_address")
                 }
@@ -181,31 +193,43 @@ class AgentService:
     
     def _calculate_agent_status(self, agent: Dict, current_time: datetime) -> str:
         """
-        ✅ Calculate real-time agent status based on last heartbeat
+        ✅ Calculate real-time agent status based on 30s heartbeat
         
         Status Logic:
-        - active: Last heartbeat within 3 minutes
-        - inactive: Last heartbeat 3-30 minutes ago  
-        - offline: Last heartbeat > 30 minutes ago or never
+        - active: Last heartbeat within 2 minutes (up to 4 missed 30s heartbeats)
+        - inactive: Last heartbeat 2-10 minutes ago  
+        - offline: Last heartbeat > 10 minutes ago or never
         """
         last_heartbeat = agent.get("last_heartbeat")
         
         if not last_heartbeat:
-            return "offline"  # Never sent heartbeat
+            self.logger.debug(f"Agent {agent.get('hostname', 'unknown')}: No heartbeat → offline")
+            return "offline"
+        
+        # ✅ Handle timezone conversion
+        if hasattr(last_heartbeat, 'tzinfo') and last_heartbeat.tzinfo is None:
+            # If stored as naive datetime, assume it's in our timezone
+            last_heartbeat = self.timezone.localize(last_heartbeat)
+        elif isinstance(last_heartbeat, datetime) and last_heartbeat.tzinfo != current_time.tzinfo:
+            # Convert to same timezone for comparison
+            last_heartbeat = last_heartbeat.astimezone(current_time.tzinfo)
         
         # Calculate time difference in minutes
         time_diff = (current_time - last_heartbeat).total_seconds() / 60
         
-        # ✅ STATUS THRESHOLDS
-        if time_diff <= 3:           # ≤ 3 minutes = active
-            return "active"
-        elif time_diff <= 30:        # 3-30 minutes = inactive  
-            return "inactive"
-        else:                        # > 30 minutes = offline
-            return "offline"
+        # ✅ UPDATED THRESHOLDS FOR 30s HEARTBEAT
+        if time_diff <= self.inactive_threshold:      # ≤ 2 minutes = active
+            status = "active"
+        elif time_diff <= self.offline_threshold:     # 2-10 minutes = inactive  
+            status = "inactive"
+        else:                                         # > 10 minutes = offline
+            status = "offline"
+        
+        self.logger.debug(f"Agent {agent.get('hostname', 'unknown')}: {time_diff:.1f}m ago → {status}")
+        return status
 
     def process_heartbeat(self, agent_id: str, token: str, heartbeat_data: Dict, client_ip: str) -> Dict:
-        """Process agent heartbeat with enhanced validation"""
+        """Process agent heartbeat with timezone-aware timestamp"""
         try:
             # Validate agent and token
             agent = self.model.find_by_agent_id(agent_id)
@@ -215,11 +239,13 @@ class AgentService:
             if agent.get("agent_token") != token:
                 raise ValueError("Invalid token")
             
-            # Update heartbeat with comprehensive data
+            # ✅ Use timezone-aware current time
+            current_time = self._get_current_time()
             update_data = {
+                "last_heartbeat": current_time,  # ✅ Timezone-aware timestamp
                 "client_ip": client_ip,
                 "metrics": heartbeat_data.get("metrics", {}),
-                "status": heartbeat_data.get("status", "active"),
+                "status": "active",
                 "agent_version": heartbeat_data.get("agent_version"),
                 "last_heartbeat_data": heartbeat_data,
                 "platform": heartbeat_data.get("platform"),
@@ -231,25 +257,26 @@ class AgentService:
             if not success:
                 raise ValueError("Failed to update heartbeat")
             
+            # ✅ Debug log with timezone info
+            self.logger.info(f"✅ Heartbeat processed: {agent.get('hostname')} at {current_time} ({current_time.tzinfo})")
+            
             # Emit real-time status update
             if self.socketio:
                 self.socketio.emit("agent_heartbeat", {
                     "agent_id": agent_id,
                     "hostname": agent.get("hostname"),
                     "status": "active",
-                    "last_heartbeat": datetime.utcnow().isoformat(),
+                    "last_heartbeat": current_time.isoformat(),
                     "metrics": heartbeat_data.get("metrics", {}),
                     "client_ip": client_ip
                 })
-            
-            self.logger.debug(f"✅ Heartbeat processed for agent: {agent_id}")
-            
+        
             return {
                 "agent_id": agent_id,
                 "status": "active",
-                "next_heartbeat": int((datetime.utcnow().timestamp() + 60) * 1000),  # Next heartbeat time in ms
-                "server_commands": [],  # TODO: Return pending commands
-                "server_time": datetime.utcnow().isoformat()
+                "next_heartbeat": int((current_time.timestamp() + 30) * 1000),
+                "server_commands": [],
+                "server_time": current_time.isoformat()
             }
             
         except Exception as e:

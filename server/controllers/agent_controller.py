@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.agent_model import AgentModel
 from services.agent_service import AgentService
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 class AgentController:
     """Controller for agent operations"""
@@ -18,6 +19,8 @@ class AgentController:
         self.service = agent_service
         self.socketio = socketio
         self.blueprint = Blueprint('agents', __name__)
+        # ✅ ADD TIMEZONE
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
         self._register_routes()
     
     def _register_routes(self):
@@ -83,33 +86,9 @@ class AgentController:
         
         return filters
     
-    def register_agent(self):
-        """Register a new agent"""
-        try:
-            data = self._validate_json_request(['hostname'])
-            client_ip = request.remote_addr or data.get("ip_address", "unknown")
-            
-            # Call service method
-            result = self.service.register_agent(data, client_ip)
-            
-            # Broadcast notification via SocketIO
-            if self.socketio:
-                self.socketio.emit("agent_registered", {
-                    "agent_id": result["agent_id"],
-                    "user_id": result["user_id"],
-                    "hostname": data.get("hostname"),
-                    "ip_address": data.get("ip_address"),
-                    "status": "active",
-                    "timestamp": result["server_time"]
-                })
-            
-            return self._success_response(result, "Agent registered successfully")
-            
-        except ValueError as e:
-            return self._error_response(str(e), 400)
-        except Exception as e:
-            self.logger.error(f"Error registering agent: {e}")
-            return self._error_response("Failed to register agent", 500)
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
     
     def heartbeat(self):
         """Process agent heartbeat"""
@@ -125,6 +104,9 @@ class AgentController:
                 client_ip
             )
             
+            # ✅ USE TIMEZONE-AWARE TIME
+            current_time = self._get_current_time()
+            
             # Broadcast heartbeat via SocketIO
             if self.socketio:
                 agent = self.model.find_by_agent_id(data['agent_id'])
@@ -132,10 +114,10 @@ class AgentController:
                     "agent_id": data['agent_id'],
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "status": "active",
-                    "last_heartbeat": datetime.utcnow().isoformat(),
+                    "last_heartbeat": current_time.isoformat(),
                     "metrics": data.get("metrics", {}),
                     "client_ip": client_ip,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": current_time.isoformat()
                 })
             
             return self._success_response(result)
@@ -146,6 +128,37 @@ class AgentController:
         except Exception as e:
             self.logger.error(f"Error processing heartbeat: {e}")
             return self._error_response("Failed to process heartbeat", 500)
+    
+    def register_agent(self):
+        """Register a new agent"""
+        try:
+            data = self._validate_json_request(['hostname'])
+            client_ip = request.remote_addr or data.get("ip_address", "unknown")
+            
+            # Call service method
+            result = self.service.register_agent(data, client_ip)
+            
+            # ✅ USE TIMEZONE-AWARE TIME
+            current_time = self._get_current_time()
+            
+            # Broadcast notification via SocketIO
+            if self.socketio:
+                self.socketio.emit("agent_registered", {
+                    "agent_id": result["agent_id"],
+                    "user_id": result["user_id"],
+                    "hostname": data.get("hostname"),
+                    "ip_address": data.get("ip_address"),
+                    "status": "active",
+                    "timestamp": current_time.isoformat()  # ✅ TIMEZONE-AWARE
+                })
+            
+            return self._success_response(result, "Agent registered successfully")
+            
+        except ValueError as e:
+            return self._error_response(str(e), 400)
+        except Exception as e:
+            self.logger.error(f"Error registering agent: {e}")
+            return self._error_response("Failed to register agent", 500)
     
     def list_agents(self):
         """List all agents with filtering"""

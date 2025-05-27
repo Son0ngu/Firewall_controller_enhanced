@@ -8,6 +8,7 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 class LogModel:
     """Model for log data operations"""
@@ -15,6 +16,8 @@ class LogModel:
     def __init__(self, db: Database):
         self.db = db
         self.collection: Collection = db.logs
+        # ✅ ADD TIMEZONE
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
         self._create_indexes()
     
     def _create_indexes(self):
@@ -40,6 +43,10 @@ class LogModel:
             
         except Exception as e:
             print(f"Warning: Could not create indexes: {e}")
+    
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
     
     def get_logs(self, filters: Dict = None, page: int = 1, per_page: int = 50) -> Dict:
         """Get logs with filtering and pagination"""
@@ -99,7 +106,9 @@ class LogModel:
     
     def insert_log(self, log_data: Dict) -> str:
         """Insert new log entry"""
-        log_data['timestamp'] = log_data.get('timestamp', datetime.utcnow())
+        # ✅ USE TIMEZONE-AWARE TIME
+        if 'timestamp' not in log_data:
+            log_data['timestamp'] = self._get_current_time()
         result = self.collection.insert_one(log_data)
         return str(result.inserted_id)
     
@@ -108,10 +117,13 @@ class LogModel:
         if not logs:
             return []
         
+        # ✅ USE TIMEZONE-AWARE TIME
+        current_time = self._get_current_time()
+        
         # Add timestamp to logs that don't have one
         for log in logs:
             if 'timestamp' not in log:
-                log['timestamp'] = datetime.utcnow()
+                log['timestamp'] = current_time
         
         result = self.collection.insert_many(logs)
         return [str(id) for id in result.inserted_ids]
@@ -149,20 +161,32 @@ class LogModel:
         if filters.get('level'):
             query['level'] = filters['level']
         
-        # Date range filtering
+        # ✅ TIMEZONE-AWARE DATE RANGE FILTERING
         if filters.get('since') or filters.get('until'):
             date_query = {}
             if filters.get('since'):
                 try:
-                    since_date = datetime.fromisoformat(filters['since'].replace('Z', '+00:00'))
-                    date_query['$gte'] = since_date
+                    since_str = filters['since']
+                    if since_str.endswith('Z'):
+                        since_date = datetime.fromisoformat(since_str[:-1]).replace(tzinfo=pytz.UTC)
+                    else:
+                        since_date = datetime.fromisoformat(since_str)
+                        if since_date.tzinfo is None:
+                            since_date = self.timezone.localize(since_date)
+                    date_query['$gte'] = since_date.astimezone(self.timezone)
                 except:
                     pass
             
             if filters.get('until'):
                 try:
-                    until_date = datetime.fromisoformat(filters['until'].replace('Z', '+00:00'))
-                    date_query['$lte'] = until_date
+                    until_str = filters['until']
+                    if until_str.endswith('Z'):
+                        until_date = datetime.fromisoformat(until_str[:-1]).replace(tzinfo=pytz.UTC)
+                    else:
+                        until_date = datetime.fromisoformat(until_str)
+                        if until_date.tzinfo is None:
+                            until_date = self.timezone.localize(until_date)
+                    date_query['$lte'] = until_date.astimezone(self.timezone)
                 except:
                     pass
             

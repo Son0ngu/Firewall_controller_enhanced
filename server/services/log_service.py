@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from models.log_model import LogModel
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 class LogService:
     """Service class for log business logic"""
@@ -14,6 +15,12 @@ class LogService:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.model = log_model
         self.socketio = socketio
+        # ✅ ADD TIMEZONE
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
+    
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
     
     def receive_logs(self, logs_data: Dict) -> Dict:
         """Process incoming logs from agents"""
@@ -26,6 +33,8 @@ class LogService:
         
         # Validate and process each log
         valid_logs = []
+        current_time = self._get_current_time()  # ✅ USE TIMEZONE-AWARE TIME
+        
         for log in logs:
             if not isinstance(log, dict):
                 continue
@@ -34,9 +43,23 @@ class LogService:
             if "domain" not in log or "agent_id" not in log:
                 continue
             
-            # Add timestamp if not present
+            # ✅ HANDLE TIMEZONE-AWARE TIMESTAMPS
             if 'timestamp' not in log:
-                log['timestamp'] = datetime.utcnow()
+                log['timestamp'] = current_time
+            else:
+                # Parse and convert timestamp if needed
+                timestamp_str = log['timestamp']
+                if isinstance(timestamp_str, str):
+                    try:
+                        if timestamp_str.endswith('Z'):
+                            parsed_time = datetime.fromisoformat(timestamp_str[:-1]).replace(tzinfo=pytz.UTC)
+                        else:
+                            parsed_time = datetime.fromisoformat(timestamp_str)
+                            if parsed_time.tzinfo is None:
+                                parsed_time = self.timezone.localize(parsed_time)
+                        log['timestamp'] = parsed_time.astimezone(self.timezone)
+                    except ValueError:
+                        log['timestamp'] = current_time
             
             valid_logs.append(log)
         
@@ -113,8 +136,8 @@ class LogService:
     def get_logs_summary(self, period: str = "day") -> Dict:
         """Get logs summary statistics"""
         try:
-            # Determine time range
-            now = datetime.utcnow()
+            # ✅ USE TIMEZONE-AWARE TIME CALCULATIONS
+            now = self._get_current_time()
             if period == 'week':
                 since = now - timedelta(days=7)
             elif period == 'month':
@@ -163,19 +186,22 @@ class LogService:
                 filters = clear_data['filters']
                 deleted_count = self.model.clear_logs(filters)
             elif clear_data.get('older_than_days'):
-                # Clear logs older than specified days
+                # ✅ TIMEZONE-AWARE DATE CALCULATION
                 days = int(clear_data['older_than_days'])
-                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                cutoff_date = self._get_current_time() - timedelta(days=days)
                 filters = {'until': cutoff_date.isoformat()}
                 deleted_count = self.model.clear_logs(filters)
             else:
                 raise ValueError("No clear criteria specified")
             
+            # ✅ USE TIMEZONE-AWARE TIMESTAMP
+            current_time = self._get_current_time()
+            
             # Emit SocketIO event
             if self.socketio:
                 self.socketio.emit('logs_cleared', {
                     'deleted_count': deleted_count,
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': current_time.isoformat()
                 })
             
             self.logger.info(f"Cleared {deleted_count} logs")

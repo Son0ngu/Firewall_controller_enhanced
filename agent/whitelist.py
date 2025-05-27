@@ -8,9 +8,13 @@ import time
 import requests
 from datetime import datetime
 from typing import Dict, Set, Optional
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 # Cấu hình logger cho module này
 logger = logging.getLogger("whitelist")
+
+# ✅ SET TIMEZONE
+LOCAL_TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
 
 class WhitelistManager:
     """Simplified whitelist manager - only fetches from server"""
@@ -55,6 +59,9 @@ class WhitelistManager:
         self.domains: Set[str] = set()
         self.last_updated: Optional[datetime] = None
         self.update_lock = threading.Lock()
+        
+        # ✅ ADD TIMEZONE
+        self.timezone = LOCAL_TIMEZONE
         
         # Thread management
         self.update_thread = None
@@ -115,6 +122,10 @@ class WhitelistManager:
         self.firewall_manager = firewall_manager
         logger.info("Firewall manager linked to whitelist for auto-sync")
     
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
+    
     def update_whitelist_from_server(self) -> bool:
         """Cập nhật từ server và sync với firewall"""
         if not self.server_url:
@@ -131,6 +142,7 @@ class WhitelistManager:
             
             params = {}
             if self.last_updated:
+                # ✅ USE TIMEZONE-AWARE TIMESTAMP
                 params['since'] = self.last_updated.isoformat()
                 
             if hasattr(self, 'agent_id') and self.agent_id:
@@ -163,7 +175,8 @@ class WhitelistManager:
                         self.domains = set(domains_list)
                         logger.info(f"Full update: loaded {len(self.domains)} domains")
                     
-                    self.last_updated = datetime.now()
+                    # ✅ USE TIMEZONE-AWARE TIME
+                    self.last_updated = self._get_current_time()
                 
                 # ✅ THÊM: Auto-sync với firewall nếu có thay đổi
                 if self.auto_sync_firewall and self.firewall_manager:
@@ -306,5 +319,6 @@ class WhitelistManager:
                 "domain_count": len(self.domains),
                 "last_updated": self.last_updated.isoformat() if self.last_updated else None,
                 "is_running": self.running,
-                "server_url": self.server_url
+                "server_url": self.server_url,
+                "timezone": str(self.timezone)  # ✅ ADD TIMEZONE INFO
             }

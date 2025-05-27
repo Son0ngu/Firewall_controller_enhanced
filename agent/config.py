@@ -107,9 +107,9 @@ DEFAULT_CONFIG = {
     # Cấu hình heartbeat
     "heartbeat": {
         "enabled": True,          # Enable heartbeat
-        "interval": 60,           # Send heartbeat every 60 seconds
+        "interval": 30,           # ✅ Send heartbeat every 30 seconds (not 60)
         "timeout": 10,            # Heartbeat request timeout
-        "retry_interval": 30,     # Retry interval if heartbeat fails
+        "retry_interval": 15,     # Retry interval if heartbeat fails
         "max_failures": 5         # Max consecutive failures before giving up
     },
     

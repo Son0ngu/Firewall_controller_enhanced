@@ -12,6 +12,7 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
+import pytz  # ✅ ADD TIMEZONE SUPPORT
 
 class WhitelistModel:
     """Model for whitelist data operations"""
@@ -19,6 +20,8 @@ class WhitelistModel:
     def __init__(self, db: Database):
         self.db = db
         self.collection: Collection = self.db.whitelist
+        # ✅ ADD TIMEZONE
+        self.timezone = pytz.timezone('Asia/Ho_Chi_Minh')  # Vietnam timezone
         self._setup_indexes()
     
     def _setup_indexes(self):
@@ -57,12 +60,17 @@ class WhitelistModel:
             # Continue without indexes if creation fails
             pass
     
+    def _get_current_time(self):
+        """Get current time in configured timezone"""
+        return datetime.now(self.timezone)
+    
     def insert_entry(self, entry_data: Dict) -> str:
         """Insert a new whitelist entry"""
-        # Add timestamps
-        entry_data["added_date"] = datetime.utcnow()
-        entry_data["created_at"] = datetime.utcnow()
-        entry_data["updated_at"] = datetime.utcnow()
+        # ✅ USE TIMEZONE-AWARE TIMESTAMPS
+        current_time = self._get_current_time()
+        entry_data["added_date"] = current_time
+        entry_data["created_at"] = current_time
+        entry_data["updated_at"] = current_time
         
         # Set defaults
         entry_data.setdefault("usage_count", 0)
@@ -112,7 +120,8 @@ class WhitelistModel:
         """Update an entry"""
         try:
             object_id = ObjectId(entry_id)
-            update_data["updated_at"] = datetime.utcnow()
+            # ✅ USE TIMEZONE-AWARE TIME
+            update_data["updated_at"] = self._get_current_time()
             
             result = self.collection.update_one(
                 {"_id": object_id},
@@ -141,8 +150,8 @@ class WhitelistModel:
         if not entries:
             return []
         
-        # Add timestamps to all entries
-        current_time = datetime.utcnow()
+        # ✅ USE TIMEZONE-AWARE TIMESTAMPS
+        current_time = self._get_current_time()
         for entry in entries:
             entry["added_date"] = current_time
             entry["created_at"] = current_time
@@ -166,7 +175,8 @@ class WhitelistModel:
     
     def cleanup_expired_entries(self) -> int:
         """Remove expired entries"""
-        current_time = datetime.utcnow()
+        # ✅ USE TIMEZONE-AWARE TIME
+        current_time = self._get_current_time()
         result = self.collection.delete_many({
             "expiry_date": {"$lt": current_time}
         })
@@ -177,6 +187,12 @@ class WhitelistModel:
         query = {"is_active": True}
         
         if since:
+            # ✅ ENSURE TIMEZONE CONSISTENCY
+            if since.tzinfo is None:
+                since = self.timezone.localize(since)
+            elif since.tzinfo != self.timezone:
+                since = since.astimezone(self.timezone)
+                
             query["$or"] = [
                 {"added_date": {"$gte": since}},
                 {"updated_at": {"$gte": since}}
@@ -197,7 +213,8 @@ class WhitelistModel:
     
     def update_usage(self, value: str) -> bool:
         """Update usage count and last used time"""
-        current_time = datetime.utcnow()
+        # ✅ USE TIMEZONE-AWARE TIME
+        current_time = self._get_current_time()
         result = self.collection.update_one(
             {"value": value},
             {
