@@ -45,7 +45,7 @@ DEFAULT_CONFIG = {
         # ✅ SỬA: Hỗ trợ nhiều URLs
         "urls": [
             "https://firewall-controller-vu7f.onrender.com",
-            "http://localhost:5000"
+            "http://host:5000"
         ],
         # Giữ lại URL chính cho backward compatibility
         "url": "https://firewall-controller-vu7f.onrender.com",  

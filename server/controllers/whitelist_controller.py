@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.whitelist_model import WhitelistModel
 from services.whitelist_service import WhitelistService
+from datetime import datetime
 
 class WhitelistController:
     """Controller for whitelist operations"""
@@ -153,14 +154,49 @@ class WhitelistController:
             since = request.args.get('since')
             agent_id = request.args.get('agent_id')
             
+            self.logger.debug(f"Agent sync request - since: {since}, agent_id: {agent_id}")
+            
+            # ✅ FIX: Better parameter validation
+            since_datetime = None
+            if since:
+                try:
+                    since_datetime = datetime.fromisoformat(since.replace('Z', '+00:00'))
+                except ValueError as e:
+                    self.logger.warning(f"Invalid since parameter: {since}, error: {e}")
+                    # Continue without since filter
+            
             # Call service method
-            result = self.service.get_agent_sync_data(since, agent_id)
+            result = self.service.get_agent_sync_data(since_datetime, agent_id)
+            
+            # ✅ FIX: Ensure response format is correct
+            if not isinstance(result, dict):
+                result = {"domains": [], "error": "Invalid response format"}
+            
+            if "domains" not in result:
+                result["domains"] = []
+            
+            # Add success indicator
+            result["success"] = True
+            result["agent_id"] = agent_id
+            
+            self.logger.debug(f"Returning {len(result.get('domains', []))} domains for agent sync")
             
             return jsonify(result), 200
             
         except Exception as e:
-            self.logger.error(f"Error in agent sync: {str(e)}")
-            return jsonify({"error": "Sync failed", "domains": []}), 500
+            self.logger.error(f"Error in agent sync: {str(e)}", exc_info=True)
+            
+            # ✅ FIX: Always return valid JSON with domains array
+            error_response = {
+                "success": False,
+                "error": "Sync failed: " + str(e),
+                "domains": [],  # Always include empty domains array
+                "timestamp": datetime.now().isoformat(),
+                "count": 0,
+                "type": "error"
+            }
+            
+            return jsonify(error_response), 500
     
     def bulk_add(self):
         """Bulk add entries to whitelist"""

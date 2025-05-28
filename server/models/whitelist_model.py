@@ -6,13 +6,13 @@ import re
 import socket
 import ipaddress
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo  # ✅ THÊM
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
+import logging
 
 class WhitelistModel:
     """Model for whitelist data operations"""
@@ -20,76 +20,92 @@ class WhitelistModel:
     def __init__(self, db: Database):
         self.db = db
         self.collection: Collection = self.db.whitelist
+        self.logger = logging.getLogger(self.__class__.__name__)
         
-        # ✅ THÊM: Server timezone
-        self.server_timezone = self._get_server_timezone()
+        # ✅ FIX: Simplified timezone handling
         self._setup_indexes()
     
-    def _get_server_timezone(self) -> ZoneInfo:
-        """Lấy múi giờ hiện tại của server"""
-        try:
-            local_tz = datetime.now().astimezone().tzinfo
-            return local_tz
-        except Exception:
-            return ZoneInfo("UTC")
-    
     def _now_local(self) -> datetime:
-        """Lấy thời gian hiện tại theo múi giờ của server"""
-        return datetime.now(self.server_timezone)
+        """Get current local time with timezone"""
+        return datetime.now().astimezone()
     
     def _setup_indexes(self):
         """Setup indexes for whitelist collection"""
         try:
-            # Clean up invalid documents before creating indexes
+            # ✅ FIX: Better index management
+            existing_indexes = self.collection.list_indexes()
+            index_names = [idx['name'] for idx in existing_indexes]
+            
+            # Clean up invalid documents first
             cleanup_result = self.collection.delete_many({
                 "$or": [
                     {"value": None},
                     {"value": ""},
-                    {"value": {"$exists": False}}
+                    {"value": {"$exists": False}},
+                    {"value": {"$type": "null"}}
                 ]
             })
             
-            # Drop existing problematic index if it exists
-            try:
-                self.collection.drop_index("value_1")
-            except Exception:
-                pass  # Index might not exist
+            if cleanup_result.deleted_count > 0:
+                self.logger.info(f"Cleaned up {cleanup_result.deleted_count} invalid whitelist entries")
             
-            # Create unique sparse index on value field
-            self.collection.create_index(
-                [("value", 1)], 
-                unique=True,
-                sparse=True  # Sparse index automatically excludes null/missing values
-            )
+            # Drop problematic unique index if exists
+            if "value_1" in index_names:
+                try:
+                    self.collection.drop_index("value_1")
+                    self.logger.info("Dropped existing value_1 index")
+                except Exception as e:
+                    self.logger.warning(f"Could not drop value_1 index: {e}")
             
-            # Create other indexes
-            self.collection.create_index([("type", 1)])
-            self.collection.create_index([("category", 1)])
-            self.collection.create_index([("priority", DESCENDING)])
-            self.collection.create_index([("added_date", DESCENDING)])
-            self.collection.create_index([("expiry_date", 1)], sparse=True)
+            # Create new indexes
+            indexes_to_create = [
+                ([("value", 1)], {"unique": True, "sparse": True, "name": "value_unique_sparse"}),
+                ([("type", 1)], {"name": "type_index"}),
+                ([("category", 1)], {"name": "category_index"}),
+                ([("added_date", -1)], {"name": "added_date_desc"}),
+                ([("is_active", 1)], {"name": "is_active_index"})
+            ]
+            
+            for index_spec, options in indexes_to_create:
+                try:
+                    if options["name"] not in index_names:
+                        self.collection.create_index(index_spec, **options)
+                        self.logger.debug(f"Created index: {options['name']}")
+                except Exception as e:
+                    self.logger.warning(f"Could not create index {options['name']}: {e}")
             
         except Exception as e:
+            self.logger.error(f"Error setting up indexes: {e}")
             # Continue without indexes if creation fails
-            pass
-    
+
     def insert_entry(self, entry_data: Dict) -> str:
         """Insert a new whitelist entry"""
-        # ✅ SỬA: Dùng server local time thay vì UTC
-        current_time = self._now_local()
-        entry_data["added_date"] = current_time
-        entry_data["created_at"] = current_time
-        entry_data["updated_at"] = current_time
-        
-        # Set defaults
-        entry_data.setdefault("usage_count", 0)
-        entry_data.setdefault("is_active", True)
-        entry_data.setdefault("enable_logging", False)
-        entry_data.setdefault("is_temporary", False)
-        
-        result = self.collection.insert_one(entry_data)
-        return str(result.inserted_id)
-    
+        try:
+            current_time = self._now_local()
+            
+            # ✅ FIX: Ensure required fields
+            entry_data["added_date"] = current_time
+            entry_data["created_at"] = current_time
+            entry_data["updated_at"] = current_time
+            
+            # Set safe defaults
+            entry_data.setdefault("usage_count", 0)
+            entry_data.setdefault("is_active", True)
+            entry_data.setdefault("enable_logging", False)
+            entry_data.setdefault("is_temporary", False)
+            
+            # ✅ FIX: Validate value field
+            if not entry_data.get("value"):
+                raise ValueError("Value field is required")
+            
+            result = self.collection.insert_one(entry_data)
+            self.logger.info(f"Inserted whitelist entry: {entry_data.get('value')}")
+            return str(result.inserted_id)
+            
+        except Exception as e:
+            self.logger.error(f"Error inserting entry: {e}")
+            raise
+
     def find_all_entries(self, query: Dict = None, sort_field: str = "added_date", 
                         sort_order: int = DESCENDING) -> List[Dict]:
         """Find all whitelist entries"""
@@ -183,47 +199,62 @@ class WhitelistModel:
     
     def cleanup_expired_entries(self) -> int:
         """Remove expired entries"""
-        current_time = self._now_local()  # ✅ SỬA: Dùng local time
-        result = self.collection.delete_many({
-            "expiry_date": {"$lt": current_time}
-        })
-        return result.deleted_count
+        try:
+            current_time = self._now_local()
+            result = self.collection.delete_many({
+                "expiry_date": {"$lt": current_time}
+            })
+            
+            if result.deleted_count > 0:
+                self.logger.info(f"Cleaned up {result.deleted_count} expired entries")
+            
+            return result.deleted_count
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning up expired entries: {e}")
+            return 0
     
     def get_entries_for_sync(self, since: datetime = None) -> List[str]:
         """Get entries for agent sync (values only)"""
-        query = {"is_active": True}
-        
-        if since:
-            query["$or"] = [
-                {"added_date": {"$gte": since}},
-                {"updated_at": {"$gte": since}}
-            ]
-        
-        # Clean up expired entries first
-        self.cleanup_expired_entries()
-        
-        cursor = self.collection.find(query, {"value": 1})
-        
-        values = []
-        for entry in cursor:
-            value = entry.get("value")
-            if value:
-                values.append(value)
-        
-        return values
-    
-    def update_usage(self, value: str) -> bool:
-        """Update usage count and last used time"""
-        current_time = self._now_local()  # ✅ SỬA: Dùng local time
-        result = self.collection.update_one(
-            {"value": value},
-            {
-                "$inc": {"usage_count": 1},
-                "$set": {"last_used": current_time}
-            }
-        )
-        return result.modified_count > 0
-    
+        try:
+            query = {"is_active": True}
+            
+            # ✅ FIX: Handle timezone-aware datetime comparisons
+            if since:
+                # Ensure since is timezone-aware
+                if since.tzinfo is None:
+                    since = since.replace(tzinfo=datetime.now().astimezone().tzinfo)
+                
+                query["$or"] = [
+                    {"added_date": {"$gte": since}},
+                    {"updated_at": {"$gte": since}}
+                ]
+            
+            # Clean up expired entries first
+            self.cleanup_expired_entries()
+            
+            # ✅ FIX: Better projection and error handling
+            cursor = self.collection.find(
+                query, 
+                {"value": 1, "_id": 0}
+            ).sort("added_date", -1)
+            
+            values = []
+            for entry in cursor:
+                value = entry.get("value")
+                if value and isinstance(value, str) and value.strip():
+                    values.append(value.strip().lower())
+            
+            # Remove duplicates while preserving order
+            unique_values = list(dict.fromkeys(values))
+            
+            self.logger.debug(f"Retrieved {len(unique_values)} unique values for sync")
+            return unique_values
+            
+        except Exception as e:
+            self.logger.error(f"Error getting entries for sync: {e}")
+            return []
+
     def get_statistics(self) -> Dict:
         """Get whitelist statistics"""
         total = self.collection.count_documents({})
@@ -284,13 +315,19 @@ class WhitelistModel:
             if entry_type == "domain":
                 # Remove wildcard for validation
                 domain_to_check = value.replace("*.", "")
-                # Basic domain validation
+                # Enhanced domain validation - allow hyphens and longer domains
                 domain_regex = re.compile(
                     r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$',
                     re.IGNORECASE
                 )
+                
+                # Additional checks
+                if len(domain_to_check) > 253:
+                    return {"valid": False, "message": "Domain name too long (max 253 characters)"}
                 if not domain_regex.match(domain_to_check):
                     return {"valid": False, "message": "Invalid domain format"}
+                if '..' in domain_to_check:
+                    return {"valid": False, "message": "Domain cannot contain consecutive dots"}
                     
             elif entry_type == "ip":
                 # Extract IP and port
@@ -315,19 +352,33 @@ class WhitelistModel:
                         ipaddress.ip_address(ip_part)
                 except ValueError:
                     return {"valid": False, "message": "Invalid IP address format"}
-                    
+                
             elif entry_type == "url":
                 try:
-                    parsed = urlparse(value)
+                    # More flexible URL validation
+                    if not (value.startswith('http://') or value.startswith('https://')):
+                        return {"valid": False, "message": "URL must start with http:// or https://"}
+                    
+                    # Handle wildcards by replacing them temporarily
+                    test_value = value.replace('*', 'test')
+                    parsed = urlparse(test_value)
+                    
                     if not parsed.scheme or not parsed.netloc:
                         return {"valid": False, "message": "Invalid URL format"}
+                        
+                    # Additional URL validation
+                    if len(value) > 2048:
+                        return {"valid": False, "message": "URL too long (max 2048 characters)"}
+                        
                 except Exception:
                     return {"valid": False, "message": "Invalid URL format"}
-                    
+                
             elif entry_type == "pattern":
-                if len(value) < 1:
+                if len(value.strip()) < 1:
                     return {"valid": False, "message": "Pattern cannot be empty"}
-                    
+                if len(value) > 255:
+                    return {"valid": False, "message": "Pattern too long (max 255 characters)"}
+                
             return {"valid": True, "message": "Valid"}
             
         except Exception as e:

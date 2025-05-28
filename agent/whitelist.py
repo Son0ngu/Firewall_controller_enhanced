@@ -122,60 +122,102 @@ class WhitelistManager:
             return False
             
         try:
-            # ✅ SỬA: Đảm bảo URL được build đúng
+            # ✅ FIX: Improved URL building logic
             base_url = self.server_url.rstrip('/')
-            if not base_url.endswith('/api'):
-                url = f"{base_url}/api/whitelist/agent-sync"
-            else:
+            
+            # Check if URL already has /api endpoint
+            if '/api' in base_url:
                 url = f"{base_url}/whitelist/agent-sync"
+            else:
+                url = f"{base_url}/api/whitelist/agent-sync"
             
             params = {}
             if self.last_updated:
+                # ✅ FIX: Ensure proper timezone handling
                 params['since'] = self.last_updated.isoformat()
                 
             if hasattr(self, 'agent_id') and self.agent_id:
                 params['agent_id'] = self.agent_id
                 
-            logger.debug(f"Requesting whitelist from: {url}")
+            logger.debug(f"Requesting whitelist from: {url} with params: {params}")
+            
+            # ✅ FIX: Add better headers and error handling
+            headers = {
+                'User-Agent': 'FirewallController-Agent/1.0',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+            
+            # Add authentication if available
+            if hasattr(self, 'agent_token') and self.agent_token:
+                headers['Authorization'] = f'Bearer {self.agent_token}'
             
             response = requests.get(
                 url, 
                 params=params,
                 timeout=self.timeout,
-                headers={'User-Agent': 'FirewallController-Agent/0.1'}
+                headers=headers
             )
+            
+            logger.debug(f"Response status: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
+                logger.debug(f"Received data: {data}")
+                
                 domains_list = data.get("domains", [])
                 sync_type = data.get("type", "full")
+                
+                if not isinstance(domains_list, list):
+                    logger.error(f"Invalid domains data type: {type(domains_list)}")
+                    return False
                 
                 old_domains = self.domains.copy()
                 
                 with self.update_lock:
                     if sync_type == "incremental" and self.domains:
-                        # Incremental update - merge với existing domains
+                        # Incremental update
                         new_domains = set(domains_list)
                         self.domains.update(new_domains)
                         logger.info(f"Incremental update: added {len(new_domains)} domains, total: {len(self.domains)}")
                     else:
-                        # Full update - replace toàn bộ
+                        # Full update
                         self.domains = set(domains_list)
                         logger.info(f"Full update: loaded {len(self.domains)} domains")
                     
-                    self.last_updated = datetime.now().astimezone()  # ✅ SỬA: Thêm múi giờ
+                    # ✅ FIX: Use timezone-aware datetime
+                    self.last_updated = datetime.now().astimezone()
                 
-                # ✅ THÊM: Auto-sync với firewall nếu có thay đổi
+                # Auto-sync với firewall nếu có thay đổi
                 if self.auto_sync_firewall and self.firewall_manager:
                     self._sync_with_firewall(old_domains, self.domains)
                 
                 return True
+                
+            elif response.status_code == 404:
+                logger.warning("Agent sync endpoint not found - server may not support this feature")
+                return False
+            elif response.status_code == 401:
+                logger.error("Authentication failed - check agent credentials")
+                return False
             else:
-                logger.error(f"Server returned status {response.status_code}: {response.text}")
+                logger.error(f"Server returned status {response.status_code}: {response.text[:200]}")
                 return False
                 
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error updating whitelist: {e}")
+            return False
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Timeout error updating whitelist: {e}")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error updating whitelist: {e}")
+            return False
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error updating whitelist: {e}")
+            logger.error(f"Unexpected error updating whitelist: {e}")
             return False
     
     def _sync_with_firewall(self, old_domains: set, new_domains: set):
@@ -308,3 +350,20 @@ class WhitelistManager:
                 "is_running": self.running,
                 "server_url": self.server_url
             }
+    
+    def _create_minimal_whitelist(self):
+        """Create a minimal fallback whitelist for essential services"""
+        essential_domains = [
+            "dns.google",
+            "cloudflare-dns.com", 
+            "quad9.net",
+            "microsoft.com",
+            "windows.com",
+            "windowsupdate.com"
+        ]
+        
+        with self.update_lock:
+            self.domains = set(essential_domains)
+            self.last_updated = datetime.now().astimezone()
+        
+        logger.info(f"Created minimal whitelist with {len(essential_domains)} essential domains")
