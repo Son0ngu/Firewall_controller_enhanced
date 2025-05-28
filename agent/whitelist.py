@@ -163,7 +163,7 @@ class WhitelistManager:
                         self.domains = set(domains_list)
                         logger.info(f"Full update: loaded {len(self.domains)} domains")
                     
-                    self.last_updated = datetime.now()
+                    self.last_updated = datetime.now().astimezone()  # ✅ SỬA: Thêm múi giờ
                 
                 # ✅ THÊM: Auto-sync với firewall nếu có thay đổi
                 if self.auto_sync_firewall and self.firewall_manager:
@@ -304,7 +304,7 @@ class WhitelistManager:
         with self.update_lock:
             return {
                 "domain_count": len(self.domains),
-                "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+                "last_updated": self.last_updated.isoformat() if self.last_updated else None,  # ✅ SỬA: Đã có timezone
                 "is_running": self.running,
                 "server_url": self.server_url
             }

@@ -3,7 +3,7 @@ Agent Controller - handles agent HTTP requests
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta  # ✅ Add timedelta import
 from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.agent_model import AgentModel
@@ -18,19 +18,33 @@ class AgentController:
         self.service = agent_service
         self.socketio = socketio
         self.blueprint = Blueprint('agents', __name__)
+        
+        # ✅ THÊM: Dùng cùng timezone với service
+        self.server_timezone = self.service.server_timezone
         self._register_routes()
     
     def _register_routes(self):
         """Register routes for this controller"""
+        # ✅ CORE API endpoints - KEEP THESE
         self.blueprint.add_url_rule('/register', 'register_agent', self.register_agent, methods=['POST'])
-        self.blueprint.add_url_rule('/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])  # ✅ Add heartbeat route
+        self.blueprint.add_url_rule('/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])
         self.blueprint.add_url_rule('', 'list_agents', self.list_agents, methods=['GET'])
         self.blueprint.add_url_rule('/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
         self.blueprint.add_url_rule('/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
+        
+        # ✅ STATISTICS endpoint - KEEP THIS
+        self.blueprint.add_url_rule('/statistics', 'get_statistics', self.get_statistics, methods=['GET'])
+        
+        # ✅ COMMANDS endpoints - KEEP THESE (for future use)
         self.blueprint.add_url_rule('/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
         self.blueprint.add_url_rule('/commands', 'get_commands', self.get_commands, methods=['GET'])
         self.blueprint.add_url_rule('/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
-    
+        
+        # ✅ REMOVE: Debug endpoints (comment out for production)
+        # self.blueprint.add_url_rule('/debug/direct', 'debug_direct_call', self.debug_direct_call, methods=['GET'])
+        # self.blueprint.add_url_rule('/debug/status', 'debug_status', self.debug_status, methods=['GET'])
+        # self.blueprint.add_url_rule('/debug/timezone', 'debug_timezone_issue', self.debug_timezone_issue, methods=['GET'])
+
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
         response = {"success": True, "message": message}
@@ -111,6 +125,10 @@ class AgentController:
             self.logger.error(f"Error registering agent: {e}")
             return self._error_response("Failed to register agent", 500)
     
+    def _now_local(self) -> datetime:
+        """Lấy thời gian hiện tại theo múi giờ của server"""
+        return datetime.now(self.server_timezone)
+    
     def heartbeat(self):
         """Process agent heartbeat"""
         try:
@@ -125,17 +143,25 @@ class AgentController:
                 client_ip
             )
             
-            # Broadcast heartbeat via SocketIO
+            # ✅ IMPROVED: Enhanced SocketIO broadcast với detailed info
             if self.socketio:
                 agent = self.model.find_by_agent_id(data['agent_id'])
+                
+                # ✅ THÊM: Calculate time since last heartbeat for broadcast
+                current_time = self._now_local()
+                time_since_last = 0  # Just received
+                
                 self.socketio.emit("agent_heartbeat", {
                     "agent_id": data['agent_id'],
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "status": "active",
-                    "last_heartbeat": datetime.utcnow().isoformat(),
+                    "last_heartbeat": current_time.isoformat(),
+                    "time_since_heartbeat": time_since_last,
                     "metrics": data.get("metrics", {}),
                     "client_ip": client_ip,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": current_time.isoformat(),
+                    "agent_version": data.get("agent_version"),
+                    "platform": data.get("platform")
                 })
             
             return self._success_response(result)
@@ -148,28 +174,78 @@ class AgentController:
             return self._error_response("Failed to process heartbeat", 500)
     
     def list_agents(self):
-        """List all agents with filtering"""
+        """List all agents with filtering - SIMPLIFIED"""
         try:
+            self.logger.info("📊 List agents called")
+            
             # Get pagination and filters from request
             pagination = self._get_pagination_params()
             filters = self._get_filter_params(['status', 'hostname'])
             
-            # Call service method
-            result = self.service.get_agents(
-                filters=filters,
-                limit=pagination['limit'],
-                skip=pagination['skip']
-            )
+            # ✅ SIMPLIFIED: Direct call to get_agents_with_status
+            agents_with_status = self.service.get_agents_with_status()
+            self.logger.info(f"📊 Found {len(agents_with_status)} agents")
             
-            # Add pagination info
-            result['pagination'] = {
-                "total": result['total'],
-                "limit": pagination['limit'],
-                "skip": pagination['skip'],
-                "page": pagination['page']
-            }
+            # Apply filters
+            filtered_agents = agents_with_status
+            if filters.get("status"):
+                status_filter = filters["status"]
+                filtered_agents = [a for a in filtered_agents if a.get('status') == status_filter]
             
-            return jsonify(result), 200
+            if filters.get("hostname"):
+                hostname_filter = filters["hostname"].lower()
+                filtered_agents = [a for a in filtered_agents if hostname_filter in a.get('hostname', '').lower()]
+            
+            # Apply pagination
+            total_count = len(filtered_agents)
+            agents_list = filtered_agents[pagination['skip']:pagination['skip']+pagination['limit']]
+            
+            # ✅ SIMPLIFIED: Format for API response
+            formatted_agents = []
+            for agent in agents_list:
+                # Simple timestamp formatting
+                last_heartbeat_iso = None
+                if agent.get("last_heartbeat"):
+                    if isinstance(agent["last_heartbeat"], str):
+                        last_heartbeat_iso = agent["last_heartbeat"]
+                    else:
+                        last_heartbeat_iso = agent["last_heartbeat"].isoformat()
+                
+                registered_date_iso = None
+                if agent.get("registered_date"):
+                    if isinstance(agent["registered_date"], str):
+                        registered_date_iso = agent["registered_date"]
+                    else:
+                        registered_date_iso = agent["registered_date"].isoformat()
+                
+                formatted_agent = {
+                    "agent_id": agent.get("agent_id"),
+                    "hostname": agent.get("hostname", "Unknown"),
+                    "ip_address": agent.get("ip_address", "Unknown"),
+                    "platform": agent.get("platform", "Unknown"),
+                    "os_info": agent.get("os_info", "Unknown"),
+                    "agent_version": agent.get("agent_version", "Unknown"),
+                    "status": agent.get("status"),
+                    "registered_date": registered_date_iso,
+                    "last_heartbeat": last_heartbeat_iso,
+                    "time_since_heartbeat": agent.get("time_since_heartbeat"),
+                    "metrics": agent.get("metrics"),
+                    "user_id": agent.get("ip_address")
+                }
+                
+                formatted_agents.append(formatted_agent)
+            
+            return jsonify({
+                "agents": formatted_agents,
+                "total": total_count,
+                "success": True,
+                "pagination": {
+                    "total": total_count,
+                    "limit": pagination['limit'],
+                    "skip": pagination['skip'],
+                    "page": pagination['page']
+                }
+            }), 200
             
         except Exception as e:
             self.logger.error(f"Error listing agents: {e}")
@@ -191,32 +267,35 @@ class AgentController:
     def delete_agent(self, agent_id: str):
         """Delete an agent"""
         try:
-            # Get agent info before deletion for notification
+            # ✅ THÊM: Get agent info trước khi delete
             agent = self.model.find_by_agent_id(agent_id)
             if not agent:
                 return self._error_response("Agent not found", 404)
             
-            # Call service method
+            # ✅ SỬA: Gọi service để delete
             success = self.service.delete_agent(agent_id)
-            if not success:
+            
+            if success:
+                # ✅ THÊM: Broadcast deletion qua SocketIO
+                if self.socketio:
+                    self.socketio.emit("agent_deleted", {
+                        "agent_id": agent_id,
+                        "hostname": agent.get("hostname"),
+                        "timestamp": self._now_local().isoformat()
+                    })
+                
+                return self._success_response(
+                    message=f"Agent {agent.get('hostname', agent_id)} deleted successfully"
+                )
+            else:
                 return self._error_response("Failed to delete agent", 500)
-            
-            # Broadcast deletion via SocketIO
-            if self.socketio:
-                self.socketio.emit("agent_deleted", {
-                    "agent_id": agent_id,
-                    "hostname": agent.get("hostname"),
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-            
-            return self._success_response(message=f"Agent {agent_id} deleted successfully")
-            
+                
         except ValueError as e:
             return self._error_response(str(e), 404)
         except Exception as e:
-            self.logger.error(f"Error deleting agent: {e}")
-            return self._error_response("Failed to delete agent", 500)
-    
+            self.logger.error(f"Error deleting agent {agent_id}: {e}")
+            return self._error_response("Internal server error", 500)
+
     def send_command(self, agent_id: str):
         """Send command to specific agent"""
         try:
@@ -234,7 +313,7 @@ class AgentController:
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "command_type": data["command_type"],
                     "created_by": "admin",
-                    "created_at": datetime.utcnow().isoformat()
+                    "created_at": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
                 })
             
             return self._success_response({
@@ -330,14 +409,111 @@ class AgentController:
                     "agent_id": data['agent_id'],
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "status": data["status"],
-                    "completed_at": datetime.utcnow().isoformat()
+                    "completed_at": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
                 })
             
             return self._success_response(message="Command result updated")
             
-        except ValueError as e:
-            status_code = 404 if "not found" in str(e) else 401 if "token" in str(e) else 400
-            return self._error_response(str(e), status_code)
         except Exception as e:
             self.logger.error(f"Error updating command result: {e}")
             return self._error_response("Failed to update command result", 500)
+
+    def debug_status(self):
+        """Debug endpoint để kiểm tra status calculation"""
+        try:
+            current_time = self._now_local()
+            agents = self.model.get_all_agents({}, limit=100)
+            
+            debug_info = {
+                "server_time": current_time.isoformat(),
+                "thresholds": {
+                    "active": self.service.active_threshold,
+                    "inactive": self.service.inactive_threshold
+                },
+                "agents": []
+            }
+            
+            for agent in agents:
+                last_heartbeat = agent.get("last_heartbeat")
+                if last_heartbeat:
+                    if last_heartbeat.tzinfo is None:
+                        last_heartbeat = last_heartbeat.replace(tzinfo=self.server_timezone)
+                    
+                    time_diff = (current_time - last_heartbeat).total_seconds() / 60
+                    calculated_status = self.service._calculate_agent_status(agent, current_time)
+                    
+                    agent_debug = {
+                        "agent_id": agent.get("agent_id"),
+                        "hostname": agent.get("hostname"),
+                        "last_heartbeat": last_heartbeat.isoformat(),
+                        "time_since_heartbeat": round(time_diff, 2),
+                        "calculated_status": calculated_status,
+                        "stored_status": agent.get("status", "unknown")
+                    }
+                    debug_info["agents"].append(agent_debug)
+            
+            return self._success_response(debug_info)
+            
+        except Exception as e:
+            self.logger.error(f"Error in debug status: {e}")
+            return self._error_response("Debug failed", 500)
+
+    def get_statistics(self):
+        """Get agent statistics"""
+        try:
+            # ✅ CRITICAL: Use calculate_statistics method
+            stats = self.service.calculate_statistics()
+            self.logger.info(f"📊 Statistics calculated: {stats}")
+            return self._success_response(stats)
+        except Exception as e:
+            self.logger.error(f"Error getting statistics: {e}")
+            return self._error_response("Failed to get statistics", 500)
+
+    def debug_direct_call(self):
+        """Debug endpoint - direct service call"""
+        try:
+            self.logger.info("🔧 DEBUG: Direct get_agents_with_status call")
+            
+            # Call service method directly
+            agents = self.service.get_agents_with_status()
+            
+            debug_data = []
+            for agent in agents:
+                debug_data.append({
+                    'hostname': agent.get('hostname'),
+                    'last_heartbeat': agent.get('last_heartbeat'),
+                    'last_heartbeat_type': str(type(agent.get('last_heartbeat'))),
+                    'status': agent.get('status'),
+                    'time_since_heartbeat': agent.get('time_since_heartbeat'),
+                    'calculated_directly': True
+                })
+            
+            return jsonify({
+                'success': True,
+                'method_used': 'get_agents_with_status (direct)',
+                'total': len(agents),
+                'debug_data': debug_data
+            })
+            
+        except Exception as e:
+            self.logger.error(f"Debug direct call error: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+    # Add method:
+    def debug_timezone_issue(self):
+        """Debug timezone calculation issue"""
+        try:
+            debug_result = self.service.debug_timezone_issue()
+            return jsonify({
+                'success': True,
+                'debug_data': debug_result
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+

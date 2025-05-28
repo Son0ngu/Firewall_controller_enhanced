@@ -42,7 +42,12 @@ CONFIG_PATHS = [
 DEFAULT_CONFIG = {
     # Cấu hình kết nối đến server
     "server": {
-        # ✅ SỬA: Bỏ /api khỏi base URL
+        # ✅ SỬA: Hỗ trợ nhiều URLs
+        "urls": [
+            "https://firewall-controller-vu7f.onrender.com",
+            "http://localhost:5000"
+        ],
+        # Giữ lại URL chính cho backward compatibility
         "url": "https://firewall-controller-vu7f.onrender.com",  
         "connect_timeout": 10,  # Thời gian chờ kết nối tối đa (giây)
         "read_timeout": 30,  # Thời gian chờ đọc dữ liệu tối đa (giây)
@@ -106,11 +111,11 @@ DEFAULT_CONFIG = {
     
     # Cấu hình heartbeat
     "heartbeat": {
-        "enabled": True,          # Enable heartbeat
-        "interval": 60,           # Send heartbeat every 60 seconds
-        "timeout": 10,            # Heartbeat request timeout
-        "retry_interval": 30,     # Retry interval if heartbeat fails
-        "max_failures": 5         # Max consecutive failures before giving up
+        "enabled": True,                    # Bật heartbeat
+        "interval": 20,                     # ✅ 20 seconds thay vì 30
+        "timeout": 10,                      # Timeout cho HTTP request
+        "retry_interval": 5,               # ✅ 5 seconds thay vì 30
+        "max_failures": 3                   # ✅ 3 failures thay vì 5
     },
     
     # Cấu hình chung
@@ -317,6 +322,98 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
         logger.error(f"Error saving configuration to {path}: {str(e)}")
         return False
 
+
+def get_default_config() -> Dict[str, Any]:
+    """
+    Cung cấp cấu hình mặc định cho agent.
+    Tất cả các tham số đều có giá trị hợp lý để agent có thể hoạt động ngay.
+    """
+    return {
+        # Cấu hình kết nối đến server
+        "server": {
+            # ✅ SỬA: Hỗ trợ nhiều URLs
+            "urls": [
+                "https://firewall-controller-vu7f.onrender.com",
+                "http://localhost:5000"
+            ],
+            # Giữ lại URL chính cho backward compatibility
+            "url": "https://firewall-controller-vu7f.onrender.com",  
+            "connect_timeout": 10,  # Thời gian chờ kết nối tối đa (giây)
+            "read_timeout": 30,  # Thời gian chờ đọc dữ liệu tối đa (giây)
+            "retry_interval": 60,  # Thời gian chờ giữa các lần thử lại (giây)
+            "max_retries": 5,  # Số lần thử lại tối đa khi kết nối thất bại
+        },
+        
+        # Cấu hình xác thực
+        "auth": {
+            "api_key": "",  # Khóa API để xác thực với server (để trống = không xác thực)
+            "auth_method": "api_key",  # Phương thức xác thực: api_key, jwt, hoặc none
+            "jwt_refresh_interval": 3600,  # Thời gian làm mới token JWT (giây) - 1 giờ
+        },
+        
+        # Cấu hình whitelist đơn giản hóa - chỉ từ server
+        "whitelist": {
+            "update_interval": 300,  # 5 phút cập nhật 1 lần
+            "retry_interval": 60,    # Thời gian retry khi lỗi
+            "max_retries": 5,        # Số lần retry tối đa
+            "timeout": 10,           # Timeout khi gọi API
+            "auto_sync_firewall": True,  # ✅ THÊM: Tự động sync với firewall
+        },
+        
+        # Cấu hình bắt gói tin mạng
+        "packet_capture": {
+            "engine": "scapy",  # Thư viện bắt gói tin: pydivert hoặc scapy
+            "filter": "outbound and (tcp.DstPort == 80 or tcp.DstPort == 443)",  # Bộ lọc gói tin - chỉ quan tâm đến gói tin đi ra cổng 80 (HTTP) và 443 (HTTPS)
+            "buffer_size": 4096,  # Kích thước buffer đọc gói tin (bytes)
+            "packet_limit": 0,  # Giới hạn số gói tin bắt được (0 = không giới hạn)
+            "interfaces": [],  # Danh sách giao diện mạng cần bắt gói tin (rỗng = tất cả)
+            "snaplen": 1500,  # Số byte tối đa cần bắt từ mỗi gói tin (thường là MTU)
+        },
+        
+        # Cấu hình ghi log
+        "logging": {
+            "level": "INFO",  # Mức độ ghi log: DEBUG, INFO, WARNING, ERROR, CRITICAL
+            "file": "agent.log",  # Tên file log
+            "max_size": 10485760,  # Kích thước tối đa của file log (10 MB)
+            "backup_count": 5,  # Số file log cũ được giữ lại khi xoay vòng (rotation)
+            "log_to_console": True,  # Có ghi log ra màn hình không
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # Định dạng của log
+            
+            # Cấu hình gửi log đến server
+            "sender": {
+                "enabled": True,  # Có gửi log đến server không
+                "batch_size": 100,  # Số lượng log tối đa gửi trong một lần
+                "max_queue_size": 1000,  # Kích thước hàng đợi log tối đa
+                "send_interval": 30,  # Thời gian giữa các lần gửi log (giây)
+                "failures_before_warn": 3,  # Số lần gửi thất bại trước khi cảnh báo
+            }
+        },
+        
+        # Cấu hình tường lửa
+        "firewall": {
+            "enabled": True,  # Có sử dụng tường lửa để chặn không
+            "mode": "block",  # Chế độ: block (chặn), warn (cảnh báo), monitor (chỉ giám sát)
+            "rule_prefix": "FirewallController",  # Tiền tố cho tên các quy tắc tường lửa
+            "cleanup_on_exit": True,  # Có xóa các quy tắc khi thoát không
+            "create_allow_rules": False,  # ✅ THÊM: Có tạo allow rules hay không
+        },
+        
+        # ✅ THÊM: Heartbeat configuration
+        "heartbeat": {
+            "enabled": True,                    # Bật heartbeat
+            "interval": 20,                     # ✅ 20 seconds thay vì 30
+            "timeout": 10,                      # Timeout cho HTTP request
+            "retry_interval": 5,               # ✅ 5 seconds thay vì 30
+            "max_failures": 3                   # ✅ 3 failures thay vì 5
+        },
+        
+        # Cấu hình chung
+        "general": {
+            "agent_name": "",  # Tên của agent, tự động tạo nếu để trống
+            "startup_delay": 0,  # Thời gian chờ trước khi khởi động (giây)
+            "check_admin": True,  # Có kiểm tra quyền admin khi khởi động không
+        }
+    }
 
 # Khởi tạo biến cấu hình toàn cục
 _config = None

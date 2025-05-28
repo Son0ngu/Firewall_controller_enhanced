@@ -2,7 +2,8 @@
 Log Model - handles log data operations
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+# ✅ FIXED: Remove ZoneInfo import (Windows compatibility)
 from typing import Dict, List, Optional
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
@@ -15,7 +16,24 @@ class LogModel:
     def __init__(self, db: Database):
         self.db = db
         self.collection: Collection = db.logs
+        
+        # ✅ FIXED: Get server timezone without ZoneInfo
+        self.server_timezone = self._get_server_timezone()
         self._create_indexes()
+    
+    def _get_server_timezone(self) -> timezone:
+        """Get server timezone - Windows compatible"""
+        try:
+            # Get local timezone offset
+            local_offset = datetime.now().astimezone().utcoffset()
+            return timezone(local_offset)
+        except Exception:
+            # Fallback to UTC
+            return timezone.utc
+    
+    def _now_local(self) -> datetime:
+        """Get current local server time"""
+        return datetime.now(self.server_timezone)
     
     def _create_indexes(self):
         """Create necessary indexes for performance"""
@@ -99,7 +117,8 @@ class LogModel:
     
     def insert_log(self, log_data: Dict) -> str:
         """Insert new log entry"""
-        log_data['timestamp'] = log_data.get('timestamp', datetime.utcnow())
+        # Use server local time if no timestamp provided
+        log_data['timestamp'] = log_data.get('timestamp', self._now_local())
         result = self.collection.insert_one(log_data)
         return str(result.inserted_id)
     
@@ -108,10 +127,19 @@ class LogModel:
         if not logs:
             return []
         
-        # Add timestamp to logs that don't have one
+        # Add server local timestamp for logs without timestamp
         for log in logs:
             if 'timestamp' not in log:
-                log['timestamp'] = datetime.utcnow()
+                log['timestamp'] = self._now_local()
+            # Normalize existing timestamp
+            elif isinstance(log['timestamp'], str):
+                try:
+                    parsed_time = datetime.fromisoformat(log['timestamp'].replace('Z', '+00:00'))
+                    if parsed_time.tzinfo is None:
+                        parsed_time = parsed_time.replace(tzinfo=self.server_timezone)
+                    log['timestamp'] = parsed_time
+                except (ValueError, TypeError):
+                    log['timestamp'] = self._now_local()
         
         result = self.collection.insert_many(logs)
         return [str(id) for id in result.inserted_ids]
@@ -198,6 +226,10 @@ class LogModel:
     
     def get_logs_summary(self, since: datetime) -> Dict:
         """Get logs summary statistics since a date"""
+        # Ensure since has timezone
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=self.server_timezone)
+        
         query = {'timestamp': {'$gte': since}}
         
         # Basic counts
@@ -235,7 +267,7 @@ class LogModel:
             'top_agents': top_agents
         }
     
-    # ✅ Statistics methods for dashboard
+    # Statistics methods for dashboard
     def get_total_count(self) -> int:
         """Get total count of all logs"""
         return self.collection.count_documents({})

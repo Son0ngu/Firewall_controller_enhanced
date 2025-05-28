@@ -169,7 +169,7 @@ class PacketSniffer:
             if domain:
                 # Tạo từ điển chứa thông tin về kết nối
                 record = {
-                    "timestamp": datetime.now().isoformat(),  # Thời điểm hiện tại ISO format
+                    "timestamp": datetime.now().astimezone().isoformat(),  # ✅ SỬA: Thêm múi giờ
                     "domain": domain,  # Tên miền đã trích xuất
                     "dest_ip": dst_ip,  # IP đích
                     "dest_port": dst_port,  # Cổng đích
@@ -177,11 +177,9 @@ class PacketSniffer:
                 }
                 
                 # Gọi hàm callback với bản ghi đã tạo
-                # Callback này thường sẽ kiểm tra whitelist và quyết định xử lý
                 self.callback(record)
-        
+    
         except Exception as e:
-            # Bắt và xử lý mọi ngoại lệ có thể xảy ra trong quá trình xử lý gói tin
             logger.error("Error processing packet: %s", str(e))
     
     def _extract_http_host(self, packet) -> Optional[str]:

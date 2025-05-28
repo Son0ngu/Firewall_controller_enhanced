@@ -6,6 +6,7 @@ import re
 import socket
 import ipaddress
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo  # ✅ THÊM
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from bson import ObjectId
@@ -19,7 +20,22 @@ class WhitelistModel:
     def __init__(self, db: Database):
         self.db = db
         self.collection: Collection = self.db.whitelist
+        
+        # ✅ THÊM: Server timezone
+        self.server_timezone = self._get_server_timezone()
         self._setup_indexes()
+    
+    def _get_server_timezone(self) -> ZoneInfo:
+        """Lấy múi giờ hiện tại của server"""
+        try:
+            local_tz = datetime.now().astimezone().tzinfo
+            return local_tz
+        except Exception:
+            return ZoneInfo("UTC")
+    
+    def _now_local(self) -> datetime:
+        """Lấy thời gian hiện tại theo múi giờ của server"""
+        return datetime.now(self.server_timezone)
     
     def _setup_indexes(self):
         """Setup indexes for whitelist collection"""
@@ -59,10 +75,11 @@ class WhitelistModel:
     
     def insert_entry(self, entry_data: Dict) -> str:
         """Insert a new whitelist entry"""
-        # Add timestamps
-        entry_data["added_date"] = datetime.utcnow()
-        entry_data["created_at"] = datetime.utcnow()
-        entry_data["updated_at"] = datetime.utcnow()
+        # ✅ SỬA: Dùng server local time thay vì UTC
+        current_time = self._now_local()
+        entry_data["added_date"] = current_time
+        entry_data["created_at"] = current_time
+        entry_data["updated_at"] = current_time
         
         # Set defaults
         entry_data.setdefault("usage_count", 0)
@@ -112,7 +129,7 @@ class WhitelistModel:
         """Update an entry"""
         try:
             object_id = ObjectId(entry_id)
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = self._now_local()  # ✅ SỬA: Dùng local time
             
             result = self.collection.update_one(
                 {"_id": object_id},
@@ -141,8 +158,8 @@ class WhitelistModel:
         if not entries:
             return []
         
-        # Add timestamps to all entries
-        current_time = datetime.utcnow()
+        # ✅ SỬA: Add timestamps với local time
+        current_time = self._now_local()
         for entry in entries:
             entry["added_date"] = current_time
             entry["created_at"] = current_time
@@ -166,7 +183,7 @@ class WhitelistModel:
     
     def cleanup_expired_entries(self) -> int:
         """Remove expired entries"""
-        current_time = datetime.utcnow()
+        current_time = self._now_local()  # ✅ SỬA: Dùng local time
         result = self.collection.delete_many({
             "expiry_date": {"$lt": current_time}
         })
@@ -197,7 +214,7 @@ class WhitelistModel:
     
     def update_usage(self, value: str) -> bool:
         """Update usage count and last used time"""
-        current_time = datetime.utcnow()
+        current_time = self._now_local()  # ✅ SỬA: Dùng local time
         result = self.collection.update_one(
             {"value": value},
             {

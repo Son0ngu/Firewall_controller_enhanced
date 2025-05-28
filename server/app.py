@@ -156,8 +156,9 @@ def register_main_routes(app, log_service, agent_service):
                 stats['allowed_count'] = log_service.get_count_by_action('allow')
                 stats['blocked_count'] = log_service.get_count_by_action('block')
                 
-                # Get active agents count
-                stats['active_agents'] = agent_service.get_active_count()
+                # ✅ FIX: Get active agents count properly
+                agent_stats = agent_service.calculate_statistics()
+                stats['active_agents'] = agent_stats.get('active', 0)
                 
                 # Get recent logs (last 10)
                 recent_logs = log_service.get_recent_logs(limit=10)

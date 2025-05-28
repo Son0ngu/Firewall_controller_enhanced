@@ -3,7 +3,7 @@ Agent Model - handles agent data operations
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
@@ -17,7 +17,14 @@ class AgentModel:
         self.logger = logging.getLogger(self.__class__.__name__)  # ✅ Add logger
         self.db = db
         self.collection: Collection = self.db.agents
+        
+        # ✅ FIXED: Use timezone offset instead of ZoneInfo
+        self.vietnam_offset = timezone(timedelta(hours=7))  # UTC+7 for Vietnam
         self._setup_indexes()
+    
+    def _now_local(self) -> datetime:
+        """Lấy thời gian hiện tại theo múi giờ của server"""
+        return datetime.now()
     
     def _setup_indexes(self):
         """Setup indexes for agents collection"""
@@ -38,10 +45,12 @@ class AgentModel:
     def register_agent(self, agent_data: Dict) -> Dict:
         """Register a new agent (CREATE only, not update)"""
         try:
+            # ✅ SỬA: Dùng server local time thay vì UTC
+            current_time = self._now_local()
             agent_data.update({
-                "registered_date": datetime.utcnow(),
-                "updated_date": datetime.utcnow(),
-                "last_heartbeat": datetime.utcnow(),
+                "registered_date": current_time,
+                "updated_date": current_time,
+                "last_heartbeat": current_time,
                 "status": "active"
             })
             
@@ -58,7 +67,7 @@ class AgentModel:
     def update_agent(self, agent_id: str, update_data: Dict) -> bool:
         """Update existing agent"""
         try:
-            update_data["updated_date"] = datetime.utcnow()
+            update_data["updated_date"] = self._now_local()  # ✅ SỬA: Dùng local time
             result = self.collection.update_one(
                 {"agent_id": agent_id},
                 {"$set": update_data}
@@ -69,32 +78,32 @@ class AgentModel:
             self.logger.error(f"Error updating agent {agent_id}: {e}")
             return False
     
-    def update_heartbeat(self, agent_id: str, heartbeat_data: Dict = None) -> bool:
-        """Update agent heartbeat"""
+    def update_heartbeat(self, agent_id: str, update_data: Dict) -> bool:
+        """Update agent heartbeat with PROPER TIMEZONE"""
         try:
-            update_data = {
-                "last_heartbeat": datetime.utcnow(),
-                "status": "active",
-                "updated_date": datetime.utcnow()
+            # ✅ CRITICAL FIX: Add proper Vietnam timezone to heartbeat
+            from datetime import datetime, timezone, timedelta
+            vietnam_offset = timezone(timedelta(hours=7))
+            
+            # Set proper heartbeat timestamp
+            current_vietnam_time = datetime.now(vietnam_offset)
+            
+            update_data_with_heartbeat = {
+                **update_data,
+                "last_heartbeat": current_vietnam_time,  # ✅ FIX: Proper timezone
+                "updated_date": current_vietnam_time
             }
             
-            if heartbeat_data:
-                if heartbeat_data.get("client_ip"):
-                    update_data["last_heartbeat_ip"] = heartbeat_data["client_ip"]
-                if heartbeat_data.get("metrics"):
-                    update_data["metrics"] = heartbeat_data["metrics"]
-                if heartbeat_data.get("status"):
-                    update_data["status"] = heartbeat_data["status"]
-                if heartbeat_data.get("hostname"):
-                    update_data["hostname"] = heartbeat_data["hostname"]
-                if heartbeat_data.get("platform"):
-                    update_data["platform"] = heartbeat_data["platform"]
+            result = self.collection.update_one(
+                {"agent_id": agent_id},
+                {"$set": update_data_with_heartbeat}
+            )
             
-            result = self.collection.update_one({"agent_id": agent_id}, {"$set": update_data})
+            self.logger.info(f"✅ Updated heartbeat for {agent_id}: {current_vietnam_time}")
             return result.modified_count > 0
             
         except Exception as e:
-            self.logger.error(f"Error updating heartbeat for agent {agent_id}: {e}")
+            self.logger.error(f"Error updating heartbeat for {agent_id}: {e}")
             return False
     
     def find_by_agent_id(self, agent_id: str) -> Optional[Dict]:
@@ -136,7 +145,8 @@ class AgentModel:
     def get_active_agents(self, inactive_threshold_minutes: int = 5) -> List[Dict]:
         """Get list of active agents"""
         try:
-            threshold = datetime.utcnow() - timedelta(minutes=inactive_threshold_minutes)
+            # ✅ SỬA: Dùng server local time thay vì UTC
+            threshold = self._now_local() - timedelta(minutes=inactive_threshold_minutes)
             return list(self.collection.find({
                 "last_heartbeat": {"$gte": threshold}
             }))
@@ -147,7 +157,8 @@ class AgentModel:
     def get_inactive_agents(self, inactive_threshold_minutes: int = 5) -> List[Dict]:
         """Get list of inactive agents"""
         try:
-            threshold = datetime.utcnow() - timedelta(minutes=inactive_threshold_minutes)
+            # ✅ SỬA: Dùng server local time thay vì UTC
+            threshold = self._now_local() - timedelta(minutes=inactive_threshold_minutes)
             return list(self.collection.find({
                 "last_heartbeat": {"$lt": threshold}
             }))
@@ -168,7 +179,8 @@ class AgentModel:
     def get_agent_statistics(self, inactive_threshold_minutes: int = 5) -> Dict:
         """Get agent statistics"""
         try:
-            inactive_threshold = datetime.utcnow() - timedelta(minutes=inactive_threshold_minutes)
+            # ✅ SỬA: Dùng server local time để tính threshold
+            inactive_threshold = self._now_local() - timedelta(minutes=inactive_threshold_minutes)
             
             pipeline = [
                 {

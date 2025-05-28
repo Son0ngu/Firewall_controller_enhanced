@@ -548,57 +548,39 @@ stackoverflow.com"></textarea>
 {% block extra_js %}
 <script>
 let whitelistData = [];
-let selectedDomains = new Set();
-let selectedDomain = null;
 
-// Load whitelist when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    loadWhitelist();
-});
-
-/**
- * Load whitelist from API
- */
-async function loadWhitelist() {
+// ✅ Thêm formatTimestamp function  
+function formatTimestamp(isoString, includeTimezone = false) {
+    if (!isoString) return 'Never';
+    
     try {
-        const response = await fetch('/api/whitelist');
-        const data = await response.json();
+        const date = new Date(isoString);
         
-        if (data.error) {
-            throw new Error(data.error);
+        if (includeTimezone) {
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            });
+        } else {
+            return date.toLocaleString();
         }
-        
-        whitelistData = data.domains || [];
-        updateStatistics();
-        renderDomains(whitelistData);
-        
-    } catch (error) {
-        console.error('Error loading whitelist:', error);
-        showNotification('danger', 'Failed to load whitelist: ' + error.message);
-        
-        // Show error state
-        document.getElementById('domainsContainer').innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-                <h5>Error Loading Whitelist</h5>
-                <p class="text-muted">${error.message}</p>
-                <button class="btn btn-primary" onclick="loadWhitelist()">
-                    <i class="fas fa-retry me-1"></i>Retry
-                </button>
-            </div>
-        `;
+    } catch (e) {
+        return 'Invalid Date';
     }
 }
 
-/**
- * Update statistics cards
- */
+// ✅ SỬA: Update statistics với proper timestamp formatting
 function updateStatistics() {
     const total = whitelistData.length;
     const manual = whitelistData.filter(d => d.added_by !== 'system').length;
     const system = whitelistData.filter(d => d.added_by === 'system').length;
     
-    // Find last modified
+    // Find last modified with proper timezone
     let lastModified = 'Never';
     if (whitelistData.length > 0) {
         const latest = whitelistData.reduce((latest, current) => {
@@ -607,7 +589,7 @@ function updateStatistics() {
             return currentDate > latestDate ? current : latest;
         });
         if (latest.added_date) {
-            lastModified = new Date(latest.added_date).toLocaleDateString();
+            lastModified = formatTimestamp(latest.added_date);  // ✅ Dùng formatTimestamp
         }
     }
     
@@ -617,9 +599,7 @@ function updateStatistics() {
     document.getElementById('lastModified').textContent = lastModified;
 }
 
-/**
- * Render domains list
- */
+// ✅ SỬA: Render domains với proper timestamp formatting
 function renderDomains(domains) {
     const container = document.getElementById('domainsContainer');
     
@@ -627,11 +607,8 @@ function renderDomains(domains) {
         container.innerHTML = `
             <div class="text-center py-5">
                 <i class="fas fa-list fa-3x text-muted mb-3"></i>
-                <h5>No Entries Found</h5>
-                <p class="text-muted">No domains, IPs, or URLs are currently whitelisted.</p>
-                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDomainModal">
-                    <i class="fas fa-plus me-1"></i>Add Your First Entry
-                </button>
+                <h5>No Domains in Whitelist</h5>
+                <p class="text-muted">Add domains to get started.</p>
             </div>
         `;
         return;
@@ -640,22 +617,11 @@ function renderDomains(domains) {
     container.innerHTML = '';
     
     domains.forEach((entry, index) => {
-        const entryType = entry.type || 'domain';
-        const sourceClass = entry.added_by === 'system' ? 'system' : 'manual';
-        const sourceIcon = entry.added_by === 'system' ? 'cog' : 'user';
-        const sourceText = entry.added_by === 'system' ? 'System' : 'Manual';
+        const value = entry.value || entry.domain || 'N/A';
+        const type = entry.type || 'domain';
         
-        // Type-specific icons and colors
-        const typeInfo = {
-            domain: { icon: 'globe', color: 'primary', label: 'Domain' },
-            ip: { icon: 'network-wired', color: 'info', label: 'IP Address' },
-            url: { icon: 'link', color: 'success', label: 'URL' },
-            pattern: { icon: 'code', color: 'warning', label: 'Pattern' }
-        };
-        
-        const type = typeInfo[entryType] || typeInfo.domain;
-        const addedDate = entry.added_date ? new Date(entry.added_date).toLocaleDateString() : 'Unknown';
-        const value = entry.value || entry.domain || 'Unknown';
+        // Format timestamps properly
+        const addedDate = formatTimestamp(entry.added_date);  // ✅ Dùng formatTimestamp
         
         // Priority indicator
         const priorityBadge = entry.priority === 'high' ? 
@@ -664,78 +630,77 @@ function renderDomains(domains) {
             '<span class="badge bg-danger ms-1">Critical</span>' : '';
         
         const entryElement = document.createElement('div');
-        entryElement.className = `domain-item ${sourceClass} p-3 border-bottom`;
+        entryElement.className = 'list-group-item d-flex justify-content-between align-items-center';
         entryElement.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center">
-                    <div class="form-check me-3">
-                        <input class="form-check-input" type="checkbox" value="${value}" 
-                               onchange="toggleDomainSelection('${value}')">
+            <div class="d-flex align-items-center">
+                <div>
+                    <h6 class="mb-1">
+                        <i class="fas fa-globe me-2 text-primary"></i>
+                        ${value}
+                    </h6>
+                    <div class="d-flex align-items-center text-muted">
+                        <small class="me-3">
+                            <i class="fas fa-user me-1"></i>
+                            Added by: ${entry.added_by || 'Unknown'}
+                        </small>
+                        <small title="${formatTimestamp(entry.added_date, true)}">
+                            <i class="fas fa-calendar me-1"></i>
+                            ${addedDate}
+                        </small>
                     </div>
-                    <div>
-                        <h6 class="mb-1">
-                            <i class="fas fa-${type.icon} me-2 text-${type.color}"></i>
-                            ${value}
-                            ${priorityBadge}
-                        </h6>
-                        <div class="d-flex align-items-center text-muted">
-                            <span class="badge bg-${type.color} me-2">
-                                ${type.label}
-                            </span>
-                            <span class="badge bg-${sourceClass === 'system' ? 'secondary' : 'primary'} me-2">
-                                <i class="fas fa-${sourceIcon} me-1"></i>${sourceText}
-                            </span>
-                            ${entry.category ? `<span class="badge bg-light text-dark me-2">${entry.category}</span>` : ''}
-                            <small>
-                                <i class="fas fa-calendar me-1"></i>Added: ${addedDate}
-                                ${entry.added_by !== 'system' ? ` by ${entry.added_by}` : ''}
+                    ${entry.notes ? `
+                        <div class="mt-1">
+                            <small class="text-muted">
+                                <i class="fas fa-sticky-note me-1"></i>
+                                ${entry.notes}
                             </small>
                         </div>
-                        ${entry.notes ? `
-                            <div class="mt-1">
-                                <small class="text-muted">
-                                    <i class="fas fa-sticky-note me-1"></i>
-                                    ${entry.notes}
-                                </small>
-                            </div>
-                        ` : ''}
-                        ${entry.expiry_date ? `
-                            <div class="mt-1">
-                                <small class="text-warning">
-                                    <i class="fas fa-clock me-1"></i>
-                                    Expires: ${new Date(entry.expiry_date).toLocaleDateString()}
-                                </small>
-                            </div>
-                        ` : ''}
-                    </div>
+                    ` : ''}
+                    ${entry.expiry_date ? `
+                        <div class="mt-1">
+                            <small class="text-warning">
+                                <i class="fas fa-clock me-1"></i>
+                                Expires: ${formatTimestamp(entry.expiry_date)}
+                            </small>
+                        </div>
+                    ` : ''}
                 </div>
-                
-                <div class="domain-actions">
-                    <div class="btn-group btn-group-sm" role="group">
-                        <button type="button" class="btn btn-outline-primary" onclick="viewDomainDetails('${value}')">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="editDomain('${value}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        ${entry.type === 'domain' ? `
-                            <button type="button" class="btn btn-outline-info" onclick="testDNS('${value}')">
-                                <i class="fas fa-dns"></i>
-                            </button>
-                        ` : ''}
-                        ${entry.added_by !== 'system' ? `
-                            <button type="button" class="btn btn-outline-danger" onclick="deleteSingleDomain('${value}')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        ` : ''}
-                    </div>
-                </div>
+            </div>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-primary" onclick="editEntry('${entry._id || entry.id}')">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button type="button" class="btn btn-outline-danger" onclick="deleteEntry('${entry._id || entry.id}')">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         `;
         
         container.appendChild(entryElement);
     });
 }
+
+// ✅ THÊM: Load whitelist function
+async function loadWhitelist() {
+    try {
+        const response = await fetch('/api/whitelist');
+        if (response.ok) {
+            const data = await response.json();
+            whitelistData = data.domains || [];
+            updateStatistics();
+            renderDomains(whitelistData);
+        } else {
+            console.error('Failed to load whitelist:', response.statusText);
+        }
+    } catch (error) {
+        console.error('Error loading whitelist:', error);
+    }
+}
+
+// Load data when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadWhitelist();
+});
 
 /**
  * Filter domains based on search and filters

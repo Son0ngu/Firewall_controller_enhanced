@@ -165,111 +165,135 @@
 let logsData = [];
 let currentFilter = 'all';
 
-// Load logs when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    loadLogs();
+// Format timestamp function
+function formatTimestamp(isoString, includeTimezone = false) {
+    if (!isoString) return 'Never';
     
-    // Auto-refresh every 30 seconds
-    setInterval(loadLogs, 30000);
-});
+    try {
+        const date = new Date(isoString);
+        
+        if (includeTimezone) {
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            });
+        } else {
+            return date.toLocaleString();
+        }
+    } catch (e) {
+        return 'Invalid Date';
+    }
+}
 
-/**
- * Load logs from API
- */
+// Create log row
+function createLogRow(log) {
+    const timestamp = formatTimestamp(log.timestamp);
+    const domain = log.domain || log.url || 'N/A';
+    const agent = log.agent_hostname || log.agent_id || 'System';
+    
+    // Determine action and styling
+    let actionClass = 'secondary';
+    let actionText = 'UNKNOWN';
+    
+    if (log.action) {
+        switch (log.action.toLowerCase()) {
+            case 'allow':
+            case 'allowed':
+                actionClass = 'success';
+                actionText = 'ALLOWED';
+                break;
+            case 'block':
+            case 'blocked':
+                actionClass = 'danger';
+                actionText = 'BLOCKED';
+                break;
+            case 'warn':
+            case 'warning':
+                actionClass = 'warning';
+                actionText = 'WARNING';
+                break;
+        }
+    }
+    
+    const actionBadge = `<span class="badge bg-${actionClass}">${actionText}</span>`;
+    
+    // Build details
+    let details = [];
+    if (log.dest_ip) details.push(`IP: ${log.dest_ip}`);
+    if (log.dest_port) details.push(`Port: ${log.dest_port}`);
+    if (log.protocol) details.push(`Protocol: ${log.protocol}`);
+    
+    return `
+        <tr class="log-entry">
+            <td title="${formatTimestamp(log.timestamp, true)}">
+                <small>${timestamp}</small>
+            </td>
+            <td>${domain}</td>
+            <td><small>${agent}</small></td>
+            <td>${actionBadge}</td>
+            <td><small class="text-muted">${details.join(' | ')}</small></td>
+        </tr>
+    `;
+}
+
+// Load logs
 async function loadLogs() {
+    console.log('🔄 Loading logs...');
+    
     try {
         const response = await fetch('/api/logs');
         const data = await response.json();
         
-        if (data.error) {
-            throw new Error(data.error);
+        console.log('📊 Logs response:', data);
+        
+        if (data.success && data.logs) {
+            logsData = data.logs;
+            renderLogsTable(logsData);
+            updateLogStatistics(data);
+        } else {
+            console.error('❌ Invalid logs response:', data);
+            showLogsError('Failed to load logs');
         }
         
-        logsData = data.logs || [];
-        updateStatistics();
-        renderLogs(logsData);
-        
     } catch (error) {
-        console.error('Error loading logs:', error);
-        showNotification('danger', 'Failed to load logs: ' + error.message);
-        
-        // Show error state
-        document.getElementById('logsContainer').innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-                <h5>Error Loading Logs</h5>
-                <p class="text-muted">${error.message}</p>
-                <button class="btn btn-primary" onclick="loadLogs()">
-                    <i class="fas fa-redo me-1"></i>Retry
-                </button>
-            </div>
-        `;
+        console.error('❌ Error loading logs:', error);
+        showLogsError('Network error loading logs');
     }
 }
 
-/**
- * Update statistics cards
- */
-function updateStatistics() {
-    const total = logsData.length;
-    const allowed = logsData.filter(log => log.action === 'allow').length;
-    const blocked = logsData.filter(log => log.action === 'block').length;
-    const errors = logsData.filter(log => log.level === 'error').length;
-    
-    document.getElementById('totalLogsCount').textContent = total;
-    document.getElementById('allowedCount').textContent = allowed;
-    document.getElementById('blockedCount').textContent = blocked;
-    document.getElementById('errorCount').textContent = errors;
-}
-
-/**
- * Render logs list
- */
-function renderLogs(logs) {
+// Render logs table
+function renderLogsTable(logs) {
     const container = document.getElementById('logsContainer');
     
-    // Filter logs based on current filter
-    let filteredLogs = logs;
-    if (currentFilter !== 'all') {
-        filteredLogs = logs.filter(log => {
-            switch (currentFilter) {
-                case 'allow': return log.action === 'allow';
-                case 'block': return log.action === 'block';
-                case 'error': return log.level === 'error';
-                default: return true;
-            }
-        });
-    }
-    
-    if (filteredLogs.length === 0) {
+    if (!logs || logs.length === 0) {
         container.innerHTML = `
             <div class="text-center py-5">
                 <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                <h5>No Logs Found</h5>
-                <p class="text-muted">No logs match the current filter.</p>
-                <button class="btn btn-primary" onclick="filterLogs('all')">
-                    <i class="fas fa-list me-1"></i>Show All Logs
-                </button>
+                <p class="text-muted">No logs found</p>
             </div>
         `;
         return;
     }
     
-    // Create table
     const tableHtml = `
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0" id="logsTable">
                 <thead class="table-light">
                     <tr>
-                        <th>Time</th>
-                        <th>Domain/URL</th>
+                        <th>Timestamp</th>
+                        <th>Domain</th>
                         <th>Agent</th>
                         <th>Action</th>
                         <th>Details</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${filteredLogs.slice(0, 100).map(log => createLogRow(log)).join('')}
+                    ${logs.map(log => createLogRow(log)).join('')}
                 </tbody>
             </table>
         </div>
@@ -278,77 +302,61 @@ function renderLogs(logs) {
     container.innerHTML = tableHtml;
 }
 
-/**
- * Create a log row
- */
-function createLogRow(log) {
-    const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A';
-    const domain = log.domain || log.url || 'N/A';
-    const agent = log.agent_hostname || log.agent_id || 'System';
+// Update log statistics
+function updateLogStatistics(data) {
+    // You can get these from logs summary endpoint
+    document.getElementById('totalLogsCount').textContent = data.total || '0';
     
-    let actionBadge = '';
-    switch (log.action) {
-        case 'allow':
-            actionBadge = '<span class="badge bg-success">ALLOWED</span>';
-            break;
-        case 'block':
-            actionBadge = '<span class="badge bg-danger">BLOCKED</span>';
-            break;
-        case 'error':
-            actionBadge = '<span class="badge bg-warning">ERROR</span>';
-            break;
-        default:
-            actionBadge = `<span class="badge bg-secondary">${(log.action || 'UNKNOWN').toUpperCase()}</span>`;
-    }
+    // Count by action
+    const logs = data.logs || [];
+    const allowedCount = logs.filter(log => log.action === 'allow').length;
+    const blockedCount = logs.filter(log => log.action === 'block').length;
+    const errorCount = logs.filter(log => log.level === 'error').length;
     
-    const details = log.reason || log.message || log.details || '-';
-    
-    return `
-        <tr class="log-entry">
-            <td><small>${timestamp}</small></td>
-            <td>${domain}</td>
-            <td><small>${agent}</small></td>
-            <td>${actionBadge}</td>
-            <td><small class="text-muted">${details}</small></td>
-        </tr>
+    document.getElementById('allowedCount').textContent = allowedCount;
+    document.getElementById('blockedCount').textContent = blockedCount;
+    document.getElementById('errorCount').textContent = errorCount;
+}
+
+// Show logs error
+function showLogsError(message) {
+    const container = document.getElementById('logsContainer');
+    container.innerHTML = `
+        <div class="text-center py-5">
+            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+            <p class="text-danger">${message}</p>
+            <button class="btn btn-outline-primary" onclick="loadLogs()">
+                <i class="fas fa-redo me-1"></i>Retry
+            </button>
+        </div>
     `;
 }
 
-/**
- * Filter logs by type
- */
-function filterLogs(filter) {
-    currentFilter = filter;
+// Filter logs
+function filterLogs(action) {
+    currentFilter = action;
     
     // Update button states
     document.querySelectorAll('.btn-group .btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    
     event.target.classList.add('active');
     
-    // Re-render logs with filter
-    renderLogs(logsData);
+    // Filter logs
+    let filteredLogs = logsData;
+    if (action !== 'all') {
+        filteredLogs = logsData.filter(log => log.action === action);
+    }
+    
+    renderLogsTable(filteredLogs);
 }
 
-/**
- * Refresh logs
- */
+// Refresh logs
 function refreshLogs() {
-    document.getElementById('logsContainer').innerHTML = `
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Refreshing logs...</span>
-            </div>
-            <p class="mt-2 text-muted">Refreshing logs...</p>
-        </div>
-    `;
     loadLogs();
 }
 
-/**
- * Clear logs
- */
+// Clear logs
 async function clearLogs() {
     if (!confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
         return;
@@ -356,22 +364,31 @@ async function clearLogs() {
     
     try {
         const response = await fetch('/api/logs', {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
         
-        const data = await response.json();
+        const result = await response.json();
         
-        if (data.error) {
-            throw new Error(data.error);
+        if (result.success) {
+            alert(`Successfully cleared ${result.deleted_count} logs`);
+            loadLogs(); // Reload logs
+        } else {
+            alert('Failed to clear logs: ' + (result.error || 'Unknown error'));
         }
-        
-        showNotification('success', 'Logs cleared successfully');
-        refreshLogs();
         
     } catch (error) {
         console.error('Error clearing logs:', error);
-        showNotification('danger', 'Failed to clear logs: ' + error.message);
+        alert('Network error clearing logs');
     }
 }
+
+// Load logs when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs();
+    setInterval(loadLogs, 30000);  // Auto-refresh every 30 seconds
+});
 </script>
 {% endblock %}

@@ -231,89 +231,138 @@ AGENT_NAME=your-agent-name</code></pre>
 {% block extra_js %}
 <script>
 let agentsData = [];
-
-// Load agents when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    loadAgents();
-    
-    // Auto-refresh every 30 seconds
-    setInterval(loadAgents, 30000);
-});
+let statusUpdateInterval;
 
 /**
- * ✅ Helper function to get status CSS class
+ * ✅ FIXED: Proper timezone parsing for Vietnam timezone
+ */
+function parseTimestampCorrectly(timestamp) {
+    if (!timestamp) return null;
+    
+    try {
+        if (timestamp.includes('+07:00')) {
+            // ✅ BETTER FIX: Parse with timezone then convert to local representation
+            const withTimezone = new Date(timestamp);
+            
+            // Get browser timezone offset in minutes  
+            const browserOffset = new Date().getTimezoneOffset(); // -420 for Vietnam
+            
+            // For Vietnam browsers (UTC+7): offset = -420
+            // Server timestamp is already in Vietnam time with +07:00
+            // We want to represent it as the same local time in Vietnam browser
+            
+            // Since both server and browser are in Vietnam timezone,
+            // we need to remove the timezone offset conversion
+            const localTime = new Date(withTimezone.getTime() - (browserOffset * 60 * 1000));
+            
+            return localTime;
+        } else if (timestamp.includes('Z')) {
+            // UTC timestamp - parse directly
+            return new Date(timestamp);
+        } else {
+            // ✅ WORKING FIX: No timezone info - treat as Vietnam local time
+            const date = new Date(timestamp);
+            
+            // Get the timezone offset difference
+            const browserOffset = date.getTimezoneOffset(); // Minutes difference from UTC
+            
+            // For Vietnam browsers: offset = -420 (UTC+7)
+            // Add the timezone offset to get correct local time
+            const adjustedDate = new Date(date.getTime() - (browserOffset * 60 * 1000));
+            
+            return adjustedDate;
+        }
+    } catch (e) {
+        console.error('Error parsing timestamp:', timestamp, e);
+        return new Date(timestamp); // Fallback
+    }
+}
+
+/**
+ * ✅ Format timestamp function
+ */
+function formatTimestamp(isoString, includeTimezone = false) {
+    if (!isoString) return 'Never';
+    
+    try {
+        const date = parseTimestampCorrectly(isoString);
+        
+        if (includeTimezone) {
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            });
+        } else {
+            return date.toLocaleString();
+        }
+    } catch (e) {
+        console.error('Error parsing timestamp:', isoString, e);
+        return 'Invalid Date';
+    }
+}
+
+/**
+ * ✅ Helper functions
  */
 function getStatusClass(status) {
     switch (status) {
-        case 'active':
-            return 'success';  // Green
-        case 'inactive':
-            return 'warning';  // Yellow/Orange
-        case 'offline':
-            return 'danger';   // Red
-        default:
-            return 'secondary'; // Gray
+        case 'active': return 'success';
+        case 'inactive': return 'warning';
+        case 'offline': return 'danger';
+        default: return 'secondary';
     }
 }
 
-/**
- * ✅ Helper function to get status text
- */
 function getStatusText(status) {
     switch (status) {
-        case 'active':
-            return 'Active';
-        case 'inactive':
-            return 'Inactive';
-        case 'offline':
-            return 'Offline';
-        default:
-            return 'Unknown';
+        case 'active': return 'Active';
+        case 'inactive': return 'Inactive'; 
+        case 'offline': return 'Offline';
+        default: return 'Unknown';
     }
 }
 
-/**
- * ✅ Helper function to get status icon
- */
 function getStatusIcon(status) {
     switch (status) {
-        case 'active':
-            return 'check-circle';
-        case 'inactive':
-            return 'exclamation-triangle';
-        case 'offline':
-            return 'times-circle';
-        default:
-            return 'question-circle';
+        case 'active': return 'check-circle';
+        case 'inactive': return 'exclamation-triangle';
+        case 'offline': return 'times-circle';
+        default: return 'question-circle';
     }
 }
 
-/**
- * ✅ Get status badge with server-provided status
- */
 function getStatusBadge(agent) {
-    // Use server-provided status only
     const status = agent.status || 'offline';
     const statusClass = getStatusClass(status);
     const statusText = getStatusText(status);
     const statusIcon = getStatusIcon(status);
     
-    // Show time since last heartbeat if available
     let timeAgo = '';
-    if (agent.time_since_heartbeat !== null && agent.time_since_heartbeat !== undefined) {
-        const minutes = Math.round(agent.time_since_heartbeat);
-        timeAgo = ` (${minutes}m ago)`;
-    } else if (agent.last_heartbeat) {
+    let debugInfo = '';
+    
+    if (agent.last_heartbeat) {
         const now = new Date();
-        const lastHeartbeat = new Date(agent.last_heartbeat);
-        const minutesSince = Math.round((now - lastHeartbeat) / (1000 * 60));
+        const lastHeartbeat = parseTimestampCorrectly(agent.last_heartbeat);
+        const minutesSince = Math.round((now - lastHeartbeat) / (1000 * 60) * 10) / 10;
+        
         timeAgo = ` (${minutesSince}m ago)`;
+        debugInfo = `Last heartbeat: ${minutesSince} minutes ago\nServer status: ${status}\nRaw: ${agent.last_heartbeat}`;
+        
+        if (minutesSince > 2 && status === 'active') {
+            timeAgo = ` (${minutesSince}m ago - going inactive soon)`;
+        }
     } else {
         timeAgo = ' (never)';
+        debugInfo = `Never sent heartbeat\nServer status: ${status}`;
     }
     
     return `
-        <span class="badge bg-${statusClass} d-flex align-items-center">
+        <span class="badge bg-${statusClass} d-flex align-items-center" title="${debugInfo}">
             <i class="fas fa-${statusIcon} me-1"></i>
             ${statusText}
             <small class="ms-1">${timeAgo}</small>
@@ -322,63 +371,135 @@ function getStatusBadge(agent) {
 }
 
 /**
- * ✅ Refresh agents - wrapper for loadAgents
+ * ✅ Update agent status display
  */
-function refreshAgents() {
-    loadAgents();
+function updateAgentStatusDisplay() {
+    if (!agentsData || agentsData.length === 0) return;
+    
+    const now = new Date();
+    let hasChanges = false;
+    
+    agentsData.forEach(agent => {
+        if (!agent.last_heartbeat) return;
+        
+        const lastHeartbeat = parseTimestampCorrectly(agent.last_heartbeat);
+        const minutesSince = (now - lastHeartbeat) / (1000 * 60);
+        const currentStatus = agent.status;
+        
+        let expectedStatus = 'offline';
+        
+        // ✅ HYSTERESIS: Different thresholds based on current status
+        if (currentStatus === 'active') {
+            // If currently active, need more time to become inactive
+            if (minutesSince <= 3) {
+                expectedStatus = 'active';
+            } else if (minutesSince <= 8) {
+                expectedStatus = 'inactive';
+            } else {
+                expectedStatus = 'offline';
+            }
+        } else if (currentStatus === 'inactive') {
+            // If currently inactive, easier to become active, harder to become offline
+            if (minutesSince <= 2) {
+                expectedStatus = 'active';
+            } else if (minutesSince <= 7) {
+                expectedStatus = 'inactive';
+            } else {
+                expectedStatus = 'offline';
+            }
+        } else {
+            // If currently offline, use standard thresholds
+            if (minutesSince <= 2) {
+                expectedStatus = 'active';
+            } else if (minutesSince <= 5) {
+                expectedStatus = 'inactive';
+            } else {
+                expectedStatus = 'offline';
+            }
+        }
+        
+        if (agent.status !== expectedStatus) {
+            console.log(`Status change for ${agent.hostname}: ${agent.status} → ${expectedStatus} (${minutesSince.toFixed(2)}m)`);
+            agent.status = expectedStatus;
+            agent.time_since_heartbeat = minutesSince;
+            hasChanges = true;
+        }
+    });
+    
+    if (hasChanges) {
+        renderAgents(agentsData);
+        updateStatistics();
+    }
 }
 
 /**
- * Load agents from API
+ * ✅ Load agents function
  */
 async function loadAgents() {
     try {
-        const response = await fetch('/api/agents');
+        console.log('🔄 Loading agents...');
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const [agentsResponse, statsResponse] = await Promise.all([
+            fetch('/api/agents').catch(err => {
+                console.error('Failed to fetch agents:', err);
+                return { ok: false, statusText: err.message };
+            }),
+            fetch('/api/agents/statistics').catch(err => {
+                console.error('Failed to fetch stats:', err);
+                return { ok: false, statusText: err.message };
+            })
+        ]);
+        
+        if (agentsResponse.ok) {
+            const data = await agentsResponse.json();
+            agentsData = data.agents || [];
+            console.log('Loaded agents:', agentsData);
+            renderAgents(agentsData);
+        } else {
+            console.error('Failed to load agents:', agentsResponse.statusText);
+            showNotification('danger', 'Failed to load agents');
         }
         
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
+        if (statsResponse.ok) {
+            const statsData = await statsResponse.json();
+            updateStatisticsFromServer(statsData.data);
+            console.log('Agent stats:', statsData.data);
+        } else {
+            updateStatistics();
         }
-        
-        agentsData = data.agents || [];
-        console.log('Loaded agents:', agentsData); // Debug log
-        
-        updateStatistics();
-        renderAgents(agentsData);
         
     } catch (error) {
         console.error('Error loading agents:', error);
-        showNotification('danger', 'Failed to load agents: ' + error.message);
-        
-        // Show error state
-        document.getElementById('agentsContainer').innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-                <h5>Error Loading Agents</h5>
-                <p class="text-muted">${error.message}</p>
-                <button class="btn btn-primary" onclick="loadAgents()">
-                    <i class="fas fa-redo me-1"></i>Retry
-                </button>
-            </div>
-        `;
+        showNotification('danger', 'Error loading agents');
+        updateStatistics();
     }
+}
+
+/**
+ * ✅ Update statistics from server data
+ */
+function updateStatisticsFromServer(stats) {
+    if (!stats) {
+        updateStatistics();
+        return;
+    }
+    
+    document.getElementById('totalAgentsCount').textContent = stats.total || 0;
+    document.getElementById('activeAgentsCount').textContent = stats.active || 0;
+    document.getElementById('inactiveAgentsCount').textContent = stats.inactive || 0;
+    document.getElementById('offlineAgentsCount').textContent = stats.offline || 0;
 }
 
 /**
  * ✅ Update statistics calculation
  */
 function updateStatistics() {
+    if (!agentsData) return;
+    
     const total = agentsData.length;
     const active = agentsData.filter(a => a.status === 'active').length;
     const inactive = agentsData.filter(a => a.status === 'inactive').length;
     const offline = agentsData.filter(a => a.status === 'offline').length;
-    
-    console.log('Agent stats:', { total, active, inactive, offline }); // Debug log
     
     document.getElementById('totalAgentsCount').textContent = total;
     document.getElementById('activeAgentsCount').textContent = active;
@@ -387,7 +508,7 @@ function updateStatistics() {
 }
 
 /**
- * ✅ Enhanced agent rendering
+ * ✅ Render agents function
  */
 function renderAgents(agents) {
     const container = document.getElementById('agentsContainer');
@@ -409,21 +530,20 @@ function renderAgents(agents) {
     container.innerHTML = '';
     
     agents.forEach((agent, index) => {
-        const statusBadge = getStatusBadge(agent);  // ✅ Now this function exists
-        const lastSeen = agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never';
-        const registeredDate = agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown';
+        const statusBadge = getStatusBadge(agent);
+        const lastSeen = formatTimestamp(agent.last_heartbeat);
+        const registeredDate = formatTimestamp(agent.registered_date);
         
         // Build metrics display
         let metricsHtml = '';
         if (agent.metrics) {
             const m = agent.metrics;
             metricsHtml = `
-                <div class="mt-1 metrics">
+                <div class="mt-1">
                     <small class="text-muted">
                         <i class="fas fa-microchip me-1"></i>CPU: ${m.cpu_percent || 0}% |
                         <i class="fas fa-memory me-1"></i>RAM: ${m.memory_percent || 0}% |
-                        <i class="fas fa-clock me-1"></i>Uptime: ${Math.round((m.uptime_seconds || 0) / 3600)}h |
-                        <i class="fas fa-wifi me-1"></i>Connections: ${m.network_connections || 0}
+                        <i class="fas fa-clock me-1"></i>Uptime: ${Math.round((m.uptime_seconds || 0) / 3600)}h
                     </small>
                 </div>
             `;
@@ -431,7 +551,6 @@ function renderAgents(agents) {
         
         const agentElement = document.createElement('div');
         agentElement.className = 'p-3 border-bottom';
-        agentElement.setAttribute('data-agent-id', agent.agent_id);
         agentElement.innerHTML = `
             <div class="d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center">
@@ -451,11 +570,11 @@ function renderAgents(agents) {
                             </small>
                         </div>
                         <div class="d-flex align-items-center text-muted">
-                            <small class="me-3 last-seen">
+                            <small class="me-3" title="${formatTimestamp(agent.last_heartbeat, true)}">
                                 <i class="fas fa-clock me-1"></i>
                                 Last seen: ${lastSeen}
                             </small>
-                            <small>
+                            <small title="${formatTimestamp(agent.registered_date, true)}">
                                 <i class="fas fa-calendar me-1"></i>
                                 Registered: ${registeredDate}
                             </small>
@@ -493,37 +612,76 @@ function renderAgents(agents) {
     });
 }
 
-// ✅ Real-time heartbeat handler
-socket.on('agent_heartbeat', function(data) {
-    console.log('Agent heartbeat received:', data);
+/**
+ * ✅ Remove agent function
+ */
+async function removeAgent(agentId) {
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    const agentName = agent ? `${agent.hostname} (${agent.ip_address})` : agentId;
     
-    // Update agent data in memory
-    const agentIndex = agentsData.findIndex(a => a.agent_id === data.agent_id);
-    if (agentIndex >= 0) {
-        // Update agent status and heartbeat info
-        agentsData[agentIndex].status = 'active';
-        agentsData[agentIndex].last_heartbeat = data.last_heartbeat;
-        agentsData[agentIndex].time_since_heartbeat = 0;
-        agentsData[agentIndex].metrics = data.metrics;
-        
-        // Re-render agents to reflect changes
-        renderAgents(agentsData);
-        updateStatistics();
+    if (!confirm(`Are you sure you want to remove agent "${agentName}"?\n\nThis action cannot be undone.`)) {
+        return;
     }
-});
+    
+    const deleteButton = document.querySelector(`[onclick="removeAgent('${agentId}')"]`);
+    if (deleteButton) {
+        deleteButton.disabled = true;
+        deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+    
+    try {
+        showNotification('info', `Removing agent ${agentName}...`);
+        
+        const response = await fetch(`/api/agents/${agentId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('success', data.message || `Agent ${agentName} removed successfully`);
+            
+            const agentIndex = agentsData.findIndex(a => a.agent_id === agentId);
+            if (agentIndex >= 0) {
+                agentsData.splice(agentIndex, 1);
+            }
+            
+            updateStatistics();
+            renderAgents(agentsData);
+        } else {
+            throw new Error(data.message || 'Failed to remove agent');
+        }
+        
+    } catch (error) {
+        console.error('Error removing agent:', error);
+        showNotification('danger', `Failed to remove agent: ${error.message}`);
+        
+        if (deleteButton) {
+            deleteButton.disabled = false;
+            deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
+        }
+    }
+}
 
-// ✅ Add missing functions for button actions
+// ✅ Button action functions
+function refreshAgents() {
+    loadAgents();
+}
+
 function viewAgentDetails(agentId) {
-    // Find agent data
     const agent = agentsData.find(a => a.agent_id === agentId);
     if (!agent) {
         showNotification('danger', 'Agent not found');
         return;
     }
     
-    // Show agent details in modal or alert
-    const info = `
-Agent Details:
+    const info = `Agent Details:
 
 ID: ${agent.agent_id}
 Hostname: ${agent.hostname || 'Unknown'}
@@ -532,10 +690,8 @@ Platform: ${agent.platform || 'Unknown'}
 OS Info: ${agent.os_info || 'Unknown'}
 Version: ${agent.agent_version || 'Unknown'}
 Status: ${getStatusText(agent.status)}
-Last Seen: ${agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleString() : 'Never'}
-Registered: ${agent.registered_date ? new Date(agent.registered_date).toLocaleString() : 'Unknown'}
-User ID: ${agent.user_id || 'Unknown'}
-`.trim();
+Last Seen: ${agent.last_heartbeat ? formatTimestamp(agent.last_heartbeat, true) : 'Never'}
+Registered: ${agent.registered_date ? formatTimestamp(agent.registered_date, true) : 'Unknown'}`;
     
     alert(info);
 }
@@ -553,33 +709,150 @@ function sendCommand(agentId) {
     }
 }
 
-function removeAgent(agentId) {
-    if (confirm('Are you sure you want to remove this agent?')) {
-        // TODO: Implement remove agent functionality
-        showNotification('success', `Agent ${agentId} removed successfully`);
-    }
+function showNotification(type, message) {
+    // TODO: Implement notification system
+    console.log(`${type.toUpperCase()}: ${message}`);
 }
 
-// ✅ Add notification helper function
-function showNotification(type, message) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
+// ✅ Debug functions
+window.debugAgentStatus = function() {
+    console.log('=== AGENT STATUS DEBUG (FIXED) ===');
+    console.log('Current time:', new Date().toISOString());
     
-    // Add to page
-    document.body.appendChild(notification);
+    if (!agentsData || agentsData.length === 0) {
+        console.log('❌ No agents data available');
+        return;
+    }
     
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
+    agentsData.forEach((agent, index) => {
+        const now = new Date();
+        const lastHeartbeat = parseTimestampCorrectly(agent.last_heartbeat);
+        const minutesSince = lastHeartbeat ? (now - lastHeartbeat) / (1000 * 60) : null;
+        
+        // ✅ FIXED: Use SAME thresholds as updateAgentStatusDisplay
+        let expectedStatus = 'offline';
+        if (minutesSince && minutesSince <= 2) {           // 2 minutes for active
+            expectedStatus = 'active';
+        } else if (minutesSince && minutesSince <= 5) {    // 5 minutes for inactive
+            expectedStatus = 'inactive';
+        } else {                                           // > 5 minutes = offline
+            expectedStatus = 'offline';
         }
-    }, 5000);
+        
+        console.log(`Agent ${index} - ${agent.hostname}:`, {
+            agent_id: agent.agent_id,
+            server_status: agent.status,
+            expected_status: expectedStatus,
+            status_match: agent.status === expectedStatus ? '✅' : '❌',
+            last_heartbeat_raw: agent.last_heartbeat,
+            parsed_correctly: lastHeartbeat ? lastHeartbeat.toISOString() : null,
+            minutes_since_heartbeat: minutesSince ? minutesSince.toFixed(2) : 'N/A',
+            server_time_since: agent.time_since_heartbeat,
+            threshold_info: {
+                is_active: minutesSince <= 2,
+                is_inactive: minutesSince > 2 && minutesSince <= 5,
+                is_offline: minutesSince > 5
+            }
+        });
+    });
+    
+    console.log('=== END DEBUG ===');
+};
+
+window.disableAutoUpdates = function() {
+    if (statusUpdateInterval) {
+        clearInterval(statusUpdateInterval);
+        statusUpdateInterval = null;
+        console.log('✅ Disabled auto-status updates');
+    } else {
+        console.log('❌ Auto-updates already disabled');
+    }
+};
+
+window.enableAutoUpdates = function() {
+    if (!statusUpdateInterval) {
+        statusUpdateInterval = setInterval(updateAgentStatusDisplay, 10000);
+        console.log('✅ Enabled auto-status updates');
+    } else {
+        console.log('❌ Auto-updates already enabled');
+    }
+};
+
+// ✅ Socket.IO event handlers với proper error handling
+let socket = null;
+
+try {
+    if (typeof io !== 'undefined') {
+        socket = io();
+        
+        socket.on('connect', function() {
+            console.log('🔌 Connected to server for real-time updates');
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('❌ Disconnected from server');
+        });
+        
+        socket.on('connect_error', function(error) {
+            console.error('🔌❌ Connection error:', error);
+        });
+        
+        socket.on('agent_heartbeat', function(data) {
+            console.log('🔥 Agent heartbeat received:', data);
+            
+            const agentIndex = agentsData.findIndex(a => a.agent_id === data.agent_id);
+            if (agentIndex >= 0) {
+                const agent = agentsData[agentIndex];
+                
+                agent.status = 'active';
+                agent.last_heartbeat = data.last_heartbeat || data.timestamp;
+                agent.time_since_heartbeat = 0;
+                agent.metrics = data.metrics;
+                
+                console.log(`✅ Updated agent ${data.agent_id} to active status`);
+                renderAgents(agentsData);
+                updateStatistics();
+            } else {
+                console.log(`❌ Agent ${data.agent_id} not found, reloading...`);
+                loadAgents();
+            }
+        });
+        
+        socket.on('agent_deleted', function(data) {
+            console.log('Agent deleted:', data);
+            
+            const agentIndex = agentsData.findIndex(a => a.agent_id === data.agent_id);
+            if (agentIndex >= 0) {
+                agentsData.splice(agentIndex, 1);
+                updateStatistics();
+                renderAgents(agentsData);
+                showNotification('info', `Agent ${data.hostname || data.agent_id} was removed`);
+            }
+        });
+        
+        console.log('✅ Socket.IO initialized successfully');
+        
+    } else {
+        console.log('❌ Socket.IO not available - real-time updates disabled');
+    }
+    
+} catch (error) {
+    console.error('❌ Socket.IO initialization error:', error);
 }
+
+// Replace the DOMContentLoaded event listener (bottom of file):
+
+// Load agents when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadAgents();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadAgents, 30000);
+    
+    // ✅ DISABLED: Client-side status calculation
+    // statusUpdateInterval = setInterval(updateAgentStatusDisplay, 10000);
+    
+    console.log('✅ Agent management initialized - using server status only');
+});
 </script>
 {% endblock %}

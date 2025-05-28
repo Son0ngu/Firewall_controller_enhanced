@@ -3,7 +3,8 @@ Log Service - Business logic for log operations
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+# ✅ FIXED: Remove ZoneInfo import (Windows compatibility)
 from typing import Dict, List, Optional
 from models.log_model import LogModel
 
@@ -14,6 +15,24 @@ class LogService:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.model = log_model
         self.socketio = socketio
+        
+        # ✅ FIXED: Get server timezone without ZoneInfo
+        self.server_timezone = self._get_server_timezone()
+    
+    def _get_server_timezone(self) -> timezone:
+        """Get server timezone - Windows compatible"""
+        try:
+            # Get local timezone offset
+            local_offset = datetime.now().astimezone().utcoffset()
+            return timezone(local_offset)
+        except Exception:
+            # Fallback to UTC
+            self.logger.warning("Could not detect server timezone, using UTC")
+            return timezone.utc
+    
+    def _now_local(self) -> datetime:
+        """Get current local server time"""
+        return datetime.now(self.server_timezone)
     
     def receive_logs(self, logs_data: Dict) -> Dict:
         """Process incoming logs from agents"""
@@ -30,13 +49,47 @@ class LogService:
             if not isinstance(log, dict):
                 continue
             
-            # Ensure required fields exist
-            if "domain" not in log or "agent_id" not in log:
+            if "domain" not in log and "url" not in log:
                 continue
             
-            # Add timestamp if not present
+            # ✅ FIXED: Enhanced timestamp processing
             if 'timestamp' not in log:
-                log['timestamp'] = datetime.utcnow()
+                # No timestamp from agent, use server time
+                log['timestamp'] = self._now_local()
+                log['timestamp_source'] = 'server'
+            else:
+                # Parse and normalize agent timestamp
+                try:
+                    if isinstance(log['timestamp'], str):
+                        agent_time = datetime.fromisoformat(log['timestamp'].replace('Z', '+00:00'))
+                        # Ensure timezone is set
+                        if agent_time.tzinfo is None:
+                            agent_time = agent_time.replace(tzinfo=self.server_timezone)
+                        log['timestamp'] = agent_time
+                        log['timestamp_source'] = 'agent'
+                    elif isinstance(log['timestamp'], datetime):
+                        # Already datetime, ensure timezone
+                        if log['timestamp'].tzinfo is None:
+                            log['timestamp'] = log['timestamp'].replace(tzinfo=self.server_timezone)
+                        log['timestamp_source'] = 'agent'
+                except (ValueError, TypeError):
+                    # Invalid timestamp from agent, use server time
+                    log['timestamp'] = self._now_local()
+                    log['timestamp_source'] = 'server_fallback'
+            
+            # Add server processing timestamp
+            log['server_received_at'] = self._now_local()
+            
+            # Normalize domain field
+            if 'url' in log and 'domain' not in log:
+                log['domain'] = log['url']
+            
+            # Ensure required fields
+            if 'action' not in log:
+                log['action'] = 'unknown'
+            
+            if 'agent_id' not in log:
+                log['agent_id'] = 'system'
             
             valid_logs.append(log)
         
@@ -48,23 +101,33 @@ class LogService:
             }
         
         # Store logs in database using model
-        inserted_ids = self.model.insert_logs(valid_logs)
-        
-        # Broadcast new logs via SocketIO
-        if self.socketio:
-            for log in valid_logs:
-                log_copy = log.copy()
-                if "timestamp" in log_copy and isinstance(log_copy["timestamp"], datetime):
-                    log_copy["timestamp"] = log_copy["timestamp"].isoformat()
-                self.socketio.emit('new_log', log_copy)
-        
-        self.logger.info(f"Processed {len(inserted_ids)} logs")
-        
-        return {
-            "status": "success",
-            "count": len(inserted_ids),
-            "message": f"Processed {len(inserted_ids)} logs"
-        }
+        try:
+            inserted_ids = self.model.insert_logs(valid_logs)
+            
+            # Broadcast new logs via SocketIO
+            if self.socketio:
+                for log in valid_logs:
+                    log_copy = log.copy()
+                    if "timestamp" in log_copy and isinstance(log_copy["timestamp"], datetime):
+                        log_copy["timestamp"] = log_copy["timestamp"].isoformat()
+                    self.socketio.emit('new_log', log_copy)
+            
+            self.logger.info(f"Processed {len(inserted_ids)} logs")
+            
+            return {
+                "status": "success",
+                "count": len(inserted_ids),
+                "message": f"Processed {len(inserted_ids)} logs",
+                "server_time": self._now_local().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error storing logs: {e}")
+            return {
+                "status": "error",
+                "count": 0,
+                "message": f"Failed to store logs: {str(e)}"
+            }
     
     def get_logs(self, filters: Dict = None, limit: int = 100, skip: int = 0, 
                  sort_field: str = "timestamp", sort_order: str = "desc") -> Dict:
@@ -113,8 +176,8 @@ class LogService:
     def get_logs_summary(self, period: str = "day") -> Dict:
         """Get logs summary statistics"""
         try:
-            # Determine time range
-            now = datetime.utcnow()
+            # Determine time range with local time
+            now = self._now_local()
             if period == 'week':
                 since = now - timedelta(days=7)
             elif period == 'month':
@@ -122,10 +185,8 @@ class LogService:
             else:
                 since = now - timedelta(days=1)
             
-            # Get summary from model
             summary = self.model.get_logs_summary(since)
             
-            # Add period info
             summary.update({
                 "period": period,
                 "since": since.isoformat(),
@@ -165,7 +226,7 @@ class LogService:
             elif clear_data.get('older_than_days'):
                 # Clear logs older than specified days
                 days = int(clear_data['older_than_days'])
-                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                cutoff_date = self._now_local() - timedelta(days=days)
                 filters = {'until': cutoff_date.isoformat()}
                 deleted_count = self.model.clear_logs(filters)
             else:
@@ -175,7 +236,7 @@ class LogService:
             if self.socketio:
                 self.socketio.emit('logs_cleared', {
                     'deleted_count': deleted_count,
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': self._now_local().isoformat()
                 })
             
             self.logger.info(f"Cleared {deleted_count} logs")
@@ -183,7 +244,8 @@ class LogService:
             return {
                 "success": True,
                 "deleted_count": deleted_count,
-                "message": f"Cleared {deleted_count} logs"
+                "message": f"Cleared {deleted_count} logs",
+                "server_time": self._now_local().isoformat()
             }
             
         except Exception as e:
@@ -252,7 +314,7 @@ class LogService:
             self.logger.error(f"Error adding log: {e}")
             return {"error": str(e)}
     
-    # ✅ Methods for dashboard statistics
+    # Methods for dashboard statistics
     def get_total_count(self) -> int:
         """Get total count of logs"""
         try:
@@ -276,3 +338,8 @@ class LogService:
         except Exception as e:
             self.logger.error(f"Error getting recent logs: {e}")
             return []
+    
+    def get_active_count(self) -> int:
+        """Get count of active agents (for dashboard)"""
+        # This is a placeholder - actual implementation would be in agent service
+        return 0

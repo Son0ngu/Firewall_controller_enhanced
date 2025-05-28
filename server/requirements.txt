@@ -8,3 +8,4 @@ pyjwt
 bcrypt
 email_validator
 eventlet
+tzdata

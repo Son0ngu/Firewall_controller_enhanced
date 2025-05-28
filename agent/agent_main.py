@@ -18,6 +18,7 @@ import time  # Để xử lý thời gian, tạm dừng
 from typing import Dict  # Hỗ trợ gợi ý kiểu dữ liệu cho dictionary
 import socket
 import platform
+import requests
 
 # Import các module tự định nghĩa từ package agent
 from config import get_config  # Đọc cấu hình từ file
@@ -25,6 +26,7 @@ from firewall_manager import FirewallManager  # Quản lý tường lửa
 from log_sender import LogSender  # Gửi log tới server
 from packet_sniffer import PacketSniffer  # Bắt gói tin mạng
 from whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
+from heartbeat_sender import HeartbeatSender  # ✅ THÊM import
 
 # Cấu hình hệ thống ghi log
 # - level=logging.INFO: Chỉ ghi những thông báo từ mức INFO trở lên
@@ -42,6 +44,7 @@ firewall = None  # Quản lý tường lửa
 whitelist = None  # Quản lý danh sách tên miền được phép
 log_sender = None  # Gửi log đến server
 packet_sniffer = None  # Bắt gói tin mạng
+heartbeat_sender = None  # ✅ THÊM global variable
 running = True  # Điều khiển vòng lặp chính, khi False thì agent sẽ dừng
 
 def handle_domain_detection(record: Dict):
@@ -88,7 +91,7 @@ def handle_domain_detection(record: Dict):
 
 def initialize_components():
     """Khởi tạo tất cả các thành phần của agent."""
-    global config, firewall, whitelist, log_sender, packet_sniffer
+    global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender
     
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
@@ -98,53 +101,81 @@ def initialize_components():
             logger.error("Config chưa được khởi tạo!")
             raise ValueError("Config is required")
         
-        # Get local IP address
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                local_ip = s.getsockname()[0]
-        except:
-            local_ip = "127.0.0.1"
+        # ✅ IMPROVED: Better local IP detection
+        def get_local_ip():
+            try:
+                # Try multiple methods to get local IP
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(("8.8.8.8", 80))
+                    return s.getsockname()[0]
+            except:
+                try:
+                    # Fallback: get hostname IP
+                    return socket.gethostbyname(socket.gethostname())
+                except:
+                    return "127.0.0.1"
         
-        # ✅ SỬA: Đăng ký agent với server trước khi khởi tạo components
+        local_ip = get_local_ip()
+        
+        # ✅ IMPROVED: Better agent info collection
         agent_info = {
             "hostname": socket.gethostname(),
             "ip_address": local_ip,
             "platform": platform.system(),
-            "os_info": f"{platform.system()} {platform.release()}",
-            "agent_version": "1.0.0"
+            "os_info": f"{platform.system()} {platform.release()} {platform.version()}",
+            "agent_version": "1.0.0",
+            "python_version": f"{platform.python_version()}",
+            "architecture": platform.architecture()[0]
         }
         
-        # Đăng ký với server
-        try:
-            import requests
-            register_url = f"{config['server']['url'].rstrip('/')}/api/agents/register"  # ✅ Thêm /api
-            logger.info(f"Registering agent with server: {register_url}")
-            
-            response = requests.post(register_url, json=agent_info, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success'):
-                    agent_data = data.get('data', {})
-                    logger.info(f"✅ Agent registered successfully with ID: {agent_data.get('agent_id')}")
-                    
-                    # ✅ Lưu agent_id và token vào config để sử dụng sau
-                    config['agent_id'] = agent_data.get('agent_id')
-                    config['agent_token'] = agent_data.get('token')
-                    config['user_id'] = agent_data.get('user_id')
-                    
-                    logger.info(f"Agent token: {config['agent_token'][:8]}...")
-                else:
-                    logger.warning(f"Registration failed: {data.get('error', 'Unknown error')}")
-            else:
-                logger.warning(f"Failed to register agent: HTTP {response.status_code}")
-                logger.warning(f"Response: {response.text}")
-        except requests.exceptions.ConnectionError:
-            logger.warning("Could not connect to server - agent will run without registration")
-        except Exception as e:
-            logger.warning(f"Could not register with server: {e}")
+        # ✅ IMPROVED: Better registration logic với multiple URLs
+        registration_success = False
+        server_urls = config['server'].get('urls', [config['server']['url']])
         
-        # ✅ Initialize whitelist với updated config
+        for server_url in server_urls:
+            try:
+                register_url = f"{server_url.rstrip('/')}/api/agents/register"
+                logger.info(f"Attempting registration with: {register_url}")
+                
+                response = requests.post(
+                    register_url, 
+                    json=agent_info, 
+                    timeout=config['server'].get('connect_timeout', 10),
+                    headers={'Content-Type': 'application/json'}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('success'):
+                        agent_data = data.get('data', {})
+                        logger.info(f"✅ Agent registered successfully with ID: {agent_data.get('agent_id')}")
+                        
+                        # ✅ Lưu agent_id và token vào config để sử dụng sau
+                        config['agent_id'] = agent_data.get('agent_id')
+                        config['agent_token'] = agent_data.get('token')
+                        config['user_id'] = agent_data.get('user_id')
+                        config['server_url'] = server_url  # Save working server URL
+                        
+                        logger.info(f"Agent token: {config['agent_token'][:8]}...")
+                        registration_success = True
+                        break
+                    else:
+                        logger.warning(f"Registration failed with {server_url}: {data.get('error', 'Unknown error')}")
+                else:
+                    logger.warning(f"Registration failed with {server_url}: HTTP {response.status_code}")
+                    
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"Could not connect to {server_url}")
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout connecting to {server_url}")
+            except Exception as e:
+                logger.warning(f"Error registering with {server_url}: {e}")
+        
+        if not registration_success:
+            logger.error("Failed to register with any server - agent functionality will be limited")
+        
+        # ✅ Initialize các components...
+        # Initialize whitelist với updated config
         whitelist = WhitelistManager(config)
         logger.info(f"Whitelist initialized for agent: {local_ip}")
         
@@ -162,12 +193,13 @@ def initialize_components():
         # Start whitelist updates AFTER linking firewall
         whitelist.start_periodic_updates()
         
-        # Khởi tạo module gửi log
+        # ✅ IMPROVED: Log sender với better config
         log_sender_config = {
-            "server_url": config["server"]["url"],
+            "server_url": config.get('server_url', config["server"]["url"]),  # Use working URL
             "batch_size": config["logging"]["sender"]["batch_size"],
             "max_queue_size": config["logging"]["sender"]["max_queue_size"],
-            "send_interval": config["logging"]["sender"]["send_interval"]
+            "send_interval": config["logging"]["sender"]["send_interval"],
+            "timeout": config["server"].get("connect_timeout", 10)
         }
         
         # ✅ Thêm agent credentials vào log sender config
@@ -176,27 +208,35 @@ def initialize_components():
             log_sender_config["agent_token"] = config['agent_token']
         
         log_sender = LogSender(log_sender_config)
-        log_sender.start()  # Bắt đầu luồng gửi log
+        log_sender.start()
         logger.info("Log sender đã khởi tạo và bắt đầu")
         
         # Khởi tạo module bắt gói tin
-        packet_sniffer = PacketSniffer(callback=handle_domain_detection)  # Hàm callback khi phát hiện tên miền
-        packet_sniffer.start()  # Bắt đầu bắt gói tin
+        packet_sniffer = PacketSniffer(callback=handle_domain_detection)
+        packet_sniffer.start()
         logger.info("Packet sniffer đã khởi tạo và bắt đầu")
+        
+        # ✅ IMPROVED: Heartbeat sender với better error handling
+        if registration_success:
+            heartbeat_sender = HeartbeatSender(config)
+            heartbeat_sender.set_agent_credentials(config['agent_id'], config['agent_token'])
+            heartbeat_sender.start()
+            logger.info("✅ Heartbeat sender started")
+        else:
+            logger.warning("Skipping heartbeat sender - agent not registered")
         
         logger.info("✅ Tất cả các thành phần của agent đã khởi tạo thành công")
         
     except Exception as e:
-        # Ghi log nếu có lỗi trong quá trình khởi tạo
         logger.error(f"Lỗi khi khởi tạo các thành phần: {str(e)}", exc_info=True)
-        raise  # Ném lại ngoại lệ để hàm gọi xử lý
+        raise
 
 def cleanup():
     """
     Dừng tất cả các thành phần một cách an toàn khi agent kết thúc.
     Bao gồm: packet_sniffer, whitelist updater, log_sender và có thể xóa các quy tắc tường lửa.
     """
-    global firewall, whitelist, log_sender, packet_sniffer
+    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender  # ✅ THÊM heartbeat_sender
     
     logger.info("Đang dừng các thành phần của agent...")
     
@@ -223,6 +263,14 @@ def cleanup():
             logger.info("Log sender đã dừng")
         except Exception as e:
             logger.error(f"Lỗi khi dừng log sender: {str(e)}")
+    
+    # ✅ THÊM: Stop heartbeat sender
+    if heartbeat_sender:
+        try:
+            heartbeat_sender.stop()
+            logger.info("Heartbeat sender đã dừng")
+        except Exception as e:
+            logger.error(f"Lỗi khi dừng heartbeat sender: {str(e)}")
     
     # Xóa các quy tắc tường lửa nếu được cấu hình
     if firewall and config and config["firewall"]["cleanup_on_exit"]:

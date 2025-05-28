@@ -3,6 +3,7 @@ Whitelist Service - Business logic for whitelist operations
 """
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo  # ✅ THÊM
 from typing import Dict, List, Optional
 from models.whitelist_model import WhitelistModel
 
@@ -12,6 +13,21 @@ class WhitelistService:
     def __init__(self, whitelist_model: WhitelistModel, socketio=None):
         self.model = whitelist_model
         self.socketio = socketio
+        
+        # ✅ THÊM: Lấy timezone của server
+        self.server_timezone = self._get_server_timezone()
+    
+    def _get_server_timezone(self) -> ZoneInfo:
+        """Lấy múi giờ hiện tại của server"""
+        try:
+            local_tz = datetime.now().astimezone().tzinfo
+            return local_tz
+        except Exception:
+            return ZoneInfo("UTC")
+    
+    def _now_local(self) -> datetime:
+        """Lấy thời gian hiện tại theo múi giờ của server"""
+        return datetime.now(self.server_timezone)
     
     def get_all_entries(self, filters: Dict = None) -> Dict:
         """Get all whitelist entries with optional filtering"""
@@ -70,7 +86,7 @@ class WhitelistService:
             raise ValueError("Entry already exists")
         
         # Prepare entry data
-        current_time = datetime.utcnow()
+        current_time = self._now_local()  # ✅ SỬA: Dùng local time thay vì UTC
         processed_entry = {
             "type": entry_type,
             "value": value,
@@ -85,7 +101,11 @@ class WhitelistService:
         # Add expiry date
         if entry_data.get("expiry_date"):
             try:
-                processed_entry["expiry_date"] = datetime.fromisoformat(entry_data["expiry_date"])
+                # ✅ SỬA: Parse và convert về server timezone
+                parsed_date = datetime.fromisoformat(entry_data["expiry_date"])
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=self.server_timezone)
+                processed_entry["expiry_date"] = parsed_date
             except ValueError:
                 raise ValueError("Invalid expiry date format")
         elif entry_data.get("is_temporary"):
@@ -115,7 +135,7 @@ class WhitelistService:
                 "value": value,
                 "category": processed_entry["category"],
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()
+                "timestamp": current_time.isoformat()  # ✅ SỬA: Dùng local time
             })
         
         return {
@@ -164,6 +184,9 @@ class WhitelistService:
         if since:
             try:
                 since_date = datetime.fromisoformat(since)
+                # ✅ SỬA: Normalize timezone
+                if since_date.tzinfo is None:
+                    since_date = since_date.replace(tzinfo=self.server_timezone)
             except ValueError:
                 pass  # Invalid date format, ignore
         
@@ -172,7 +195,7 @@ class WhitelistService:
         
         return {
             "domains": domains,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": self._now_local().isoformat(),  # ✅ SỬA: Dùng local time
             "count": len(domains),
             "type": "incremental" if since else "full"
         }
@@ -193,7 +216,7 @@ class WhitelistService:
                 "id": entry_id,
                 "value": entry.get("value"),
                 "type": entry.get("type", "domain"),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
             })
         
         return success
@@ -261,13 +284,13 @@ class WhitelistService:
             self.socketio.emit("whitelist_bulk_added", {
                 "count": len(inserted_ids),
                 "added_by": client_ip,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
             })
         
         return {
             "inserted_count": len(inserted_ids),
             "error_count": len(errors),
-            "errors": errors[:10],  # Return first 10 errors only
+            "errors": errors[:10],
             "success": len(inserted_ids) > 0
         }
     

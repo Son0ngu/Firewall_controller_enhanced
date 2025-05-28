@@ -16,8 +16,22 @@ class LogSender:
     
     def __init__(self, config: Dict):
         """Khởi tạo log sender với cấu hình cơ bản"""
-        # Lưu cấu hình URL server
-        self.server_url = config.get("server_url", "https://firewall-controller-vu7f.onrender.com")
+        # ✅ SỬA: Đọc từ config với fallback
+        server_config = config.get("server", {})
+        
+        # Ưu tiên urls array, fallback về single url
+        if "urls" in server_config and server_config["urls"]:
+            self.server_urls = server_config["urls"]
+        else:
+            # Fallback: dùng server_url hoặc url từ config
+            primary_url = (
+                config.get("server_url") or 
+                server_config.get("url", "https://firewall-controller-vu7f.onrender.com")
+            )
+            self.server_urls = [
+                primary_url,
+                "http://localhost:5000"
+            ]
         
         # Cấu hình hàng đợi log
         self.max_queue_size = config.get("max_queue_size", 1000)
@@ -36,6 +50,7 @@ class LogSender:
         self.last_send_time = time.time()
         
         logger.info(f"LogSender initialized with agent_id: {self.agent_id}")
+        logger.info(f"Will send logs to: {', '.join(self.server_urls)}")
     
     def start(self):
         """Bắt đầu thread gửi log"""
@@ -73,8 +88,8 @@ class LogSender:
                 log_data["agent_id"] = self.agent_id
                 
             if "timestamp" not in log_data:
-                log_data["timestamp"] = datetime.now().isoformat()
-            
+                log_data["timestamp"] = datetime.now().astimezone().isoformat()  # ✅ SỬA: Thêm múi giờ
+        
             # Thêm log vào hàng đợi
             self.log_queue.put_nowait(log_data)
             return True
@@ -138,13 +153,13 @@ class LogSender:
     
     def _send_batch(self, logs: List[Dict]) -> bool:
         """Gửi một batch log lên server"""
-        if not self.server_url:
+        if not self.server_urls:
             logger.error("Server URL not configured")
             return False
             
         try:
             # Gửi request đơn giản không cần xác thực
-            url = f"{self.server_url.rstrip('/')}/api/logs"
+            url = f"{self.server_urls[0].rstrip('/')}/api/logs"
             response = requests.post(
                 url=url,
                 json={"logs": logs},
@@ -176,50 +191,3 @@ class LogSender:
                       for elements in range(0, 12, 2)][::-1])
         
         return f"{hostname}-{mac}"
-
-
-# Phần mã kiểm thử - chạy khi file được chạy trực tiếp
-if __name__ == "__main__":
-    # Cấu hình logging cho việc kiểm thử
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Cấu hình mẫu cho việc kiểm thử
-    test_config = {
-        "server_url": "https://firewall-controller-vu7f.onrender.com",  # URL server local để kiểm thử
-        "api_key": "test_key",  # Khóa API giả cho kiểm thử
-        "batch_size": 10  # Kích thước batch nhỏ để dễ theo dõi
-    }
-    
-    # Tạo đối tượng LogSender
-    log_sender = LogSender(test_config)
-    
-    # Bắt đầu luồng gửi log
-    log_sender.start()
-    
-    # Tạo một số log kiểm thử
-    for i in range(25):
-        # Tạo dữ liệu log mẫu với các giá trị khác nhau
-        log_data = {
-            "domain": f"test-domain-{i}.com",  # Tên miền mẫu
-            "dest_ip": f"192.168.1.{i % 255}",  # Địa chỉ IP đích mẫu
-            "action": "block" if i % 3 == 0 else "allow",  # Luân phiên các hành động
-            "protocol": "HTTP" if i % 2 == 0 else "HTTPS"  # Luân phiên các giao thức
-        }
-        # Đưa log vào hàng đợi
-        log_sender.queue_log(log_data)
-        time.sleep(0.1)  # Tạm dừng một chút giữa các log
-    
-    # Để luồng gửi log hoạt động cho đến khi người dùng nhấn Ctrl+C
-    try:
-        print("Sending logs. Press Ctrl+C to stop...")
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopping...")
-    finally:
-        # Dừng LogSender (sẽ cố gắng gửi các log còn lại)
-        log_sender.stop()
-        print("Log sender stopped.")
