@@ -696,9 +696,70 @@ Registered: ${agent.registered_date ? formatTimestamp(agent.registered_date, tru
     alert(info);
 }
 
-function pingAgent(agentId) {
-    showNotification('info', `Pinging agent ${agentId}...`);
-    // TODO: Implement ping functionality
+async function pingAgent(agentId) {
+    const agent = agentsData.find(a => a.agent_id === agentId);
+    const agentName = agent ? `${agent.hostname} (${agent.ip_address})` : agentId;
+    
+    // Find and update button
+    const pingButton = document.querySelector(`[onclick="pingAgent('${agentId}')"]`);
+    if (pingButton) {
+        pingButton.disabled = true;
+        pingButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+    
+    try {
+        showNotification('info', `Pinging agent ${agentName}...`);
+        
+        const response = await fetch(`/api/agents/${agentId}/ping`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const responseTime = data.data.response_time;
+            const status = data.data.agent_status;
+            
+            showNotification('success', 
+                `✅ Ping successful!\n` +
+                `Agent: ${agentName}\n` +
+                `Response time: ${responseTime}s\n` +
+                `Status: ${status}`
+            );
+            
+            // Update agent status if it changed
+            if (agent) {
+                agent.status = 'active';  // Successful ping means active
+                agent.time_since_heartbeat = 0;
+                renderAgents(agentsData);
+                updateStatistics();
+            }
+            
+        } else {
+            const error = data.error || 'Unknown error';
+            const responseTime = data.data?.response_time;
+            
+            let errorMessage = `❌ Ping failed!\nAgent: ${agentName}\nError: ${error}`;
+            if (responseTime) {
+                errorMessage += `\nResponse time: ${responseTime}s`;
+            }
+            
+            showNotification('danger', errorMessage);
+        }
+        
+    } catch (error) {
+        console.error('Error pinging agent:', error);
+        showNotification('danger', `Failed to ping agent: ${error.message}`);
+    } finally {
+        // Restore button
+        if (pingButton) {
+            pingButton.disabled = false;
+            pingButton.innerHTML = '<i class="fas fa-wifi"></i>';
+        }
+    }
 }
 
 function sendCommand(agentId) {
@@ -710,7 +771,37 @@ function sendCommand(agentId) {
 }
 
 function showNotification(type, message) {
-    // TODO: Implement notification system
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type === 'danger' ? 'danger' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info'} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = `
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        max-width: 400px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    `;
+    
+    // Format message (handle newlines)
+    const formattedMessage = message.replace(/\n/g, '<br>');
+    
+    notification.innerHTML = `
+        <div>
+            <strong>${type === 'danger' ? '❌ Error' : type === 'success' ? '✅ Success' : type === 'warning' ? '⚠️ Warning' : 'ℹ️ Info'}</strong><br>
+            ${formattedMessage}
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+    
     console.log(`${type.toUpperCase()}: ${message}`);
 }
 
@@ -827,6 +918,32 @@ try {
                 updateStatistics();
                 renderAgents(agentsData);
                 showNotification('info', `Agent ${data.hostname || data.agent_id} was removed`);
+            }
+        });
+        
+        socket.on('agent_ping_result', function(data) {
+            console.log('🏓 Ping result received:', data);
+            
+            const agentName = `${data.hostname} (${data.agent_id})`;
+            
+            if (data.ping_successful) {
+                showNotification('success', 
+                    `🏓 Real-time ping result: ${agentName} is responsive!\n` +
+                    `Response time: ${data.response_time}s`
+                );
+            } else {
+                showNotification('warning', 
+                    `🏓 Real-time ping result: ${agentName} did not respond`
+                );
+            }
+            
+            // Update agent in list if found
+            const agent = agentsData.find(a => a.agent_id === data.agent_id);
+            if (agent && data.ping_successful) {
+                agent.status = 'active';
+                agent.time_since_heartbeat = 0;
+                renderAgents(agentsData);
+                updateStatistics();
             }
         });
         

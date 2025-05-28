@@ -675,3 +675,134 @@ class AgentService:
         except Exception as e:
             self.logger.error(f"Error updating command result: {e}")
             raise
+
+    def ping_agent(self, agent_id: str) -> Dict:
+        """Ping agent to check connectivity and response time"""
+        try:
+            # Validate agent exists
+            agent = self.model.find_by_agent_id(agent_id)
+            if not agent:
+                raise ValueError("Agent not found")
+            
+            # Check if agent is active (optional - you can ping offline agents too)
+            agents_with_status = self.get_agents_with_status()
+            agent_with_status = next((a for a in agents_with_status if a.get('agent_id') == agent_id), None)
+            
+            current_status = 'offline'
+            time_since_heartbeat = None
+            
+            if agent_with_status:
+                current_status = agent_with_status.get('status', 'offline')
+                time_since_heartbeat = agent_with_status.get('time_since_heartbeat')
+            
+            # Create ping command
+            ping_command = {
+                "command_type": "ping",
+                "parameters": {
+                    "timeout": 30,  # 30 seconds timeout
+                    "expect_response": True
+                },
+                "priority": 5,  # High priority
+                "description": f"Ping connectivity test from admin"
+            }
+            
+            # Send ping command
+            command_id = self.send_command(agent_id, ping_command, "system_ping")
+            
+            # Wait for response (for immediate feedback)
+            import time
+            max_wait_time = 30  # seconds
+            wait_interval = 0.5  # seconds
+            elapsed_time = 0
+            
+            ping_start_time = time.time()
+            
+            while elapsed_time < max_wait_time:
+                # Check if command was completed
+                try:
+                    from bson import ObjectId
+                    command = self.commands_collection.find_one({"_id": ObjectId(command_id)})
+                    
+                    if command and command.get("status") in ["completed", "success", "failed", "error"]:
+                        response_time = time.time() - ping_start_time
+                        
+                        if command.get("status") in ["completed", "success"]:
+                            self.logger.info(f"✅ Ping successful for agent {agent_id} in {response_time:.2f}s")
+                            return {
+                                "success": True,
+                                "agent_id": agent_id,
+                                "command_id": command_id,
+                                "response_time": round(response_time, 2),
+                                "agent_status": current_status,
+                                "time_since_heartbeat": time_since_heartbeat,
+                                "result": command.get("result", "Ping successful"),
+                                "timestamp": self._now_vietnam().isoformat()
+                            }
+                        else:
+                            self.logger.warning(f"❌ Ping failed for agent {agent_id}: {command.get('result', 'Unknown error')}")
+                            return {
+                                "success": False,
+                                "agent_id": agent_id,
+                                "command_id": command_id,
+                                "response_time": round(response_time, 2),
+                                "agent_status": current_status,
+                                "time_since_heartbeat": time_since_heartbeat,
+                                "error": command.get("result", "Ping command failed"),
+                                "timestamp": self._now_vietnam().isoformat()
+                            }
+                
+                except Exception as e:
+                    self.logger.error(f"Error checking ping command status: {e}")
+                
+                time.sleep(wait_interval)
+                elapsed_time += wait_interval
+            
+            # Timeout - command didn't complete in time
+            self.logger.warning(f"⏰ Ping timeout for agent {agent_id} after {max_wait_time}s")
+            return {
+                "success": False,
+                "agent_id": agent_id,
+                "command_id": command_id,
+                "response_time": max_wait_time,
+                "agent_status": current_status,
+                "time_since_heartbeat": time_since_heartbeat,
+                "error": f"Ping timeout after {max_wait_time} seconds",
+                "timeout": True,
+                "timestamp": self._now_vietnam().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error pinging agent {agent_id}: {e}")
+            raise
+
+    def get_agent_ping_history(self, agent_id: str, limit: int = 10) -> List[Dict]:
+        """Get ping command history for an agent"""
+        try:
+            # Validate agent
+            agent = self.model.find_by_agent_id(agent_id)
+            if not agent:
+                raise ValueError("Agent not found")
+            
+            # Get ping commands
+            ping_commands = list(self.commands_collection.find({
+                "agent_id": agent_id,
+                "command_type": "ping"
+            }).sort("created_at", -1).limit(limit))
+            
+            history = []
+            for cmd in ping_commands:
+                history.append({
+                    "command_id": str(cmd["_id"]),
+                    "status": cmd.get("status"),
+                    "created_at": cmd.get("created_at").isoformat() if cmd.get("created_at") else None,
+                    "completed_at": cmd.get("completed_at").isoformat() if cmd.get("completed_at") else None,
+                    "execution_time": cmd.get("execution_time"),
+                    "result": cmd.get("result"),
+                    "created_by": cmd.get("created_by")
+                })
+            
+            return history
+            
+        except Exception as e:
+            self.logger.error(f"Error getting ping history for agent {agent_id}: {e}")
+            raise

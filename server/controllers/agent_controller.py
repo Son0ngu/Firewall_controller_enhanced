@@ -45,6 +45,9 @@ class AgentController:
         # self.blueprint.add_url_rule('/debug/status', 'debug_status', self.debug_status, methods=['GET'])
         # self.blueprint.add_url_rule('/debug/timezone', 'debug_timezone_issue', self.debug_timezone_issue, methods=['GET'])
 
+        # ✅ ADD: Ping agent endpoint
+        self.blueprint.add_url_rule('/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
+
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
         response = {"success": True, "message": message}
@@ -516,4 +519,34 @@ class AgentController:
                 'success': False,
                 'error': str(e)
             }), 500
+
+    def ping_agent(self, agent_id: str):
+        """Ping agent to check connectivity"""
+        try:
+            self.logger.info(f"📡 Ping request for agent: {agent_id}")
+            
+            # Call service method
+            result = self.service.ping_agent(agent_id)
+            
+            # Broadcast ping result via SocketIO
+            if self.socketio:
+                agent = self.model.find_by_agent_id(agent_id)
+                self.socketio.emit("agent_ping_result", {
+                    "agent_id": agent_id,
+                    "hostname": agent.get("hostname") if agent else "Unknown",
+                    "ping_successful": result.get("success", False),
+                    "response_time": result.get("response_time"),
+                    "timestamp": self._now_local().isoformat()
+                })
+            
+            if result.get("success"):
+                return self._success_response(result, "Agent ping successful")
+            else:
+                return self._error_response(result.get("error", "Ping failed"), 408)
+        
+        except ValueError as e:
+            return self._error_response(str(e), 404)
+        except Exception as e:
+            self.logger.error(f"Error pinging agent {agent_id}: {e}")
+            return self._error_response("Failed to ping agent", 500)
 

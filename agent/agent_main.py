@@ -27,6 +27,7 @@ from log_sender import LogSender  # Gửi log tới server
 from packet_sniffer import PacketSniffer  # Bắt gói tin mạng
 from whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
 from heartbeat_sender import HeartbeatSender  # ✅ THÊM import
+from command_processor import CommandProcessor  # ✅ ADD import
 
 # Cấu hình hệ thống ghi log
 # - level=logging.INFO: Chỉ ghi những thông báo từ mức INFO trở lên
@@ -45,6 +46,7 @@ whitelist = None  # Quản lý danh sách tên miền được phép
 log_sender = None  # Gửi log đến server
 packet_sniffer = None  # Bắt gói tin mạng
 heartbeat_sender = None  # ✅ THÊM global variable
+command_processor = None  # ✅ ADD global variable
 running = True  # Điều khiển vòng lặp chính, khi False thì agent sẽ dừng
 
 def handle_domain_detection(record: Dict):
@@ -91,7 +93,7 @@ def handle_domain_detection(record: Dict):
 
 def initialize_components():
     """Khởi tạo tất cả các thành phần của agent."""
-    global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender
+    global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
     
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
@@ -225,18 +227,101 @@ def initialize_components():
         else:
             logger.warning("Skipping heartbeat sender - agent not registered")
         
+        # ✅ ADD: Initialize command processor
+        command_processor = CommandProcessor()
+        logger.info("✅ Command processor initialized")
+        
+        # ✅ ADD: Start command polling (check for commands periodically)
+        if registration_success:
+            start_command_polling()
+        
         logger.info("✅ Tất cả các thành phần của agent đã khởi tạo thành công")
         
     except Exception as e:
         logger.error(f"Lỗi khi khởi tạo các thành phần: {str(e)}", exc_info=True)
         raise
 
+def start_command_polling():
+    """Start polling for commands from server"""
+    import threading
+    import requests
+    import time
+    
+    def poll_commands():
+        while running:
+            try:
+                if not config.get('agent_id') or not config.get('agent_token'):
+                    time.sleep(30)  # Wait if not registered
+                    continue
+                
+                # Check for pending commands
+                server_url = config.get('server_url', config["server"]["url"])
+                commands_url = f"{server_url.rstrip('/')}/api/agents/commands"
+                
+                params = {
+                    'agent_id': config['agent_id'],
+                    'token': config['agent_token']
+                }
+                
+                response = requests.get(commands_url, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    commands = data.get('data', {}).get('commands', [])
+                    
+                    for command in commands:
+                        process_command(command)
+                
+                time.sleep(5)  # Poll every 5 seconds
+                
+            except Exception as e:
+                logger.error(f"Error polling commands: {e}")
+                time.sleep(10)  # Wait longer on error
+    
+    # Start polling in background thread
+    polling_thread = threading.Thread(target=poll_commands)
+    polling_thread.daemon = True
+    polling_thread.start()
+    logger.info("✅ Command polling started")
+
+def process_command(command: Dict):
+    """Process a command from server"""
+    try:
+        command_id = command.get('command_id')
+        logger.info(f"Processing command {command_id}: {command.get('command_type')}")
+        
+        # Process command
+        result = command_processor.process_command(command)
+        
+        # Send result back to server
+        server_url = config.get('server_url', config["server"]["url"])
+        result_url = f"{server_url.rstrip('/')}/api/agents/command/result"
+        
+        result_data = {
+            'agent_id': config['agent_id'],
+            'token': config['agent_token'],
+            'command_id': command_id,
+            'status': 'completed' if result.get('success') else 'failed',
+            'result': result.get('message') or result.get('error', 'No result'),
+            'execution_time': result.get('execution_time', 0)
+        }
+        
+        response = requests.post(result_url, json=result_data, timeout=10)
+        
+        if response.status_code == 200:
+            logger.info(f"✅ Command {command_id} result sent successfully")
+        else:
+            logger.error(f"❌ Failed to send command result: {response.status_code}")
+            
+    except Exception as e:
+        logger.error(f"Error processing command {command.get('command_id')}: {e}")
+
 def cleanup():
     """
     Dừng tất cả các thành phần một cách an toàn khi agent kết thúc.
     Bao gồm: packet_sniffer, whitelist updater, log_sender và có thể xóa các quy tắc tường lửa.
     """
-    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender  # ✅ THÊM heartbeat_sender
+    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor  # ✅ THÊM heartbeat_sender
     
     logger.info("Đang dừng các thành phần của agent...")
     
@@ -280,6 +365,10 @@ def cleanup():
             logger.info("Các quy tắc tường lửa đã được xóa")
         except Exception as e:
             logger.error(f"Lỗi khi xóa các quy tắc tường lửa: {str(e)}")
+    
+    # ✅ ADD: Command processor cleanup if needed
+    if command_processor:
+        logger.info("Command processor stopped")
     
     logger.info("Agent đã đóng hoàn toàn")
 
