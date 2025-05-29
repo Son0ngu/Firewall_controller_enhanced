@@ -98,10 +98,12 @@ def initialize_components():
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
         
-        # ✅ SỬA: Đảm bảo config đã được load
+        # ✅ FIX: Check if global config is available
         if not config:
-            logger.error("Config chưa được khởi tạo!")
-            raise ValueError("Config is required")
+            logger.error("Global config chưa được khởi tạo! Attempting to load...")
+            config = get_config()  # Load config nếu chưa có
+            if not config:
+                raise ValueError("Cannot load configuration")
         
         # ✅ IMPROVED: Better local IP detection
         def get_local_ip():
@@ -191,9 +193,6 @@ def initialize_components():
             logger.info("Linked firewall manager with whitelist for auto-sync")
         else:
             logger.info("Chức năng tường lửa bị vô hiệu hóa trong cấu hình")
-        
-        # Start whitelist updates AFTER linking firewall
-        whitelist.start_periodic_updates()
         
         # ✅ IMPROVED: Log sender với better config
         log_sender_config = {
@@ -385,19 +384,20 @@ def signal_handler(sig, frame):
     running = False  # Đặt biến running thành False để thoát vòng lặp chính
 
 def main():
-    """
-    Hàm chính của agent, thực hiện:
-    1. Tải cấu hình
-    2. Khởi tạo các thành phần
-    3. Chạy vòng lặp chính để giữ agent hoạt động
-    """
-    global config, running
+    """Hàm chính của agent"""
+    global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
     
     try:
-        # ✅ SỬA: Tải cấu hình trước tiên
+        # ✅ FIX: Load config vào global variable
         logger.info("Loading agent configuration...")
-        config = get_config()
+        config = get_config()  # Load vào global variable
         logger.info("✅ Configuration loaded successfully")
+        
+        # ✅ ADD: Debug config để kiểm tra
+        logger.info(f"Server URLs: {config['server'].get('urls', [])}")
+        logger.info(f"Primary URL: {config['server']['url']}")
+        logger.info(f"Whitelist auto-sync: {config['whitelist']['auto_sync']}")
+        logger.info(f"Firewall enabled: {config['firewall']['enabled']}")
         
         # Áp dụng độ trễ khởi động nếu được cấu hình
         startup_delay = config["general"]["startup_delay"]

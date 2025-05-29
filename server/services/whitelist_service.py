@@ -2,44 +2,46 @@
 Whitelist Service - Business logic for whitelist operations
 """
 
+import logging
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo  # ✅ THÊM
 from typing import Dict, List, Optional
 from models.whitelist_model import WhitelistModel
+
+logger = logging.getLogger(__name__)
 
 class WhitelistService:
     """Service class for whitelist business logic"""
     
     def __init__(self, whitelist_model: WhitelistModel, socketio=None):
+        """Initialize WhitelistService with model and socketio"""
         self.model = whitelist_model
         self.socketio = socketio
         
-        # ✅ THÊM: Lấy timezone của server
-        self.server_timezone = self._get_server_timezone()
-    
-    def _get_server_timezone(self) -> ZoneInfo:
-        """Lấy múi giờ hiện tại của server"""
-        try:
-            local_tz = datetime.now().astimezone().tzinfo
-            return local_tz
-        except Exception:
-            return ZoneInfo("UTC")
+        # ✅ FIXED: Use the same timezone as model
+        self.server_timezone = self.model.timezone
+        
+        # ✅ ADD: Debug timezone info
+        logger.info(f"WhitelistService initialized with timezone: {self.server_timezone}")
     
     def _now_local(self) -> datetime:
-        """Lấy thời gian hiện tại theo múi giờ của server"""
-        return datetime.now(self.server_timezone)
+        """Get current time in Vietnam timezone"""
+        # ✅ FIX: Use model's method directly - no need to duplicate
+        return self.model._now_local()
+    
+    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
+        """Ensure datetime is timezone-aware"""
+        # ✅ FIX: Use model's method directly - no need to duplicate
+        return self.model._ensure_timezone_aware(dt)
     
     def get_all_entries(self, filters: Dict = None) -> Dict:
         """Get all whitelist entries with optional filtering"""
-        # Build query from filters
         query = {}
         if filters:
             query = self.model.build_query_from_filters(filters)
         
-        # Get entries from model
         entries = self.model.find_all_entries(query)
         
-        # Format entries for response
+        # ✅ FIX: Proper timezone handling - entries are already converted by model
         formatted_entries = []
         for entry in entries:
             formatted_entry = {
@@ -48,22 +50,34 @@ class WhitelistService:
                 "value": entry.get("value"),
                 "domain": entry.get("value"),  # Backwards compatibility
                 "category": entry.get("category"),
-                "notes": entry.get("notes"),
                 "priority": entry.get("priority", "normal"),
                 "added_by": entry.get("added_by"),
-                "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None,
-                "expiry_date": entry.get("expiry_date").isoformat() if entry.get("expiry_date") else None,
-                "max_requests_per_hour": entry.get("max_requests_per_hour"),
-                "enable_logging": entry.get("enable_logging", False),
-                "is_temporary": entry.get("is_temporary", False),
-                "dns_config": entry.get("dns_config"),
-                "usage_count": entry.get("usage_count", 0),
-                "last_used": entry.get("last_used").isoformat() if entry.get("last_used") else None
+                # ✅ FIX: Entries from model are already in UTC+7, just format them
+                "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None
             }
+            
+            # ✅ CONDITIONAL: Only add optional fields if they exist
+            if entry.get("notes"):
+                formatted_entry["notes"] = entry.get("notes")
+            if entry.get("expiry_date"):
+                formatted_entry["expiry_date"] = entry.get("expiry_date").isoformat()
+            if entry.get("max_requests_per_hour"):
+                formatted_entry["max_requests_per_hour"] = entry.get("max_requests_per_hour")
+            if entry.get("is_temporary"):
+                formatted_entry["is_temporary"] = entry.get("is_temporary")
+            if entry.get("dns_config"):
+                formatted_entry["dns_config"] = entry.get("dns_config")
+            
+            # ✅ ADD: Include timezone info for debugging
+            if entry.get("timezone"):
+                formatted_entry["timezone"] = entry.get("timezone")
+            if entry.get("local_added_date"):
+                formatted_entry["local_added_date"] = entry.get("local_added_date")
+            
             formatted_entries.append(formatted_entry)
         
         return {
-            "domains": formatted_entries,  # Keep "domains" for backwards compatibility
+            "domains": formatted_entries,
             "success": True
         }
     
@@ -85,37 +99,48 @@ class WhitelistService:
         if existing:
             raise ValueError("Entry already exists")
         
-        # Prepare entry data
-        current_time = self._now_local()  # ✅ SỬA: Dùng local time thay vì UTC
+        # ✅ FIX: Get current time
+        current_time = self._now_local()
+        logger.info(f"Adding entry with timestamp: {current_time}")
+        
+        # ✅ FIX: Minimal entry data
         processed_entry = {
             "type": entry_type,
             "value": value,
             "category": entry_data.get("category", "uncategorized"),
-            "notes": entry_data.get("notes"),
             "priority": entry_data.get("priority", "normal"),
             "added_by": client_ip,
-            "enable_logging": entry_data.get("enable_logging", False),
-            "is_temporary": entry_data.get("is_temporary", False)
+            "added_date": current_time,
+            "is_active": True
         }
         
-        # Add expiry date
+        # ✅ CONDITIONAL: Only add optional fields if specified
+        if entry_data.get("notes"):
+            processed_entry["notes"] = entry_data.get("notes")
+        
         if entry_data.get("expiry_date"):
             try:
-                # ✅ SỬA: Parse và convert về server timezone
-                parsed_date = datetime.fromisoformat(entry_data["expiry_date"])
-                if parsed_date.tzinfo is None:
-                    parsed_date = parsed_date.replace(tzinfo=self.server_timezone)
-                processed_entry["expiry_date"] = parsed_date
-            except ValueError:
+                expiry_str = entry_data["expiry_date"]
+                if expiry_str.endswith('Z'):
+                    expiry_str = expiry_str[:-1] + '+00:00'
+                
+                parsed_date = datetime.fromisoformat(expiry_str)
+                processed_entry["expiry_date"] = self._ensure_timezone_aware(parsed_date)
+                
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Invalid expiry date format: {e}")
                 raise ValueError("Invalid expiry date format")
+                
         elif entry_data.get("is_temporary"):
+            processed_entry["is_temporary"] = True
             processed_entry["expiry_date"] = current_time + timedelta(hours=24)
         
-        # Add rate limiting
         if entry_data.get("max_requests_per_hour"):
-            processed_entry["max_requests_per_hour"] = int(entry_data["max_requests_per_hour"])
+            try:
+                processed_entry["max_requests_per_hour"] = int(entry_data["max_requests_per_hour"])
+            except (ValueError, TypeError):
+                pass
         
-        # Add DNS config for domains
         if entry_type == "domain" and entry_data.get("dns_config"):
             dns_config = entry_data["dns_config"]
             if dns_config.get("verify"):
@@ -126,7 +151,12 @@ class WhitelistService:
             processed_entry["dns_config"] = dns_config
         
         # Insert entry using model
-        entry_id = self.model.insert_entry(processed_entry)
+        try:
+            entry_id = self.model.insert_entry(processed_entry)
+            logger.info(f"Successfully inserted entry with ID: {entry_id}")
+        except Exception as e:
+            logger.error(f"Failed to insert entry: {e}")
+            raise
         
         # Broadcast notification via SocketIO
         if self.socketio:
@@ -135,88 +165,59 @@ class WhitelistService:
                 "value": value,
                 "category": processed_entry["category"],
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()  # ✅ SỬA: Dùng local time
+                "timestamp": current_time.isoformat()
             })
         
         return {
             "id": entry_id,
-            "message": f"{entry_type.capitalize()} added to whitelist"
+            "message": f"{entry_type.capitalize()} added to whitelist",
+            "timestamp": current_time.isoformat()
         }
-    
-    def test_entry(self, entry_data: Dict) -> Dict:
-        """Test an entry before adding it"""
-        entry_type = entry_data.get("type")
-        value = entry_data.get("value", "").strip()
-        
-        if not entry_type or not value:
-            raise ValueError("Type and value are required")
-        
-        # Validate entry using model
-        validation_result = self.model.validate_entry_value(entry_type, value)
-        if not validation_result["valid"]:
-            raise ValueError(validation_result["message"])
-        
-        result = {"valid": True, "type": entry_type, "value": value}
-        
-        # DNS verification for domains
-        if entry_type == "domain" and entry_data.get("dns_verify"):
-            dns_result = self.model.verify_dns(value)
-            result["dns_info"] = dns_result.get("info", [])
-            result["dns_valid"] = dns_result["valid"]
-        
-        # Reachability test for IPs and URLs
-        if entry_type in ["ip", "url"]:
-            reachable = self._test_reachability(entry_type, value)
-            result["reachable"] = reachable
-        
-        return result
-    
-    def test_dns(self, domain: str) -> Dict:
-        """Test DNS resolution for a domain"""
-        if not domain:
-            raise ValueError("Domain is required")
-        
-        return self.model.verify_dns(domain)
     
     def get_agent_sync_data(self, since: str = None, agent_id: str = None) -> Dict:
         """Get whitelist data for agent synchronization"""
         since_date = None
         if since:
             try:
-                since_date = datetime.fromisoformat(since)
-                # ✅ SỬA: Normalize timezone
-                if since_date.tzinfo is None:
-                    since_date = since_date.replace(tzinfo=self.server_timezone)
-            except ValueError:
-                pass  # Invalid date format, ignore
+                since_str = since
+                if since_str.endswith('Z'):
+                    since_str = since_str[:-1] + '+00:00'
+                
+                since_date = datetime.fromisoformat(since_str)
+                since_date = self._ensure_timezone_aware(since_date)
+                    
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Invalid since date format '{since}': {e}")
+                since_date = None
         
         # Get domains from model
         domains = self.model.get_entries_for_sync(since_date)
+        current_time = self._now_local()
         
-        return {
+        response = {
             "domains": domains,
-            "timestamp": self._now_local().isoformat(),  # ✅ SỬA: Dùng local time
+            "timestamp": current_time.isoformat(),
             "count": len(domains),
-            "type": "incremental" if since else "full"
+            "type": "incremental" if since_date else "full"
         }
+        
+        logger.info(f"Agent sync response: {response['type']} sync with {len(domains)} domains")
+        return response
     
     def delete_entry(self, entry_id: str) -> bool:
         """Delete an entry"""
-        # Check if entry exists
         entry = self.model.find_entry_by_id(entry_id)
         if not entry:
             raise ValueError("Entry not found")
         
-        # Delete using model
         success = self.model.delete_entry(entry_id)
         
-        # Broadcast notification via SocketIO
         if success and self.socketio:
             self.socketio.emit("whitelist_deleted", {
                 "id": entry_id,
                 "value": entry.get("value"),
                 "type": entry.get("type", "domain"),
-                "timestamp": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
+                "timestamp": self._now_local().isoformat()
             })
         
         return success
@@ -229,7 +230,7 @@ class WhitelistService:
         if len(entries_data) > 1000:
             raise ValueError("Maximum 1000 entries allowed per bulk operation")
         
-        # Process and validate entries
+        current_time = self._now_local()
         processed_entries = []
         errors = []
         
@@ -242,31 +243,29 @@ class WhitelistService:
                     errors.append(f"Entry {i+1}: Value is required")
                     continue
                 
-                # Validate entry
                 validation_result = self.model.validate_entry_value(entry_type, value)
                 if not validation_result["valid"]:
                     errors.append(f"Entry {i+1}: {validation_result['message']}")
                     continue
                 
-                # Check for duplicates within the batch
                 if any(e.get("value") == value for e in processed_entries):
                     errors.append(f"Entry {i+1}: Duplicate value in batch")
                     continue
                 
-                # Check for existing entries
                 existing = self.model.find_entry_by_value(value)
                 if existing:
                     errors.append(f"Entry {i+1}: Entry already exists")
                     continue
                 
-                # Prepare entry
                 processed_entry = {
                     "type": entry_type,
                     "value": value,
                     "category": entry_data.get("category", "uncategorized"),
-                    "notes": entry_data.get("notes", "Bulk import"),
                     "priority": entry_data.get("priority", "normal"),
-                    "added_by": client_ip
+                    "added_by": client_ip,
+                    "added_date": current_time,
+                    "is_active": True,
+                    "notes": entry_data.get("notes", "Bulk import")
                 }
                 
                 processed_entries.append(processed_entry)
@@ -274,17 +273,15 @@ class WhitelistService:
             except Exception as e:
                 errors.append(f"Entry {i+1}: {str(e)}")
         
-        # Insert valid entries using model
         inserted_ids = []
         if processed_entries:
             inserted_ids = self.model.bulk_insert_entries(processed_entries)
         
-        # Broadcast notification for successful entries
         if inserted_ids and self.socketio:
             self.socketio.emit("whitelist_bulk_added", {
                 "count": len(inserted_ids),
                 "added_by": client_ip,
-                "timestamp": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
+                "timestamp": current_time.isoformat()
             })
         
         return {
@@ -297,24 +294,3 @@ class WhitelistService:
     def get_statistics(self) -> Dict:
         """Get whitelist statistics"""
         return self.model.get_statistics()
-    
-    def _test_reachability(self, entry_type: str, value: str) -> bool:
-        """Test if an IP or URL is reachable"""
-        try:
-            if entry_type == "ip":
-                # Extract IP from value
-                import socket
-                import ipaddress
-                ip_part = value.split(':')[0]
-                host = ipaddress.ip_address(ip_part)
-                # Simple ping-like test
-                socket.create_connection((str(host), 80), timeout=5)
-                return True
-            elif entry_type == "url":
-                # For URLs, could use requests library for HTTP testing
-                # For now, just return True
-                return True
-        except Exception:
-            return False
-        
-        return False

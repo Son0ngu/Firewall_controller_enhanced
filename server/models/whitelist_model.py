@@ -5,7 +5,7 @@ Whitelist Model - handles whitelist data operations
 import re
 import socket
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone  # ✅ ADD: Import timezone
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from bson import ObjectId
@@ -22,12 +22,35 @@ class WhitelistModel:
         self.collection: Collection = self.db.whitelist
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # ✅ FIX: Simplified timezone handling
+        # ✅ FIXED: Better timezone setup
+        self.timezone = self._get_timezone()
         self._setup_indexes()
     
+    def _get_timezone(self):
+        """Get Vietnam timezone consistently"""
+        try:
+            from zoneinfo import ZoneInfo
+            return ZoneInfo("Asia/Ho_Chi_Minh")
+        except ImportError:
+            # ✅ FIX: Fallback should be more accurate
+            from datetime import timezone, timedelta
+            # Vietnam is UTC+7 (no DST since 1979)
+            return timezone(timedelta(hours=7), name="Asia/Ho_Chi_Minh")
+    
     def _now_local(self) -> datetime:
-        """Get current local time with timezone"""
-        return datetime.now().astimezone()
+        """Get current time in Vietnam timezone"""
+        utc_now = datetime.now(timezone.utc)
+        local_now = utc_now.astimezone(self.timezone)
+        self.logger.debug(f"Current time: UTC {utc_now.strftime('%H:%M:%S')} -> VN {local_now.strftime('%H:%M:%S')}")
+        return local_now
+    
+    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
+        """Ensure datetime is timezone-aware with Vietnam timezone"""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=self.timezone)
+        return dt.astimezone(self.timezone)
     
     def _setup_indexes(self):
         """Setup indexes for whitelist collection"""
@@ -81,25 +104,34 @@ class WhitelistModel:
     def insert_entry(self, entry_data: Dict) -> str:
         """Insert a new whitelist entry"""
         try:
+            # ✅ FIX: Get current time in UTC+7
             current_time = self._now_local()
+            self.logger.info(f"Inserting entry at: {current_time} (timezone: {current_time.tzinfo})")
             
-            # ✅ FIX: Ensure required fields
-            entry_data["added_date"] = current_time
-            entry_data["created_at"] = current_time
-            entry_data["updated_at"] = current_time
+            # ✅ FIX: Convert to UTC before storing in MongoDB
+            current_time_utc = current_time.astimezone(timezone.utc)
             
-            # Set safe defaults
-            entry_data.setdefault("usage_count", 0)
+            # Store timestamps as UTC (MongoDB standard)
+            entry_data["added_date"] = current_time_utc
+            entry_data["created_at"] = current_time_utc
+            entry_data["updated_at"] = current_time_utc
+            
+            # Store original timezone for reference
+            entry_data["timezone"] = "UTC+7"
+            entry_data["local_added_date"] = current_time.isoformat()  # Store as string for reference
+            
+            # Set essential defaults
             entry_data.setdefault("is_active", True)
-            entry_data.setdefault("enable_logging", False)
-            entry_data.setdefault("is_temporary", False)
             
-            # ✅ FIX: Validate value field
+            # Validate value field
             if not entry_data.get("value"):
                 raise ValueError("Value field is required")
             
+            # Log the data being inserted
+            self.logger.debug(f"Entry data to insert (UTC): {entry_data}")
+            
             result = self.collection.insert_one(entry_data)
-            self.logger.info(f"Inserted whitelist entry: {entry_data.get('value')}")
+            self.logger.info(f"Successfully inserted whitelist entry: {entry_data.get('value')} with ID: {result.inserted_id}")
             return str(result.inserted_id)
             
         except Exception as e:
@@ -119,6 +151,9 @@ class WhitelistModel:
         entries = []
         for entry in cursor:
             entry["_id"] = str(entry["_id"])
+            
+            # ✅ FIX: Use helper method
+            entry = self._convert_entry_timezones(entry)
             entries.append(entry)
         
         return entries
@@ -128,6 +163,8 @@ class WhitelistModel:
         entry = self.collection.find_one({"value": value})
         if entry:
             entry["_id"] = str(entry["_id"])
+            # ✅ FIX: Use helper method
+            entry = self._convert_entry_timezones(entry)
         return entry
     
     def find_entry_by_id(self, entry_id: str) -> Optional[Dict]:
@@ -137,15 +174,41 @@ class WhitelistModel:
             entry = self.collection.find_one({"_id": object_id})
             if entry:
                 entry["_id"] = str(entry["_id"])
+                # ✅ FIX: Use helper method
+                entry = self._convert_entry_timezones(entry)
             return entry
         except:
             return None
+    
+    # ✅ ADD: Helper method to avoid code duplication
+    def _convert_entry_timezones(self, entry: Dict) -> Dict:
+        """Convert entry datetime fields from UTC to local timezone"""
+        if not entry:
+            return entry
+            
+        for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
+            if date_field in entry and entry[date_field]:
+                utc_time = entry[date_field]
+                
+                # Ensure it's timezone-aware UTC
+                if utc_time.tzinfo is None:
+                    utc_time = utc_time.replace(tzinfo=timezone.utc)
+                
+                # Convert to Vietnam timezone for display
+                local_time = utc_time.astimezone(self.timezone)
+                entry[date_field] = local_time
+                
+        return entry
     
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
         """Update an entry"""
         try:
             object_id = ObjectId(entry_id)
-            update_data["updated_at"] = self._now_local()  # ✅ SỬA: Dùng local time
+            
+            # ✅ FIX: Convert updated_at to UTC
+            local_time = self._now_local()
+            update_data["updated_at"] = local_time.astimezone(timezone.utc)
+            update_data["timezone"] = "UTC+7"
             
             result = self.collection.update_one(
                 {"_id": object_id},
@@ -174,22 +237,23 @@ class WhitelistModel:
         if not entries:
             return []
         
-        # ✅ SỬA: Add timestamps với local time
+        # ✅ FIX: Convert timestamps to UTC before bulk insert
         current_time = self._now_local()
+        current_time_utc = current_time.astimezone(timezone.utc)
+        
         for entry in entries:
-            entry["added_date"] = current_time
-            entry["created_at"] = current_time
-            entry["updated_at"] = current_time
-            entry.setdefault("usage_count", 0)
+            entry["added_date"] = current_time_utc
+            entry["created_at"] = current_time_utc
+            entry["updated_at"] = current_time_utc
+            entry["timezone"] = "UTC+7"
+            entry["local_added_date"] = current_time.isoformat()
             entry.setdefault("is_active", True)
-            entry.setdefault("enable_logging", False)
-            entry.setdefault("is_temporary", False)
         
         try:
             result = self.collection.insert_many(entries, ordered=False)
             return [str(id) for id in result.inserted_ids]
         except Exception as e:
-            # Handle duplicate key errors and return partial success
+            self.logger.error(f"Error bulk inserting entries: {e}")
             return []
     
     def count_entries(self, query: Dict = None) -> int:
@@ -200,9 +264,12 @@ class WhitelistModel:
     def cleanup_expired_entries(self) -> int:
         """Remove expired entries"""
         try:
+            # ✅ FIX: Compare with UTC time
             current_time = self._now_local()
+            current_time_utc = current_time.astimezone(timezone.utc)
+            
             result = self.collection.delete_many({
-                "expiry_date": {"$lt": current_time}
+                "expiry_date": {"$lt": current_time_utc}
             })
             
             if result.deleted_count > 0:
@@ -219,40 +286,56 @@ class WhitelistModel:
         try:
             query = {"is_active": True}
             
-            # ✅ FIX: Handle timezone-aware datetime comparisons
             if since:
-                # Ensure since is timezone-aware
+                # ✅ FIX: Convert since to UTC for comparison
                 if since.tzinfo is None:
-                    since = since.replace(tzinfo=datetime.now().astimezone().tzinfo)
+                    since = since.replace(tzinfo=self.timezone)
+                
+                # Convert to UTC for database comparison
+                since_utc = since.astimezone(timezone.utc)
                 
                 query["$or"] = [
-                    {"added_date": {"$gte": since}},
-                    {"updated_at": {"$gte": since}}
+                    {"added_date": {"$gte": since_utc}},
+                    {"updated_at": {"$gte": since_utc}},
+                    {"created_at": {"$gte": since_utc}}
                 ]
+                
+                self.logger.debug(f"Sync query with since UTC: {since_utc.isoformat()}")
+            else:
+                self.logger.debug("Full sync - no since parameter")
             
             # Clean up expired entries first
-            self.cleanup_expired_entries()
+            expired_count = self.cleanup_expired_entries()
+            if expired_count > 0:
+                self.logger.info(f"Cleaned up {expired_count} expired entries before sync")
             
-            # ✅ FIX: Better projection and error handling
             cursor = self.collection.find(
                 query, 
-                {"value": 1, "_id": 0}
+                {"value": 1, "_id": 0, "added_date": 1, "updated_at": 1}
             ).sort("added_date", -1)
             
             values = []
+            processed_count = 0
+            
             for entry in cursor:
+                processed_count += 1
                 value = entry.get("value")
                 if value and isinstance(value, str) and value.strip():
-                    values.append(value.strip().lower())
+                    clean_value = value.strip().lower()
+                    if clean_value not in values:  # Prevent duplicates
+                        values.append(clean_value)
             
-            # Remove duplicates while preserving order
-            unique_values = list(dict.fromkeys(values))
+            self.logger.info(f"Sync query processed {processed_count} entries, returning {len(values)} unique values")
             
-            self.logger.debug(f"Retrieved {len(unique_values)} unique values for sync")
-            return unique_values
+            if since:
+                self.logger.debug(f"Incremental sync since {since.isoformat()}: found {len(values)} entries")
+            else:
+                self.logger.debug(f"Full sync: returning {len(values)} total entries")
+            
+            return values
             
         except Exception as e:
-            self.logger.error(f"Error getting entries for sync: {e}")
+            self.logger.error(f"Error getting entries for sync: {e}", exc_info=True)
             return []
 
     def get_statistics(self) -> Dict:

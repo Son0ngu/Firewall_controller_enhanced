@@ -42,33 +42,35 @@ CONFIG_PATHS = [
 DEFAULT_CONFIG = {
     # Cấu hình kết nối đến server
     "server": {
-        # ✅ SỬA: Hỗ trợ nhiều URLs
+        # ✅ FIX: Primary server là Render, fallback localhost
         "urls": [
-            "https://firewall-controller-vu7f.onrender.com",
-            "http://host:5000"
+            "https://firewall-controller-vu7f.onrender.com",  # Primary server
+            "http://localhost:5000"  # Fallback for development
         ],
         # Giữ lại URL chính cho backward compatibility
         "url": "https://firewall-controller-vu7f.onrender.com",  
-        "connect_timeout": 10,  # Thời gian chờ kết nối tối đa (giây)
-        "read_timeout": 30,  # Thời gian chờ đọc dữ liệu tối đa (giây)
-        "retry_interval": 60,  # Thời gian chờ giữa các lần thử lại (giây)
-        "max_retries": 5,  # Số lần thử lại tối đa khi kết nối thất bại
+        "connect_timeout": 15,  # ✅ Tăng timeout cho Render (có thể chậm)
+        "read_timeout": 45,     # ✅ Tăng timeout để chờ response
+        "retry_interval": 60,   # Thời gian chờ giữa các lần thử lại (giây)
+        "max_retries": 5,       # Số lần thử lại tối đa khi kết nối thất bại
     },
     
     # Cấu hình xác thực
     "auth": {
         "api_key": "",  # Khóa API để xác thực với server (để trống = không xác thực)
-        "auth_method": "api_key",  # Phương thức xác thực: api_key, jwt, hoặc none
+        "auth_method": "none",  # ✅ FIX: Tạm thời none vì Render chưa có auth
         "jwt_refresh_interval": 3600,  # Thời gian làm mới token JWT (giây) - 1 giờ
     },
     
     # Cấu hình whitelist đơn giản hóa - chỉ từ server
     "whitelist": {
-        "update_interval": 300,  # 5 phút cập nhật 1 lần
-        "retry_interval": 60,    # Thời gian retry khi lỗi
-        "max_retries": 5,        # Số lần retry tối đa
-        "timeout": 10,           # Timeout khi gọi API
-        "auto_sync_firewall": True,  # ✅ THÊM: Tự động sync với firewall
+        "auto_sync": True,           # ✅ Bật auto-sync
+        "sync_on_startup": True,     # ✅ Sync khi khởi động
+        "update_interval": 300,      # ✅ 5 phút cập nhật 1 lần
+        "retry_interval": 60,        # ✅ Thời gian retry khi lỗi
+        "max_retries": 3,            # ✅ Số lần retry tối đa
+        "timeout": 30,               # ✅ Timeout khi gọi API
+        "auto_sync_firewall": True,  # ✅ Tự động sync với firewall
     },
     
     # Cấu hình bắt gói tin mạng
@@ -331,33 +333,35 @@ def get_default_config() -> Dict[str, Any]:
     return {
         # Cấu hình kết nối đến server
         "server": {
-            # ✅ SỬA: Hỗ trợ nhiều URLs
+            # ✅ FIX: Primary server là Render, fallback localhost
             "urls": [
-                "https://firewall-controller-vu7f.onrender.com",
-                "http://localhost:5000"
+                "https://firewall-controller-vu7f.onrender.com",  # Primary server
+                "http://localhost:5000"  # Fallback for development
             ],
             # Giữ lại URL chính cho backward compatibility
             "url": "https://firewall-controller-vu7f.onrender.com",  
-            "connect_timeout": 10,  # Thời gian chờ kết nối tối đa (giây)
-            "read_timeout": 30,  # Thời gian chờ đọc dữ liệu tối đa (giây)
-            "retry_interval": 60,  # Thời gian chờ giữa các lần thử lại (giây)
-            "max_retries": 5,  # Số lần thử lại tối đa khi kết nối thất bại
+            "connect_timeout": 15,  # ✅ Tăng timeout cho Render
+            "read_timeout": 45,     # ✅ Tăng timeout để chờ response
+            "retry_interval": 60,   # Thời gian chờ giữa các lần thử lại (giây)
+            "max_retries": 5,       # Số lần thử lại tối đa khi kết nối thất bại
         },
         
         # Cấu hình xác thực
         "auth": {
             "api_key": "",  # Khóa API để xác thực với server (để trống = không xác thực)
-            "auth_method": "api_key",  # Phương thức xác thực: api_key, jwt, hoặc none
+            "auth_method": "none",  # ✅ FIX: Tạm thời none vì Render chưa có auth
             "jwt_refresh_interval": 3600,  # Thời gian làm mới token JWT (giây) - 1 giờ
         },
         
         # Cấu hình whitelist đơn giản hóa - chỉ từ server
         "whitelist": {
-            "update_interval": 300,  # 5 phút cập nhật 1 lần
-            "retry_interval": 60,    # Thời gian retry khi lỗi
-            "max_retries": 5,        # Số lần retry tối đa
-            "timeout": 10,           # Timeout khi gọi API
-            "auto_sync_firewall": True,  # ✅ THÊM: Tự động sync với firewall
+            "auto_sync": True,           # ✅ Bật auto-sync
+            "sync_on_startup": True,     # ✅ Sync khi khởi động
+            "update_interval": 300,      # ✅ 5 phút cập nhật 1 lần
+            "retry_interval": 60,        # ✅ Thời gian retry khi lỗi
+            "max_retries": 3,            # ✅ Số lần retry tối đa
+            "timeout": 30,               # ✅ Timeout khi gọi API
+            "auto_sync_firewall": True,  # ✅ Tự động sync với firewall
         },
         
         # Cấu hình bắt gói tin mạng

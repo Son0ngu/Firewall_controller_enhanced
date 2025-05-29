@@ -27,6 +27,52 @@
     .domain-item:hover .domain-actions {
         opacity: 1;
     }
+    
+    /* ✅ Simple White Clock Widget */
+    .clock-widget {
+        background: white;
+        color: #333;
+        border: 1px solid #e3e6f0;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        position: relative;
+    }
+    
+    .clock-time {
+        font-size: 1.8rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #2c3e50;
+    }
+    
+    .clock-date {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin-bottom: 5px;
+    }
+    
+    .clock-timezone {
+        font-size: 0.75rem;
+        color: #adb5bd;
+        font-weight: 500;
+    }
+    
+    .clock-icon {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        font-size: 1rem;
+        color: #dee2e6;
+    }
+    
+    /* ✅ Hover effect for subtle interaction */
+    .clock-widget:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        transition: box-shadow 0.2s ease;
+    }
 </style>
 {% endblock %}
 
@@ -44,9 +90,6 @@
                 </button>
                 <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDomainModal">
                     <i class="fas fa-plus me-1"></i>Add Domain
-                </button>
-                <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#importModal">
-                    <i class="fas fa-file-import me-1"></i>Import
                 </button>
             </div>
         </div>
@@ -115,23 +158,13 @@
         </div>
     </div>
     
+    <!-- ✅ Clock Widget -->
     <div class="col-xl-3 col-md-6">
-        <div class="card border-start-info">
-            <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
-                            Last Modified
-                        </div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="lastModified">
-                            <i class="fas fa-spinner fa-spin"></i>
-                        </div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-clock fa-2x text-gray-300"></i>
-                    </div>
-                </div>
-            </div>
+        <div class="clock-widget">
+            <i class="fas fa-clock clock-icon"></i>
+            <div class="clock-time" id="currentTime">--:--:--</div>
+            <div class="clock-date" id="currentDate">Loading...</div>
+            <div class="clock-timezone">UTC+7 (Ho Chi Minh)</div>
         </div>
     </div>
 </div>
@@ -196,9 +229,7 @@
                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDelete()">
                             <i class="fas fa-trash me-1"></i>Delete Selected
                         </button>
-                        <button type="button" class="btn btn-outline-info btn-sm" onclick="bulkExport()">
-                            <i class="fas fa-download me-1"></i>Export Selected
-                        </button>
+            
                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearSelection()">
                             <i class="fas fa-times me-1"></i>Clear Selection
                         </button>
@@ -440,51 +471,6 @@
     </div>
 </div>
 
-<!-- Import Modal -->
-<div class="modal fade" id="importModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-file-import me-2"></i>Import Domains
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label for="importFile" class="form-label">Upload File</label>
-                    <input type="file" class="form-control" id="importFile" accept=".txt,.csv,.json">
-                    <div class="form-text">Supported formats: TXT (one domain per line), CSV, JSON</div>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="importText" class="form-label">Or Paste Domains</label>
-                    <textarea class="form-control" id="importText" rows="10" placeholder="Enter domains, one per line:
-google.com
-github.com
-stackoverflow.com"></textarea>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="importNotes" class="form-label">Notes for Imported Domains</label>
-                    <input type="text" class="form-control" id="importNotes" placeholder="Bulk import from...">
-                </div>
-                
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong>Note:</strong> Duplicate domains will be skipped automatically.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-info" onclick="importDomains()">
-                    <i class="fas fa-file-import me-1"></i>Import Domains
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Domain Details Modal -->
 <div class="modal fade" id="domainDetailsModal" tabindex="-1">
     <div class="modal-dialog">
@@ -513,6 +499,66 @@ stackoverflow.com"></textarea>
 <script>
 let whitelistData = [];
 let selectedDomains = new Set();
+let clockInterval = null;
+
+// ✅ Clock functionality for UTC+7
+function updateClock() {
+    try {
+        // Create date in UTC+7 (Ho Chi Minh timezone)
+        const now = new Date();
+        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+        const utcPlus7 = new Date(utc + (7 * 3600000)); // UTC+7
+        
+        // Format time (24-hour format)
+        const hours = utcPlus7.getHours().toString().padStart(2, '0');
+        const minutes = utcPlus7.getMinutes().toString().padStart(2, '0');
+        const seconds = utcPlus7.getSeconds().toString().padStart(2, '0');
+        const timeString = `${hours}:${minutes}:${seconds}`;
+        
+        // Format date
+        const options = { 
+            weekday: 'short', 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric'
+        };
+        const dateString = utcPlus7.toLocaleDateString('en-US', options);
+        
+        // Update DOM elements
+        const timeElement = document.getElementById('currentTime');
+        const dateElement = document.getElementById('currentDate');
+        
+        if (timeElement) timeElement.textContent = timeString;
+        if (dateElement) dateElement.textContent = dateString;
+        
+    } catch (error) {
+        console.error('Error updating clock:', error);
+        // Fallback to simple time display
+        const now = new Date();
+        const timeElement = document.getElementById('currentTime');
+        const dateElement = document.getElementById('currentDate');
+        if (timeElement) timeElement.textContent = now.toLocaleTimeString();
+        if (dateElement) dateElement.textContent = now.toLocaleDateString();
+    }
+}
+
+function startClock() {
+    // Update immediately
+    updateClock();
+    
+    // Update every second
+    if (clockInterval) {
+        clearInterval(clockInterval);
+    }
+    clockInterval = setInterval(updateClock, 1000);
+}
+
+function stopClock() {
+    if (clockInterval) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+    }
+}
 
 // ✅ Enhanced updateEntryForm function
 function updateEntryForm() {
@@ -965,34 +1011,37 @@ function formatTimestamp(isoString, includeTimezone = false) {
     }
 }
 
-// ✅ Update statistics
+// ✅ FIX: Update statistics với null checks
 function updateStatistics() {
-    const total = whitelistData.length;
-    const manual = whitelistData.filter(d => d.added_by && d.added_by !== 'system').length;
-    const system = whitelistData.filter(d => d.added_by === 'system').length;
-    
-    // Find last modified
-    let lastModified = 'Never';
-    if (whitelistData.length > 0) {
-        const latest = whitelistData.reduce((latest, current) => {
-            const latestDate = new Date(latest.added_date || 0);
-            const currentDate = new Date(current.added_date || 0);
-            return currentDate > latestDate ? current : latest;
-        });
-        if (latest.added_date) {
-            lastModified = formatTimestamp(latest.added_date);
-        }
+    try {
+        const total = whitelistData.length;
+        const manual = whitelistData.filter(d => d.added_by && d.added_by !== 'system').length;
+        const system = whitelistData.filter(d => d.added_by === 'system').length;
+        
+        // Safe update với null checks
+        const totalElement = document.getElementById('totalDomainsCount');
+        const manualElement = document.getElementById('manualDomainsCount'); 
+        const systemElement = document.getElementById('systemDomainsCount');
+        
+        if (totalElement) totalElement.textContent = total;
+        if (manualElement) manualElement.textContent = manual;
+        if (systemElement) systemElement.textContent = system;
+        
+        console.log(`Statistics updated: Total=${total}, Manual=${manual}, System=${system}`);
+        
+    } catch (error) {
+        console.error('Error updating statistics:', error);
     }
-    
-    document.getElementById('totalDomainsCount').textContent = total;
-    document.getElementById('manualDomainsCount').textContent = manual;
-    document.getElementById('systemDomainsCount').textContent = system;
-    document.getElementById('lastModified').textContent = lastModified;
 }
 
 // ✅ Render domains
 function renderDomains(domains) {
     const container = document.getElementById('domainsContainer');
+    
+    if (!container) {
+        console.error('domainsContainer element not found');
+        return;
+    }
     
     if (domains.length === 0) {
         container.innerHTML = `
@@ -1219,18 +1268,74 @@ function clearSelection() {
     updateBulkActions();
 }
 
-// ✅ Bulk operations (placeholders)
-function bulkDelete() {
+// ✅ Enhanced Bulk Delete functionality
+async function bulkDelete() {
     if (selectedDomains.size === 0) {
         showNotification('warning', 'No domains selected');
         return;
     }
     
-    if (!confirm(`Delete ${selectedDomains.size} selected domains?`)) {
+    const selectedCount = selectedDomains.size;
+    const confirmMessage = `Are you sure you want to delete ${selectedCount} selected domain${selectedCount > 1 ? 's' : ''}?\n\nThis action cannot be undone.`;
+    
+    if (!confirm(confirmMessage)) {
         return;
     }
     
-    showNotification('info', 'Bulk delete functionality coming soon...');
+    try {
+        showNotification('info', `Deleting ${selectedCount} selected domains...`);
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+        
+        // Use Promise.allSettled to handle multiple concurrent requests
+        const deletePromises = Array.from(selectedDomains).map(async (entryId) => {
+            try {
+                const response = await fetch(`/api/whitelist/${entryId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    successCount++;
+                    return { success: true, entryId };
+                } else {
+                    throw new Error(data.error || 'Delete failed');
+                }
+            } catch (error) {
+                errorCount++;
+                errors.push({ entryId, error: error.message });
+                return { success: false, entryId, error: error.message };
+            }
+        });
+        
+        // Wait for all delete operations to complete
+        await Promise.allSettled(deletePromises);
+        
+        // Show results
+        if (successCount > 0 && errorCount === 0) {
+            showNotification('success', `✅ Successfully deleted ${successCount} domain${successCount > 1 ? 's' : ''}`);
+        } else if (successCount > 0 && errorCount > 0) {
+            showNotification('warning', `⚠️ Partially completed: ${successCount} deleted, ${errorCount} failed`);
+            console.warn('Bulk delete errors:', errors);
+        } else {
+            showNotification('danger', `❌ Failed to delete any domains. ${errorCount} errors occurred.`);
+            console.error('Bulk delete errors:', errors);
+        }
+        
+        // Clear selection and refresh
+        clearSelection();
+        await refreshWhitelist();
+        
+    } catch (error) {
+        console.error('Error in bulk delete:', error);
+        showNotification('danger', 'Bulk delete failed: ' + error.message);
+    }
 }
 
 function bulkExport() {
@@ -1239,90 +1344,46 @@ function bulkExport() {
         return;
     }
     
-    showNotification('info', 'Bulk export functionality coming soon...');
-}
-
-// ✅ Import domains
-async function importDomains() {
-    const fileInput = document.getElementById('importFile');
-    const textInput = document.getElementById('importText');
-    const notesInput = document.getElementById('importNotes');
-    
-    let domainsText = '';
-    
-    if (fileInput.files.length > 0) {
-        const file = fileInput.files[0];
-        try {
-            domainsText = await file.text();
-        } catch (error) {
-            showNotification('danger', 'Failed to read file: ' + error.message);
+    try {
+        // Get selected domains data
+        const selectedData = whitelistData.filter(entry => 
+            selectedDomains.has(entry.id || entry._id || entry.domain)
+        );
+        
+        if (selectedData.length === 0) {
+            showNotification('warning', 'No valid data found for selected domains');
             return;
         }
-    } else if (textInput.value.trim()) {
-        domainsText = textInput.value.trim();
-    } else {
-        showNotification('warning', 'Please provide domains via file or text input');
-        return;
-    }
-    
-    const domains = domainsText
-        .split('\n')
-        .map(line => line.trim().toLowerCase())
-        .filter(line => line && !line.startsWith('#') && !line.startsWith('//'));
-    
-    if (domains.length === 0) {
-        showNotification('warning', 'No valid domains found');
-        return;
-    }
-    
-    if (domains.length > 1000) {
-        showNotification('warning', 'Maximum 1000 domains allowed per import');
-        return;
-    }
-    
-    const entries = domains.map(domain => ({
-        type: 'domain',
-        value: domain,
-        category: 'imported',
-        notes: notesInput.value || `Bulk import ${new Date().toLocaleDateString()}`
-    }));
-    
-    try {
-        showNotification('info', `Importing ${entries.length} domains...`);
         
-        const response = await fetch('/api/whitelist/bulk', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ entries })
-        });
+        // Prepare export data
+        const exportData = selectedData.map(entry => ({
+            value: entry.value || entry.domain,
+            type: entry.type || 'domain',
+            category: entry.category,
+            priority: entry.priority,
+            notes: entry.notes,
+            added_by: entry.added_by,
+            added_date: entry.added_date
+        }));
         
-        const data = await response.json();
+        // Create and download file
+        const jsonContent = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
         
-        if (data.success || data.inserted_count > 0) {
-            const message = `Import completed: ${data.inserted_count} added, ${data.error_count || 0} errors`;
-            showNotification('success', message);
-            
-            if (data.errors && data.errors.length > 0) {
-                console.log('Import errors:', data.errors);
-            }
-            
-            const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
-            modal.hide();
-            
-            fileInput.value = '';
-            textInput.value = '';
-            notesInput.value = '';
-            
-            await refreshWhitelist();
-        } else {
-            throw new Error(data.error || 'Import failed');
-        }
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `whitelist-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showNotification('success', `✅ Exported ${selectedData.length} domains to JSON file`);
         
     } catch (error) {
-        console.error('Error importing domains:', error);
-        showNotification('danger', 'Import failed: ' + error.message);
+        console.error('Error exporting domains:', error);
+        showNotification('danger', 'Export failed: ' + error.message);
     }
 }
 
@@ -1361,7 +1422,25 @@ function showNotification(type, message) {
 
 // ✅ Initialize page
 document.addEventListener('DOMContentLoaded', function() {
+    // Start the clock
+    startClock();
+    
+    // Load whitelist data
     loadWhitelist();
+    
+    // Handle page visibility change to pause/resume clock
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            stopClock();
+        } else {
+            startClock();
+        }
+    });
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        stopClock();
+    });
 });
 </script>
 {% endblock %}
