@@ -35,7 +35,7 @@ class WhitelistManager:
         server_urls = server_config.get("urls", [])
         if not server_urls:
             # Fallback to single URL for backward compatibility
-            single_url = server_config.get("url", "https://firewall-controller-vu7f.onrender.com")
+            single_url = server_config.get("url", "https://project2-bpvw.onrender.com")
             server_urls = [single_url]
         
         # Chọn server URL đầu tiên làm primary

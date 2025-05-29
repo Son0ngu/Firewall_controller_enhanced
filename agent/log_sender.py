@@ -26,7 +26,7 @@ class LogSender:
             # Fallback: dùng server_url hoặc url từ config
             primary_url = (
                 config.get("server_url") or 
-                server_config.get("url", "https://firewall-controller-vu7f.onrender.com")
+                server_config.get("url", "https://project2-bpvw.onrender.com")
             )
             self.server_urls = [
                 primary_url,

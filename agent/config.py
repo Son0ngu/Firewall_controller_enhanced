@@ -44,11 +44,11 @@ DEFAULT_CONFIG = {
     "server": {
         # ✅ FIX: Primary server là Render, fallback localhost
         "urls": [
-            "https://firewall-controller-vu7f.onrender.com",  # Primary server
+            "https://project2-bpvw.onrender.com",  # Primary server
             "http://localhost:5000"  # Fallback for development
         ],
         # Giữ lại URL chính cho backward compatibility
-        "url": "https://firewall-controller-vu7f.onrender.com",  
+        "url": "https://project2-bpvw.onrender.com",  
         "connect_timeout": 15,  # ✅ Tăng timeout cho Render (có thể chậm)
         "read_timeout": 45,     # ✅ Tăng timeout để chờ response
         "retry_interval": 60,   # Thời gian chờ giữa các lần thử lại (giây)
@@ -335,11 +335,11 @@ def get_default_config() -> Dict[str, Any]:
         "server": {
             # ✅ FIX: Primary server là Render, fallback localhost
             "urls": [
-                "https://firewall-controller-vu7f.onrender.com",  # Primary server
+                "https://project2-bpvw.onrender.com",  # Primary server
                 "http://localhost:5000"  # Fallback for development
             ],
             # Giữ lại URL chính cho backward compatibility
-            "url": "https://firewall-controller-vu7f.onrender.com",  
+            "url": "https://project2-bpvw.onrender.com",  
             "connect_timeout": 15,  # ✅ Tăng timeout cho Render
             "read_timeout": 45,     # ✅ Tăng timeout để chờ response
             "retry_interval": 60,   # Thời gian chờ giữa các lần thử lại (giây)
