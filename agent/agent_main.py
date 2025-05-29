@@ -26,8 +26,8 @@ from firewall_manager import FirewallManager  # Quản lý tường lửa
 from log_sender import LogSender  # Gửi log tới server
 from packet_sniffer import PacketSniffer  # Bắt gói tin mạng
 from whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
-from heartbeat_sender import HeartbeatSender  # ✅ THÊM import
-from command_processor import CommandProcessor  # ✅ ADD import
+from heartbeat_sender import HeartbeatSender  # THÊM import
+from command_processor import CommandProcessor  # ADD import
 
 # Cấu hình hệ thống ghi log
 # - level=logging.INFO: Chỉ ghi những thông báo từ mức INFO trở lên
@@ -45,8 +45,8 @@ firewall = None  # Quản lý tường lửa
 whitelist = None  # Quản lý danh sách tên miền được phép
 log_sender = None  # Gửi log đến server
 packet_sniffer = None  # Bắt gói tin mạng
-heartbeat_sender = None  # ✅ THÊM global variable
-command_processor = None  # ✅ ADD global variable
+heartbeat_sender = None  # THÊM global variable
+command_processor = None  # ADD global variable
 running = True  # Điều khiển vòng lặp chính, khi False thì agent sẽ dừng
 
 def handle_domain_detection(record: Dict):
@@ -98,14 +98,14 @@ def initialize_components():
     try:
         logger.info("Đang khởi tạo các thành phần của agent...")
         
-        # ✅ FIX: Check if global config is available
+        # FIX: Check if global config is available
         if not config:
             logger.error("Global config chưa được khởi tạo! Attempting to load...")
             config = get_config()  # Load config nếu chưa có
             if not config:
                 raise ValueError("Cannot load configuration")
         
-        # ✅ IMPROVED: Better local IP detection
+        # IMPROVED: Better local IP detection
         def get_local_ip():
             try:
                 # Try multiple methods to get local IP
@@ -121,7 +121,7 @@ def initialize_components():
         
         local_ip = get_local_ip()
         
-        # ✅ IMPROVED: Better agent info collection
+        # IMPROVED: Better agent info collection
         agent_info = {
             "hostname": socket.gethostname(),
             "ip_address": local_ip,
@@ -131,8 +131,8 @@ def initialize_components():
             "python_version": f"{platform.python_version()}",
             "architecture": platform.architecture()[0]
         }
-        
-        # ✅ IMPROVED: Better registration logic với multiple URLs
+    
+        # IMPROVED: Better registration logic với multiple URLs
         registration_success = False
         server_urls = config['server'].get('urls', [config['server']['url']])
         
@@ -154,7 +154,7 @@ def initialize_components():
                         agent_data = data.get('data', {})
                         logger.info(f"✅ Agent registered successfully with ID: {agent_data.get('agent_id')}")
                         
-                        # ✅ Lưu agent_id và token vào config để sử dụng sau
+                        # Lưu agent_id và token vào config để sử dụng sau
                         config['agent_id'] = agent_data.get('agent_id')
                         config['agent_token'] = agent_data.get('token')
                         config['user_id'] = agent_data.get('user_id')
@@ -178,7 +178,7 @@ def initialize_components():
         if not registration_success:
             logger.error("Failed to register with any server - agent functionality will be limited")
         
-        # ✅ Initialize các components...
+        # Initialize các components...
         # Initialize whitelist với updated config
         whitelist = WhitelistManager(config)
         logger.info(f"Whitelist initialized for agent: {local_ip}")
@@ -188,13 +188,13 @@ def initialize_components():
             firewall = FirewallManager(config["firewall"]["rule_prefix"])
             logger.info(f"Firewall manager đã khởi tạo với {len(firewall.blocked_ips)} quy tắc chặn hiện có")
             
-            # ✅ THÊM: Link firewall với whitelist để auto-sync
+            # Link firewall với whitelist để auto-sync
             whitelist.set_firewall_manager(firewall)
             logger.info("Linked firewall manager with whitelist for auto-sync")
         else:
             logger.info("Chức năng tường lửa bị vô hiệu hóa trong cấu hình")
         
-        # ✅ IMPROVED: Log sender với better config
+        # IMPROVED: Log sender với better config
         log_sender_config = {
             "server_url": config.get('server_url', config["server"]["url"]),  # Use working URL
             "batch_size": config["logging"]["sender"]["batch_size"],
@@ -203,7 +203,7 @@ def initialize_components():
             "timeout": config["server"].get("connect_timeout", 10)
         }
         
-        # ✅ Thêm agent credentials vào log sender config
+        # Thêm agent credentials vào log sender config
         if config.get('agent_id') and config.get('agent_token'):
             log_sender_config["agent_id"] = config['agent_id']
             log_sender_config["agent_token"] = config['agent_token']
@@ -217,24 +217,24 @@ def initialize_components():
         packet_sniffer.start()
         logger.info("Packet sniffer đã khởi tạo và bắt đầu")
         
-        # ✅ IMPROVED: Heartbeat sender với better error handling
+        # Heartbeat sender với better error handling
         if registration_success:
             heartbeat_sender = HeartbeatSender(config)
             heartbeat_sender.set_agent_credentials(config['agent_id'], config['agent_token'])
             heartbeat_sender.start()
-            logger.info("✅ Heartbeat sender started")
+            logger.info("Heartbeat sender started")
         else:
             logger.warning("Skipping heartbeat sender - agent not registered")
         
-        # ✅ ADD: Initialize command processor
+        # Initialize command processor
         command_processor = CommandProcessor()
-        logger.info("✅ Command processor initialized")
+        logger.info(" Command processor initialized")
         
-        # ✅ ADD: Start command polling (check for commands periodically)
+        # Start command polling (check for commands periodically)
         if registration_success:
             start_command_polling()
         
-        logger.info("✅ Tất cả các thành phần của agent đã khởi tạo thành công")
+        logger.info("Tất cả các thành phần của agent đã khởi tạo thành công")
         
     except Exception as e:
         logger.error(f"Lỗi khi khởi tạo các thành phần: {str(e)}", exc_info=True)
@@ -281,7 +281,7 @@ def start_command_polling():
     polling_thread = threading.Thread(target=poll_commands)
     polling_thread.daemon = True
     polling_thread.start()
-    logger.info("✅ Command polling started")
+    logger.info("Command polling started")
 
 def process_command(command: Dict):
     """Process a command from server"""
@@ -308,9 +308,9 @@ def process_command(command: Dict):
         response = requests.post(result_url, json=result_data, timeout=10)
         
         if response.status_code == 200:
-            logger.info(f"✅ Command {command_id} result sent successfully")
+            logger.info(f"Command {command_id} result sent successfully")
         else:
-            logger.error(f"❌ Failed to send command result: {response.status_code}")
+            logger.error(f"Failed to send command result: {response.status_code}")
             
     except Exception as e:
         logger.error(f"Error processing command {command.get('command_id')}: {e}")
@@ -320,7 +320,7 @@ def cleanup():
     Dừng tất cả các thành phần một cách an toàn khi agent kết thúc.
     Bao gồm: packet_sniffer, whitelist updater, log_sender và có thể xóa các quy tắc tường lửa.
     """
-    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor  # ✅ THÊM heartbeat_sender
+    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor  # THÊM heartbeat_sender
     
     logger.info("Đang dừng các thành phần của agent...")
     
@@ -348,7 +348,7 @@ def cleanup():
         except Exception as e:
             logger.error(f"Lỗi khi dừng log sender: {str(e)}")
     
-    # ✅ THÊM: Stop heartbeat sender
+    # Stop heartbeat sender
     if heartbeat_sender:
         try:
             heartbeat_sender.stop()
@@ -365,7 +365,7 @@ def cleanup():
         except Exception as e:
             logger.error(f"Lỗi khi xóa các quy tắc tường lửa: {str(e)}")
     
-    # ✅ ADD: Command processor cleanup if needed
+    # Command processor cleanup if needed
     if command_processor:
         logger.info("Command processor stopped")
     
@@ -388,12 +388,12 @@ def main():
     global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
     
     try:
-        # ✅ FIX: Load config vào global variable
+        # Load config vào global variable
         logger.info("Loading agent configuration...")
         config = get_config()  # Load vào global variable
-        logger.info("✅ Configuration loaded successfully")
+        logger.info("Configuration loaded successfully")
         
-        # ✅ ADD: Debug config để kiểm tra
+        # Debug config để kiểm tra
         logger.info(f"Server URLs: {config['server'].get('urls', [])}")
         logger.info(f"Primary URL: {config['server']['url']}")
         logger.info(f"Whitelist auto-sync: {config['whitelist']['auto_sync']}")
@@ -420,7 +420,7 @@ def main():
         # Gửi log thông báo khởi động
         if log_sender and config.get('agent_id'):
             startup_log = {
-                "agent_id": config['agent_id'],  # ✅ Thêm agent_id
+                "agent_id": config['agent_id'],  # Thêm agent_id
                 "event_type": "agent_startup",  # Loại sự kiện: khởi động agent
                 "hostname": socket.gethostname(),  # Tên máy
                 "os": f"{platform.system()} {platform.version()}",  # Thông tin hệ điều hành
