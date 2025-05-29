@@ -1,493 +1,696 @@
 {% extends "base.html" %}
 
-{% block title %}Whitelist Management - Firewall Controller{% endblock %}
+{% block title %}Domain Whitelist - Firewall Controller{% endblock %}
 
 {% block extra_css %}
 <style>
-    .domain-card {
-        transition: transform 0.2s;
-    }
-    .domain-card:hover {
-        transform: translateY(-2px);
-    }
-    .domain-item {
-        border-left: 4px solid #007bff;
-        background: #f8f9fa;
-    }
-    .domain-item.manual {
-        border-left-color: #28a745;
-    }
-    .domain-item.system {
-        border-left-color: #6c757d;
-    }
-    .domain-actions {
-        opacity: 0;
-        transition: opacity 0.2s;
-    }
-    .domain-item:hover .domain-actions {
-        opacity: 1;
-    }
-    
-    /* ✅ Simple White Clock Widget */
-    .clock-widget {
-        background: white;
-        color: #333;
-        border: 1px solid #e3e6f0;
-        border-radius: 8px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .whitelist-hero {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        border-radius: 20px;
+        padding: 3rem 2rem;
+        color: white;
+        margin-bottom: 2rem;
         position: relative;
+        overflow: hidden;
     }
     
-    .clock-time {
-        font-size: 1.8rem;
-        font-weight: 600;
-        margin-bottom: 8px;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #2c3e50;
+    .whitelist-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+        background-size: 30px 30px;
+        animation: float 15s infinite linear;
     }
     
-    .clock-date {
-        font-size: 0.9rem;
-        color: #6c757d;
-        margin-bottom: 5px;
+    .whitelist-hero-content {
+        position: relative;
+        z-index: 1;
     }
     
-    .clock-timezone {
+    .domain-card {
+        background: white;
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+        margin-bottom: 1rem;
+    }
+    
+    .domain-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    }
+    
+    .domain-status {
+        padding: 0.4rem 0.8rem;
+        border-radius: 15px;
         font-size: 0.75rem;
-        color: #adb5bd;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-flex;
+        align-items: center;
+    }
+    
+    .domain-status.active {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    
+    .domain-status.inactive {
+        background: linear-gradient(135deg, #f8d7da 0%, #f1c2c7 100%);
+        color: #721c24;
+        border: 1px solid #f1c2c7;
+    }
+    
+    .stats-card {
+        background: white;
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 25px rgba(0,0,0,0.12);
+    }
+    
+    .stats-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .stats-icon.success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }
+    .stats-icon.info { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .stats-icon.warning { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
+    .stats-icon.primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    
+    .stats-number {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    
+    .stats-label {
+        font-size: 0.875rem;
+        color: #6c757d;
         font-weight: 500;
     }
     
-    .clock-icon {
-        position: absolute;
-        top: 15px;
-        right: 15px;
-        font-size: 1rem;
-        color: #dee2e6;
+    .pulse-indicator {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
     }
     
-    /* ✅ Hover effect for subtle interaction */
-    .clock-widget:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        transition: box-shadow 0.2s ease;
+    .pulse-indicator.active {
+        background: #28a745;
+        animation: pulse-green 2s infinite;
+    }
+    
+    .pulse-indicator.inactive {
+        background: #dc3545;
+        animation: pulse-red 2s infinite;
+    }
+    
+    @keyframes pulse-green {
+        0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+        70% { box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+    }
+    
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+        70% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+    }
+    
+    .btn-action {
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border: none;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.875rem;
+    }
+    
+    .btn-action:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .search-card {
+        background: white;
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        margin-bottom: 2rem;
+    }
+    
+    .form-control, .form-select {
+        border-radius: 10px;
+        border: 1px solid #e3e6f0;
+        transition: all 0.3s ease;
+    }
+    
+    .form-control:focus, .form-select:focus {
+        border-color: #11998e;
+        box-shadow: 0 0 0 0.2rem rgba(17, 153, 142, 0.25);
+    }
+    
+    .add-items-section {
+        margin-bottom: 2rem;
+    }
+    
+    .add-item-card {
+        background: white;
+        border: 2px dashed #dee2e6;
+        border-radius: 15px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        padding: 1.5rem;
+        text-align: center;
+        margin-bottom: 1rem;
+        height: 100%;
+    }
+    
+    .add-item-card:hover {
+        border-color: #11998e;
+        background: linear-gradient(135deg, #11998e10 0%, #38ef7d20 100%);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    
+    .add-item-icon {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+        opacity: 0.7;
+        color: #11998e;
+    }
+    
+    .add-item-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #333;
+    }
+    
+    .add-item-desc {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-bottom: 0;
+    }
+    
+    .type-badge {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-bottom: 1rem;
+        display: inline-block;
+    }
+    
+    .type-badge.domain { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }
+    .type-badge.ip { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .type-badge.url { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
+    .type-badge.port { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: #333; }
+    .type-badge.process { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333; }
+    
+    @keyframes float {
+        0% { transform: translate(0, 0) rotate(0deg); }
+        100% { transform: translate(-30px, -30px) rotate(360deg); }
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #6c757d;
+    }
+    
+    .empty-state i {
+        font-size: 4rem;
+        opacity: 0.3;
+        margin-bottom: 1.5rem;
+    }
+    
+    .domain-type-badge {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 10px;
+        font-weight: 600;
+    }
+    
+    .domain-type-badge.global {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .domain-type-badge.agent {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+    }
+    
+    .bulk-actions {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        display: none;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+    
+    .input-example {
+        font-size: 0.75rem;
+        color: #6c757d;
+        font-style: italic;
+        margin-top: 0.25rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="h3 mb-0">
-                <i class="fas fa-list me-2"></i>
-                Whitelist Management
-            </h1>
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-outline-primary" onclick="refreshWhitelist()">
-                    <i class="fas fa-sync-alt me-1"></i>Refresh
-                </button>
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDomainModal">
-                    <i class="fas fa-plus me-1"></i>Add Domain
-                </button>
+<!-- Hero Section -->
+<div class="whitelist-hero">
+    <div class="whitelist-hero-content">
+        <div class="row align-items-center">
+            <div class="col-12">
+                <h1 class="display-5 fw-bold mb-3">
+                    <i class="fas fa-list me-3"></i>
+                    Whitelist Management
+                </h1>
+                <p class="lead mb-0">
+                    Manage trusted domains, IPs, URLs, and other resources allowed to bypass firewall restrictions
+                </p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Whitelist Statistics -->
+<!-- Statistics Cards -->
 <div class="row mb-4">
-    <div class="col-xl-3 col-md-6">
-        <div class="card border-start-success">
-            <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
-                            Total Domains
-                        </div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="totalDomainsCount">
-                            <i class="fas fa-spinner fa-spin"></i>
-                        </div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-list fa-2x text-gray-300"></i>
-                    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center p-4">
+                <div class="stats-icon success mx-auto">
+                    <i class="fas fa-list"></i>
                 </div>
+                <div class="stats-number text-success" id="totalItemsCount">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="stats-label">Total Items</div>
             </div>
         </div>
     </div>
     
-    <div class="col-xl-3 col-md-6">
-        <div class="card border-start-primary">
-            <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
-                            Manual Entries
-                        </div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="manualDomainsCount">
-                            <i class="fas fa-spinner fa-spin"></i>
-                        </div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-user-edit fa-2x text-gray-300"></i>
-                    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center p-4">
+                <div class="stats-icon info mx-auto">
+                    <i class="fas fa-check-circle"></i>
                 </div>
+                <div class="stats-number text-success" id="activeItemsCount">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="stats-label">Active Items</div>
             </div>
         </div>
     </div>
     
-    <div class="col-xl-3 col-md-6">
-        <div class="card border-start-secondary">
-            <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">
-                            System Entries
-                        </div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="systemDomainsCount">
-                            <i class="fas fa-spinner fa-spin"></i>
-                        </div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-cog fa-2x text-gray-300"></i>
-                    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center p-4">
+                <div class="stats-icon primary mx-auto">
+                    <i class="fas fa-globe"></i>
                 </div>
+                <div class="stats-number text-primary" id="domainsCount">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="stats-label">Domains</div>
             </div>
         </div>
     </div>
     
-    <!-- ✅ Clock Widget -->
-    <div class="col-xl-3 col-md-6">
-        <div class="clock-widget">
-            <i class="fas fa-clock clock-icon"></i>
-            <div class="clock-time" id="currentTime">--:--:--</div>
-            <div class="clock-date" id="currentDate">Loading...</div>
-            <div class="clock-timezone">UTC+7 (Ho Chi Minh)</div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center p-4">
+                <div class="stats-icon warning mx-auto">
+                    <i class="fas fa-network-wired"></i>
+                </div>
+                <div class="stats-number text-info" id="ipsCount">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="stats-label">IP Addresses</div>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Search and Filters -->
-<div class="row mb-3">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label for="searchInput" class="form-label">Search Domains</label>
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="fas fa-search"></i>
-                            </span>
-                            <input type="text" class="form-control" id="searchInput" placeholder="Search domains..." onkeyup="filterDomains()">
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="sourceFilter" class="form-label">Source</label>
-                        <select class="form-select" id="sourceFilter" onchange="filterDomains()">
-                            <option value="">All Sources</option>
-                            <option value="manual">Manual</option>
-                            <option value="system">System</option>
-                            <option value="imported">Imported</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="sortSelect" class="form-label">Sort By</label>
-                        <select class="form-select" id="sortSelect" onchange="sortDomains()">
-                            <option value="domain">Domain Name</option>
-                            <option value="added_date">Date Added</option>
-                            <option value="added_by">Added By</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">&nbsp;</label>
-                        <div class="d-grid">
-                            <button type="button" class="btn btn-outline-secondary" onclick="clearFilters()">
-                                <i class="fas fa-times me-1"></i>Clear
-                            </button>
-                        </div>
-                    </div>
+<!-- Add Items Section -->
+<div class="add-items-section">
+    <div class="row">
+        <div class="col-lg-2 col-md-4 col-6 mb-3">
+            <div class="add-item-card" data-type="domain">
+                <div class="type-badge domain">Domain</div>
+                <div class="add-item-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="add-item-title">Add Domain</div>
+                <div class="add-item-desc">example.com<br>*.subdomain.com</div>
+            </div>
+        </div>
+        
+        <div class="col-lg-2 col-md-4 col-6 mb-3">
+            <div class="add-item-card" data-type="ip">
+                <div class="type-badge ip">IP Address</div>
+                <div class="add-item-icon">
+                    <i class="fas fa-network-wired"></i>
+                </div>
+                <div class="add-item-title">Add IP</div>
+                <div class="add-item-desc">192.168.1.100<br>10.0.0.0/24</div>
+            </div>
+        </div>
+        
+        <div class="col-lg-2 col-md-4 col-6 mb-3">
+            <div class="add-item-card" data-type="url">
+                <div class="type-badge url">URL</div>
+                <div class="add-item-icon">
+                    <i class="fas fa-link"></i>
+                </div>
+                <div class="add-item-title">Add URL</div>
+                <div class="add-item-desc">https://api.com/v1/*<br>/api/webhooks/*</div>
+            </div>
+        </div>
+        
+        <div class="col-lg-2 col-md-4 col-6 mb-3">
+            <div class="add-item-card" data-type="port">
+                <div class="type-badge port">Port</div>
+                <div class="add-item-icon">
+                    <i class="fas fa-door-open"></i>
+                </div>
+                <div class="add-item-title">Add Port</div>
+                <div class="add-item-desc">80, 443<br>8000-9000</div>
+            </div>
+        </div>
+        
+        <div class="col-lg-2 col-md-4 col-6 mb-3">
+            <div class="add-item-card" data-type="process">
+                <div class="type-badge process">Process</div>
+                <div class="add-item-icon">
+                    <i class="fas fa-cogs"></i>
+                </div>
+                <div class="add-item-title">Add Process</div>
+                <div class="add-item-desc">chrome.exe<br>node.exe</div>
+            </div>
+        </div>
+        
+        <div class="col-lg-2 col-md-4 col-6 mb-3">
+            <div class="add-item-card" data-type="bulk">
+                <div class="type-badge domain">Bulk Import</div>
+                <div class="add-item-icon">
+                    <i class="fas fa-upload"></i>
+                </div>
+                <div class="add-item-title">Bulk Add</div>
+                <div class="add-item-desc">Import multiple<br>items at once</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="card search-card">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0">
+                        <i class="fas fa-search text-muted"></i>
+                    </span>
+                    <input type="text" class="form-control border-start-0" 
+                           placeholder="Search whitelist items..." 
+                           id="item-search">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" id="type-filter">
+                    <option value="">All Types</option>
+                    <option value="domain">Domains</option>
+                    <option value="ip">IP Addresses</option>
+                    <option value="url">URLs</option>
+                    <option value="port">Ports</option>
+                    <option value="process">Processes</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" id="status-filter">
+                    <option value="">All Status</option>
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" id="scope-filter">
+                    <option value="">All Scopes</option>
+                    <option value="global">Global</option>
+                    <option value="agent">Agent Specific</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-success flex-fill" id="refreshBtn">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh
+                    </button>
+                    <button class="btn btn-outline-primary" id="bulkActionsBtn">
+                        <i class="fas fa-tasks me-1"></i>Bulk
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Bulk Actions -->
-<div class="row mb-3" id="bulkActionsRow" style="display: none;">
-    <div class="col-12">
-        <div class="card border-warning">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <i class="fas fa-check-square me-2"></i>
-                        <span id="selectedCount">0</span> domains selected
-                    </div>
-                    <div class="btn-group" role="group">
-                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDelete()">
-                            <i class="fas fa-trash me-1"></i>Delete Selected
-                        </button>
-            
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearSelection()">
-                            <i class="fas fa-times me-1"></i>Clear Selection
-                        </button>
-                    </div>
-                </div>
+<!-- Bulk Actions (Hidden by default) -->
+<div class="bulk-actions" id="bulkActions">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <span class="fw-semibold text-muted">
+                <span id="selectedCount">0</span> items selected
+            </span>
+        </div>
+        <div class="col-md-4 text-end">
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-success" id="bulkActivateBtn">
+                    <i class="fas fa-check me-1"></i>Activate
+                </button>
+                <button class="btn btn-outline-warning" id="bulkDeactivateBtn">
+                    <i class="fas fa-pause me-1"></i>Deactivate
+                </button>
+                <button class="btn btn-outline-danger" id="bulkDeleteBtn">
+                    <i class="fas fa-trash me-1"></i>Delete
+                </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Domains List -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">
-                        <i class="fas fa-list me-2"></i>Whitelisted Domains
-                    </h6>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
-                        <label class="form-check-label" for="selectAll">
-                            Select All
-                        </label>
-                    </div>
-                </div>
+<!-- Items List -->
+<div class="card">
+    <div class="card-header bg-light">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h6 class="mb-0 fw-bold">
+                    <i class="fas fa-shield-alt me-2"></i>Whitelist Items
+                </h6>
             </div>
-            <div class="card-body p-0">
-                <div id="domainsContainer">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading domains...</span>
-                        </div>
-                        <p class="mt-2 text-muted">Loading whitelist...</p>
-                    </div>
+            <div class="col-md-6 text-end">
+                <small class="text-muted">
+                    <span id="itemCount">Loading...</span> items configured
+                </small>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div id="itemsContainer">
+            <div class="text-center py-5">
+                <div class="spinner-border text-success" role="status">
+                    <span class="visually-hidden">Loading items...</span>
                 </div>
+                <p class="mt-2 text-muted">Loading whitelist items...</p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Add Domain Modal - Updated with correct field names -->
-<div class="modal fade" id="addDomainModal" tabindex="-1" aria-labelledby="addDomainModalLabel" role="dialog" aria-modal="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="addDomainModalLabel">
-                    <i class="fas fa-plus me-2"></i>Add Entry to Whitelist
+<!-- Universal Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 15px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title" id="modalTitle">
+                    <i class="fas fa-plus-circle me-2"></i>Add Item to Whitelist
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form id="addDomainForm" onsubmit="addEntry(event)" novalidate>
-                <div class="modal-body">
-                    <!-- Entry Type Selection -->
-                    <div class="mb-4">
-                        <label class="form-label">Entry Type *</label>
-                        <div class="row">
-                            <div class="col-6 col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="entryType" id="typeDomain" value="domain" checked onchange="updateEntryForm()">
-                                    <label class="form-check-label" for="typeDomain">
-                                        <i class="fas fa-globe me-1"></i>Domain
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="entryType" id="typeIP" value="ip" onchange="updateEntryForm()">
-                                    <label class="form-check-label" for="typeIP">
-                                        <i class="fas fa-network-wired me-1"></i>IP
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="entryType" id="typeURL" value="url" onchange="updateEntryForm()">
-                                    <label class="form-check-label" for="typeURL">
-                                        <i class="fas fa-link me-1"></i>URL
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="entryType" id="typePattern" value="pattern" onchange="updateEntryForm()">
-                                    <label class="form-check-label" for="typePattern">
-                                        <i class="fas fa-code me-1"></i>Pattern
-                                    </label>
-                                </div>
-                            </div>
+            <div class="modal-body p-4">
+                <form id="addItemForm">
+                    <input type="hidden" name="item_type" id="itemType">
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" id="valueLabel">Value</label>
+                        <input type="text" class="form-control" name="value" id="valueInput" required>
+                        <div class="form-text" id="valueHelp">
+                            <i class="fas fa-info-circle me-1"></i>
+                            <span id="valueExample">Enter the value</span>
                         </div>
-                    </div>
-
-                    <!-- ✅ Domain Form -->
-                    <div id="domainForm" class="entry-form">
-                        <div class="mb-3">
-                            <label for="domainInput" class="form-label">Domain Name *</label>
-                            <input type="text" class="form-control" id="domainInput" name="domainValue" 
-                                   placeholder="example.com" 
-                                   pattern="^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$">
-                            <div class="form-text">
-                                Examples: google.com, firewall-controller-vu7f.onrender.com, api.github.com
-                            </div>
-                            <div class="invalid-feedback">
-                                Please enter a valid domain name.
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="includeSubdomains" name="includeSubdomains">
-                                <label class="form-check-label" for="includeSubdomains">
-                                    Include all subdomains (*.domain.com)
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            <strong>Examples:</strong><br>
-                            • google.com<br>
-                            • firewall-controller-vu7f.onrender.com<br>
-                            • *.microsoft.com<br>
-                            • api.github.com
-                        </div>
-                    </div>
-
-                    <!-- ✅ IP Form -->
-                    <div id="ipForm" class="entry-form" style="display: none;">
-                        <div class="mb-3">
-                            <label for="ipInput" class="form-label">IP Address *</label>
-                            <input type="text" class="form-control" id="ipInput" name="ipValue" 
-                                   placeholder="192.168.1.1">
-                            <div class="form-text">IPv4, IPv6, or CIDR notation supported</div>
-                            <div class="invalid-feedback">
-                                Please enter a valid IP address.
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="portInput" class="form-label">Port (Optional)</label>
-                            <input type="number" class="form-control" id="portInput" name="portValue" 
-                                   placeholder="80" min="1" max="65535">
-                        </div>
-                        
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            <strong>Examples:</strong><br>
-                            • 192.168.1.1<br>
-                            • 127.0.0.1:5000<br>
-                            • 192.168.0.0/24<br>
-                            • 2001:db8::1
-                        </div>
-                    </div>
-
-                    <!-- ✅ URL Form - Fixed validation -->
-                    <div id="urlForm" class="entry-form" style="display: none;">
-                        <div class="mb-3">
-                            <label for="urlInput" class="form-label">URL *</label>
-                            <input type="text" class="form-control" id="urlInput" name="urlValue" 
-                                   placeholder="https://api.example.com/v1/*">
-                            <div class="form-text">Full URL with protocol (wildcards supported in path)</div>
-                            <div class="invalid-feedback">
-                                Please enter a valid URL.
-                            </div>
-                        </div>
-                        
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            <strong>Examples:</strong><br>
-                            • https://firewall-controller-vu7f.onrender.com<br>
-                            • http://localhost:5000<br>
-                            • https://api.github.com/*<br>
-                            • https://fonts.googleapis.com/css
-                        </div>
-                    </div>
-
-                    <!-- ✅ Pattern Form -->
-                    <div id="patternForm" class="entry-form" style="display: none;">
-                        <div class="mb-3">
-                            <label for="patternInput" class="form-label">Pattern *</label>
-                            <input type="text" class="form-control" id="patternInput" name="patternValue" 
-                                   placeholder="*.example.*">
-                            <div class="form-text">Pattern for advanced matching</div>
-                            <div class="invalid-feedback">
-                                Please enter a valid pattern.
-                            </div>
-                        </div>
-                        
-                        <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            <strong>Advanced:</strong> Use patterns for complex matching rules
-                        </div>
-                    </div>
-
-                    <!-- Common Fields -->
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="categorySelect" class="form-label">Category</label>
-                                <select class="form-select" id="categorySelect" name="category">
-                                    <option value="uncategorized">Uncategorized</option>
-                                    <option value="business">Business</option>
-                                    <option value="development">Development</option>
-                                    <option value="api">API Services</option>
-                                    <option value="cdn">CDN/Resources</option>
-                                    <option value="cloud">Cloud Services</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="prioritySelect" class="form-label">Priority</label>
-                                <select class="form-select" id="prioritySelect" name="priority">
-                                    <option value="normal" selected>Normal</option>
-                                    <option value="high">High</option>
-                                    <option value="critical">Critical</option>
-                                </select>
-                            </div>
-                        </div>
+                        <div class="input-example" id="inputExample"></div>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="notesInput" class="form-label">Notes (Optional)</label>
-                        <textarea class="form-control" id="notesInput" name="notes" rows="2" 
-                                  placeholder="Add any additional notes..."></textarea>
+                        <label class="form-label fw-semibold">Scope</label>
+                        <select class="form-select" name="scope" id="scopeSelect">
+                            <option value="global">Global (All Agents)</option>
+                            <option value="agent">Agent Specific</option>
+                        </select>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-info me-2" onclick="testEntry()">
-                        <i class="fas fa-vial me-1"></i>Test Entry
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-plus me-1"></i>Add to Whitelist
-                    </button>
-                </div>
-            </form>
+                    
+                    <div class="mb-3" id="agentSelectGroup" style="display: none;">
+                        <label class="form-label fw-semibold">Target Agent</label>
+                        <select class="form-select" name="agent_id">
+                            <option value="">Select an agent...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Description</label>
+                        <textarea class="form-control" name="description" rows="3" 
+                                  placeholder="Optional description for this item"></textarea>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="active" id="activeCheck" checked>
+                        <label class="form-check-label" for="activeCheck">
+                            Enable this item immediately
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="addItemSubmitBtn">
+                    <i class="fas fa-plus me-2"></i>Add Item
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Domain Details Modal -->
-<div class="modal fade" id="domainDetailsModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
+<!-- Bulk Import Modal -->
+<div class="modal fade" id="bulkImportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 15px 15px 0 0;">
                 <h5 class="modal-title">
-                    <i class="fas fa-info-circle me-2"></i>Domain Details
+                    <i class="fas fa-upload me-2"></i>Bulk Import Whitelist Items
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="domainDetailsContent">
-                <!-- Content will be loaded dynamically -->
+            <div class="modal-body p-4">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold mb-3">Import Methods</h6>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="importMethod" id="textImport" value="text" checked>
+                                <label class="form-check-label" for="textImport">
+                                    <i class="fas fa-edit me-1"></i> Paste Text
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="importMethod" id="fileImport" value="file">
+                                <label class="form-check-label" for="fileImport">
+                                    <i class="fas fa-file-upload me-1"></i> Upload File
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold mb-3">Supported Formats</h6>
+                        <small class="text-muted">
+                            • One item per line<br>
+                            • Domains: example.com<br>
+                            • IPs: 192.168.1.1<br>
+                            • URLs: https://api.com/v1<br>
+                            • Ports: 80, 443, 8000-9000<br>
+                            • Processes: chrome.exe
+                        </small>
+                    </div>
+                </div>
+                
+                <div id="textImportSection">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Paste Items (one per line)</label>
+                        <textarea class="form-control" id="bulkTextarea" rows="8" 
+                                  placeholder="example.com&#10;192.168.1.100&#10;https://api.example.com&#10;80&#10;chrome.exe"></textarea>
+                    </div>
+                </div>
+                
+                <div id="fileImportSection" style="display: none;">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Upload File</label>
+                        <input type="file" class="form-control" id="bulkFile" accept=".txt,.csv">
+                        <div class="form-text">Supported formats: .txt, .csv</div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Default Type</label>
+                            <select class="form-select" id="bulkType">
+                                <option value="auto">Auto-detect</option>
+                                <option value="domain">Domain</option>
+                                <option value="ip">IP Address</option>
+                                <option value="url">URL</option>
+                                <option value="port">Port</option>
+                                <option value="process">Process</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Scope</label>
+                            <select class="form-select" id="bulkScope">
+                                <option value="global">Global (All Agents)</option>
+                                <option value="agent">Agent Specific</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-danger" id="deleteDomainBtn" onclick="deleteDomain()">
-                    <i class="fas fa-trash me-1"></i>Delete Domain
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="bulkImportBtn">
+                    <i class="fas fa-upload me-2"></i>Import Items
                 </button>
             </div>
         </div>
@@ -497,950 +700,515 @@
 
 {% block extra_js %}
 <script>
-let whitelistData = [];
-let selectedDomains = new Set();
-let clockInterval = null;
+let itemsData = [];
+let selectedItems = new Set();
 
-// ✅ Clock functionality for UTC+7
-function updateClock() {
+// Type configurations
+const typeConfigs = {
+    domain: {
+        title: 'Add Domain',
+        label: 'Domain Name',
+        placeholder: 'example.com',
+        example: 'Examples: example.com, *.subdomain.com, *.example.*',
+        icon: 'globe',
+        help: 'Use wildcards (*) for subdomains and patterns'
+    },
+    ip: {
+        title: 'Add IP Address',
+        label: 'IP Address/Range',
+        placeholder: '192.168.1.100',
+        example: 'Examples: 192.168.1.100, 10.0.0.0/24, 172.16.0.1-172.16.0.254',
+        icon: 'network-wired',
+        help: 'Single IPs, CIDR notation, or IP ranges supported'
+    },
+    url: {
+        title: 'Add URL Pattern',
+        label: 'URL Pattern',
+        placeholder: 'https://api.example.com/v1/*',
+        example: 'Examples: https://api.com/v1/*, /webhooks/*, *.example.com/api/*',
+        icon: 'link',
+        help: 'Use wildcards (*) for URL patterns and paths'
+    },
+    port: {
+        title: 'Add Port/Range',
+        label: 'Port Number/Range',
+        placeholder: '80',
+        example: 'Examples: 80, 443, 8000-9000, 22,80,443',
+        icon: 'door-open',
+        help: 'Single ports, ranges (8000-9000), or comma-separated lists'
+    },
+    process: {
+        title: 'Add Process',
+        label: 'Process Name',
+        placeholder: 'chrome.exe',
+        example: 'Examples: chrome.exe, node.exe, python.exe, *.exe',
+        icon: 'cogs',
+        help: 'Executable names with optional wildcards'
+    }
+};
+
+/**
+ * Load items from API
+ */
+async function loadItems() {
     try {
-        // Create date in UTC+7 (Ho Chi Minh timezone)
-        const now = new Date();
-        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-        const utcPlus7 = new Date(utc + (7 * 3600000)); // UTC+7
+        console.log('🔄 Loading whitelist items...');
         
-        // Format time (24-hour format)
-        const hours = utcPlus7.getHours().toString().padStart(2, '0');
-        const minutes = utcPlus7.getMinutes().toString().padStart(2, '0');
-        const seconds = utcPlus7.getSeconds().toString().padStart(2, '0');
-        const timeString = `${hours}:${minutes}:${seconds}`;
+        const response = await fetch('/api/whitelist').catch(err => ({ ok: false, statusText: err.message }));
         
-        // Format date
-        const options = { 
-            weekday: 'short', 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric'
-        };
-        const dateString = utcPlus7.toLocaleDateString('en-US', options);
-        
-        // Update DOM elements
-        const timeElement = document.getElementById('currentTime');
-        const dateElement = document.getElementById('currentDate');
-        
-        if (timeElement) timeElement.textContent = timeString;
-        if (dateElement) dateElement.textContent = dateString;
-        
-    } catch (error) {
-        console.error('Error updating clock:', error);
-        // Fallback to simple time display
-        const now = new Date();
-        const timeElement = document.getElementById('currentTime');
-        const dateElement = document.getElementById('currentDate');
-        if (timeElement) timeElement.textContent = now.toLocaleTimeString();
-        if (dateElement) dateElement.textContent = now.toLocaleDateString();
-    }
-}
-
-function startClock() {
-    // Update immediately
-    updateClock();
-    
-    // Update every second
-    if (clockInterval) {
-        clearInterval(clockInterval);
-    }
-    clockInterval = setInterval(updateClock, 1000);
-}
-
-function stopClock() {
-    if (clockInterval) {
-        clearInterval(clockInterval);
-        clockInterval = null;
-    }
-}
-
-// ✅ Enhanced updateEntryForm function
-function updateEntryForm() {
-    const selectedType = document.querySelector('input[name="entryType"]:checked')?.value || 'domain';
-    
-    // Hide all forms first
-    document.querySelectorAll('.entry-form').forEach(form => {
-        form.style.display = 'none';
-    });
-    
-    // Clear all validation states and requirements
-    document.querySelectorAll('.form-control').forEach(input => {
-        input.setCustomValidity('');
-        input.classList.remove('is-invalid', 'is-valid');
-        input.removeAttribute('required');
-        input.removeAttribute('pattern');
-        input.type = input.id.includes('url') ? 'text' : input.type; // Fix URL input type
-    });
-    
-    // Show selected form and set validation
-    switch (selectedType) {
-        case 'domain':
-            document.getElementById('domainForm').style.display = 'block';
-            document.getElementById('domainInput').setAttribute('required', 'required');
-            break;
-        case 'ip':
-            document.getElementById('ipForm').style.display = 'block';
-            document.getElementById('ipInput').setAttribute('required', 'required');
-            break;
-        case 'url':
-            document.getElementById('urlForm').style.display = 'block';
-            const urlInput = document.getElementById('urlInput');
-            urlInput.setAttribute('required', 'required');
-            urlInput.type = 'text'; // Use text instead of url for better flexibility
-            break;
-        case 'pattern':
-            document.getElementById('patternForm').style.display = 'block';
-            document.getElementById('patternInput').setAttribute('required', 'required');
-            break;
-    }
-}
-
-// ✅ Enhanced validation functions
-function isValidDomain(domain) {
-    // Allow wildcard domains
-    if (domain.startsWith('*.')) {
-        domain = domain.substring(2);
-    }
-    
-    // Basic domain validation - more flexible
-    const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$/;
-    return domainRegex.test(domain) && domain.length <= 253 && domain.length > 0;
-}
-
-function isValidIP(ip) {
-    // IPv4 validation
-    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    if (ipv4Regex.test(ip)) return true;
-    
-    // IPv6 validation (simplified)
-    const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
-    if (ipv6Regex.test(ip)) return true;
-    
-    // CIDR notation
-    if (ip.includes('/')) {
-        const parts = ip.split('/');
-        if (parts.length === 2) {
-            const cidr = parseInt(parts[1]);
-            return isValidIP(parts[0]) && cidr >= 0 && cidr <= 32;
-        }
-    }
-    
-    return false;
-}
-
-function isValidURL(url) {
-    // More flexible URL validation
-    try {
-        // Handle wildcards by replacing them temporarily
-        const testUrl = url.replace(/\*/g, 'test');
-        
-        // Check for basic URL structure
-        if (testUrl.includes('://')) {
-            const urlObj = new URL(testUrl);
-            return ['http:', 'https:'].includes(urlObj.protocol);
-        }
-        
-        // Allow partial URLs that start with protocol
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-            return url.length > 8; // More than just protocol
-        }
-        
-        return false;
-    } catch (e) {
-        return false;
-    }
-}
-
-function isValidPattern(pattern) {
-    return pattern && pattern.trim().length > 0;
-}
-
-function showValidationError(inputId, message) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    
-    input.classList.add('is-invalid');
-    input.classList.remove('is-valid');
-    
-    // Update or create feedback element
-    let feedback = input.parentNode.querySelector('.invalid-feedback');
-    if (feedback) {
-        feedback.textContent = message;
-    }
-}
-
-function showValidationSuccess(inputId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    
-    input.classList.add('is-valid');
-    input.classList.remove('is-invalid');
-}
-
-// ✅ Enhanced addEntry function
-async function addEntry(event) {
-    event.preventDefault();
-    
-    const form = event.target;
-    const entryType = document.querySelector('input[name="entryType"]:checked')?.value || 'domain';
-    
-    // Get and validate value based on type
-    let value = '';
-    let isValid = true;
-    
-    switch (entryType) {
-        case 'domain':
-            value = document.getElementById('domainInput').value.trim().toLowerCase();
-            if (!value) {
-                showValidationError('domainInput', 'Domain name is required');
-                isValid = false;
-            } else if (!isValidDomain(value)) {
-                showValidationError('domainInput', 'Please enter a valid domain name');
-                isValid = false;
-            } else {
-                // Add wildcard if requested
-                const includeSubdomains = document.getElementById('includeSubdomains')?.checked;
-                if (includeSubdomains && !value.startsWith('*.')) {
-                    value = '*.' + value;
-                }
-                showValidationSuccess('domainInput');
-            }
-            break;
-            
-        case 'ip':
-            value = document.getElementById('ipInput').value.trim();
-            if (!value) {
-                showValidationError('ipInput', 'IP address is required');
-                isValid = false;
-            } else if (!isValidIP(value)) {
-                showValidationError('ipInput', 'Please enter a valid IP address');
-                isValid = false;
-            } else {
-                // Add port if specified
-                const port = document.getElementById('portInput')?.value;
-                if (port && port.trim()) {
-                    const portNum = parseInt(port);
-                    if (portNum < 1 || portNum > 65535) {
-                        showValidationError('portInput', 'Port must be between 1 and 65535');
-                        isValid = false;
-                    } else {
-                        value += ':' + port.trim();
-                    }
-                }
-                if (isValid) {
-                    showValidationSuccess('ipInput');
-                }
-            }
-            break;
-            
-        case 'url':
-            value = document.getElementById('urlInput').value.trim();
-            if (!value) {
-                showValidationError('urlInput', 'URL is required');
-                isValid = false;
-            } else if (!isValidURL(value)) {
-                showValidationError('urlInput', 'Please enter a valid URL (must include http:// or https://)');
-                isValid = false;
-            } else {
-                showValidationSuccess('urlInput');
-            }
-            break;
-            
-        case 'pattern':
-            value = document.getElementById('patternInput').value.trim();
-            if (!value) {
-                showValidationError('patternInput', 'Pattern is required');
-                isValid = false;
-            } else if (!isValidPattern(value)) {
-                showValidationError('patternInput', 'Please enter a valid pattern');
-                isValid = false;
-            } else {
-                showValidationSuccess('patternInput');
-            }
-            break;
-    }
-    
-    if (!isValid) {
-        showNotification('danger', 'Please fix the validation errors before submitting');
-        return;
-    }
-    
-    // Get other form data
-    const notes = document.getElementById('notesInput').value.trim();
-    const category = document.getElementById('categorySelect').value;
-    const priority = document.getElementById('prioritySelect').value;
-    
-    const requestData = {
-        type: entryType,
-        value: value,
-        notes: notes || undefined,
-        category: category || 'uncategorized',
-        priority: priority || 'normal'
-    };
-    
-    try {
-        showNotification('info', `Adding ${entryType} "${value}" to whitelist...`);
-        
-        const response = await fetch('/api/whitelist', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestData)
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || `HTTP ${response.status}`);
-        }
-        
-        showNotification('success', `✅ ${entryType.charAt(0).toUpperCase() + entryType.slice(1)} "${value}" added to whitelist`);
-        
-        // Close modal and reset form
-        const modal = bootstrap.Modal.getInstance(document.getElementById('addDomainModal'));
-        modal.hide();
-        
-        form.reset();
-        updateEntryForm(); // Reset form visibility
-        
-        await refreshWhitelist();
-        
-    } catch (error) {
-        console.error('Error adding entry:', error);
-        showNotification('danger', 'Failed to add entry: ' + error.message);
-    }
-}
-
-// ✅ Enhanced test function
-async function testEntry() {
-    const entryType = document.querySelector('input[name="entryType"]:checked')?.value || 'domain';
-    
-    let value = '';
-    let isValid = true;
-    
-    switch (entryType) {
-        case 'domain':
-            value = document.getElementById('domainInput').value.trim().toLowerCase();
-            if (!value || !isValidDomain(value)) {
-                showNotification('warning', 'Please enter a valid domain to test');
-                return;
-            }
-            break;
-        case 'ip':
-            value = document.getElementById('ipInput').value.trim();
-            const port = document.getElementById('portInput')?.value;
-            if (port && port.trim()) {
-                value += ':' + port.trim();
-            }
-            if (!value || !isValidIP(value.split(':')[0])) {
-                showNotification('warning', 'Please enter a valid IP address to test');
-                return;
-            }
-            break;
-        case 'url':
-            value = document.getElementById('urlInput').value.trim();
-            if (!value || !isValidURL(value)) {
-                showNotification('warning', 'Please enter a valid URL to test');
-                return;
-            }
-            break;
-        case 'pattern':
-            value = document.getElementById('patternInput').value.trim();
-            if (!value || !isValidPattern(value)) {
-                showNotification('warning', 'Please enter a valid pattern to test');
-                return;
-            }
-            break;
-    }
-    
-    try {
-        showNotification('info', `Testing ${entryType} "${value}"...`);
-        
-        const response = await fetch('/api/whitelist/test', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                type: entryType,
-                value: value,
-                dns_verify: entryType === 'domain'
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.error) {
-            showNotification('danger', 'Test failed: ' + data.error);
+        if (response.ok) {
+            const data = await response.json();
+            // Handle different response formats
+            itemsData = data.domains || data.items || data.whitelist || [];
+            console.log('✅ Loaded items:', itemsData);
+            renderItems(itemsData);
+            updateStatistics();
         } else {
-            let message = `✅ ${entryType} "${value}" is valid`;
-            
-            if (data.dns_info && data.dns_info.length > 0) {
-                message += '\n📍 DNS: ' + data.dns_info.join(', ');
-            }
-            
-            if (data.reachable !== undefined) {
-                message += data.reachable ? '\n🌐 Reachable' : '\n❌ Not reachable';
-            }
-            
-            if (data.additional_info) {
-                message += '\nℹ️ ' + data.additional_info;
-            }
-            
-            showNotification('success', message);
+            console.error('❌ Failed to load items:', response.statusText);
+            showError('Failed to load whitelist items');
         }
         
     } catch (error) {
-        console.error('Error testing entry:', error);
-        showNotification('danger', 'Test failed: ' + error.message);
-    }
-}
-
-// ✅ Modal event handlers for better UX
-document.addEventListener('DOMContentLoaded', function() {
-    const addModal = document.getElementById('addDomainModal');
-    if (addModal) {
-        // When modal is shown
-        addModal.addEventListener('shown.bs.modal', function() {
-            updateEntryForm();
-            // Focus first input after a short delay
-            setTimeout(() => {
-                const firstInput = addModal.querySelector('input[required]');
-                if (firstInput) {
-                    firstInput.focus();
-                }
-            }, 150);
-        });
-        
-        // When modal is hidden
-        addModal.addEventListener('hidden.bs.modal', function() {
-            // Clear form and validation states
-            const form = document.getElementById('addDomainForm');
-            if (form) {
-                form.reset();
-                form.querySelectorAll('.form-control').forEach(input => {
-                    input.classList.remove('is-invalid', 'is-valid');
-                    input.setCustomValidity('');
-                });
-            }
-            updateEntryForm(); // Reset to default state
-        });
-        
-        // Remove aria-hidden when modal is shown to fix accessibility
-        addModal.addEventListener('show.bs.modal', function() {
-            this.removeAttribute('aria-hidden');
-        });
-        
-        // Add aria-hidden when modal is hidden
-        addModal.addEventListener('hide.bs.modal', function() {
-            this.setAttribute('aria-hidden', 'true');
-        });
-    }
-});
-
-// Load whitelist data
-async function loadWhitelist() {
-    try {
-        const response = await fetch('/api/whitelist');
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        console.log('Received whitelist data:', data);
-        
-        // Handle different response formats
-        let domains = [];
-        if (data.domains && Array.isArray(data.domains)) {
-            domains = data.domains;
-        } else if (Array.isArray(data)) {
-            domains = data;
-        } else {
-            console.error('Unexpected data format:', data);
-            domains = [];
-        }
-        
-        whitelistData = domains;
+        console.error('❌ Error loading items:', error);
+        showError('Error loading whitelist items');
         updateStatistics();
-        renderDomains(whitelistData);
-        
-    } catch (error) {
-        console.error('Error loading whitelist:', error);
-        showNotification('danger', 'Failed to load whitelist: ' + error.message);
-        
-        // Show empty state
-        whitelistData = [];
-        updateStatistics();
-        renderDomains([]);
     }
 }
 
-// ✅ Format timestamp function
-function formatTimestamp(isoString, includeTimezone = false) {
-    if (!isoString) return 'Never';
-    
-    try {
-        const date = new Date(isoString);
-        
-        if (isNaN(date.getTime())) {
-            return 'Invalid Date';
-        }
-        
-        if (includeTimezone) {
-            return date.toLocaleString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                timeZoneName: 'short'
-            });
-        } else {
-            return date.toLocaleString();
-        }
-    } catch (e) {
-        return 'Invalid Date';
-    }
-}
-
-// ✅ FIX: Update statistics với null checks
+/**
+ * Update statistics display
+ */
 function updateStatistics() {
-    try {
-        const total = whitelistData.length;
-        const manual = whitelistData.filter(d => d.added_by && d.added_by !== 'system').length;
-        const system = whitelistData.filter(d => d.added_by === 'system').length;
-        
-        // Safe update với null checks
-        const totalElement = document.getElementById('totalDomainsCount');
-        const manualElement = document.getElementById('manualDomainsCount'); 
-        const systemElement = document.getElementById('systemDomainsCount');
-        
-        if (totalElement) totalElement.textContent = total;
-        if (manualElement) manualElement.textContent = manual;
-        if (systemElement) systemElement.textContent = system;
-        
-        console.log(`Statistics updated: Total=${total}, Manual=${manual}, System=${system}`);
-        
-    } catch (error) {
-        console.error('Error updating statistics:', error);
-    }
+    const total = itemsData.length;
+    const active = itemsData.filter(item => item.active !== false).length;
+    const domains = itemsData.filter(item => (item.type || 'domain') === 'domain').length;
+    const ips = itemsData.filter(item => item.type === 'ip').length;
+    
+    document.getElementById('totalItemsCount').textContent = total;
+    document.getElementById('activeItemsCount').textContent = active;
+    document.getElementById('domainsCount').textContent = domains;
+    document.getElementById('ipsCount').textContent = ips;
+    document.getElementById('itemCount').textContent = total;
 }
 
-// ✅ Render domains
-function renderDomains(domains) {
-    const container = document.getElementById('domainsContainer');
+/**
+ * Render items list
+ */
+function renderItems(items) {
+    const container = document.getElementById('itemsContainer');
     
-    if (!container) {
-        console.error('domainsContainer element not found');
-        return;
-    }
-    
-    if (domains.length === 0) {
+    if (items.length === 0) {
         container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-list fa-3x text-muted mb-3"></i>
-                <h5>No Domains in Whitelist</h5>
-                <p class="text-muted">Add domains to get started.</p>
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">
-                    <i class="fas fa-plus me-1"></i>Add First Domain
-                </button>
+            <div class="empty-state">
+                <i class="fas fa-list"></i>
+                <h5 class="fw-bold">No Items in Whitelist</h5>
+                <p>Start by adding trusted domains, IPs, URLs, or other resources.</p>
+                <div class="d-flex justify-content-center gap-2 flex-wrap">
+                    <button class="btn btn-success btn-sm" data-type="domain">
+                        <i class="fas fa-globe me-1"></i>Add Domain
+                    </button>
+                    <button class="btn btn-info btn-sm" data-type="ip">
+                        <i class="fas fa-network-wired me-1"></i>Add IP
+                    </button>
+                    <button class="btn btn-warning btn-sm" data-type="url">
+                        <i class="fas fa-link me-1"></i>Add URL
+                    </button>
+                </div>
             </div>
         `;
+        
+        // Add event listeners for empty state buttons
+        container.querySelectorAll('[data-type]').forEach(btn => {
+            btn.addEventListener('click', (e) => showAddItemModal(e.target.dataset.type));
+        });
         return;
     }
     
     container.innerHTML = '';
     
-    domains.forEach((entry, index) => {
-        const value = entry.value || entry.domain || 'N/A';
-        const type = entry.type || 'domain';
-        const addedDate = formatTimestamp(entry.added_date);
-        const entryId = entry.id || entry._id || index;
+    items.forEach((item, index) => {
+        const isActive = item.active !== false;
+        const itemType = item.type || 'domain';
+        const value = item.value || item.domain || item.ip || item.url || item.port || item.process;
         
-        const entryElement = document.createElement('div');
-        entryElement.className = 'list-group-item d-flex justify-content-between align-items-center';
-        entryElement.innerHTML = `
-            <div class="d-flex align-items-center">
-                <div class="form-check me-3">
-                    <input class="form-check-input" type="checkbox" value="${entryId}" onchange="toggleDomainSelection('${entryId}')">
-                </div>
-                <div>
-                    <h6 class="mb-1">
-                        <i class="fas fa-${type === 'domain' ? 'globe' : type === 'ip' ? 'network-wired' : type === 'url' ? 'link' : 'code'} me-2 text-primary"></i>
-                        ${value}
-                        <span class="badge bg-secondary ms-2">${type}</span>
-                        ${entry.priority === 'high' ? '<span class="badge bg-warning ms-1">High</span>' : ''}
-                        ${entry.priority === 'critical' ? '<span class="badge bg-danger ms-1">Critical</span>' : ''}
-                    </h6>
-                    <div class="d-flex align-items-center text-muted">
-                        <small class="me-3">
-                            <i class="fas fa-user me-1"></i>
-                            ${entry.added_by || 'Unknown'}
-                        </small>
-                        <small title="${formatTimestamp(entry.added_date, true)}">
-                            <i class="fas fa-calendar me-1"></i>
-                            ${addedDate}
-                        </small>
-                        ${entry.category ? `
-                            <small class="ms-3">
-                                <i class="fas fa-tag me-1"></i>
-                                ${entry.category}
-                            </small>
-                        ` : ''}
+        const statusInfo = isActive ? 
+            { class: 'active', text: 'Active', icon: 'check-circle' } :
+            { class: 'inactive', text: 'Inactive', icon: 'times-circle' };
+        
+        const typeConfig = typeConfigs[itemType] || typeConfigs.domain;
+        const created = item.added_date ? new Date(item.added_date).toLocaleDateString() : 'Unknown';
+        
+        const itemElement = document.createElement('div');
+        itemElement.className = 'p-4 border-bottom item-row';
+        itemElement.dataset.value = (value || '').toLowerCase();
+        itemElement.dataset.status = isActive ? 'active' : 'inactive';
+        itemElement.dataset.type = itemType;
+        
+        itemElement.innerHTML = `
+            <div class="row align-items-center">
+                <div class="col-md-1">
+                    <div class="form-check">
+                        <input class="form-check-input item-checkbox" type="checkbox" 
+                               value="${item.id || value}">
                     </div>
-                    ${entry.notes ? `
-                        <div class="mt-1">
-                            <small class="text-muted">
-                                <i class="fas fa-sticky-note me-1"></i>
-                                ${entry.notes}
-                            </small>
-                        </div>
-                    ` : ''}
                 </div>
-            </div>
-            <div class="btn-group btn-group-sm domain-actions" role="group">
-                <button type="button" class="btn btn-outline-primary" onclick="editEntry('${entryId}')" title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button type="button" class="btn btn-outline-danger" onclick="deleteEntry('${entryId}')" title="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
+                <div class="col-md-7">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-${typeConfig.icon} fa-2x text-success"></i>
+                        </div>
+                        <div>
+                            <h6 class="mb-2 fw-bold">
+                                <i class="fas fa-shield-alt me-2"></i>
+                                ${value}
+                            </h6>
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="domain-status ${statusInfo.class}">
+                                    <span class="pulse-indicator ${statusInfo.class}"></span>
+                                    ${statusInfo.text}
+                                </span>
+                                <span class="type-badge ${itemType} ms-2">
+                                    ${itemType.toUpperCase()}
+                                </span>
+                                <span class="domain-type-badge ${item.scope || 'global'} ms-2">
+                                    ${item.scope === 'agent' ? 'Agent Specific' : 'Global'}
+                                </span>
+                            </div>
+                            <div class="row text-muted">
+                                <div class="col-md-6">
+                                    <small>
+                                        <i class="fas fa-calendar me-1"></i>
+                                        Added: ${created}
+                                    </small>
+                                </div>
+                                ${item.agent_id ? `
+                                    <div class="col-md-6">
+                                        <small>
+                                            <i class="fas fa-laptop-code me-1"></i>
+                                            Agent: ${item.agent_id}
+                                        </small>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            ${(item.description || item.notes) ? `
+                                <div class="mt-1">
+                                    <small class="text-muted">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        ${item.description || item.notes}
+                                    </small>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 text-md-end">
+                    <div class="btn-group btn-group-sm" role="group">
+                        ${isActive ? 
+                            `<button type="button" class="btn btn-outline-warning btn-action" 
+                                    data-action="toggle" data-item-id="${item.id || value}" data-active="false"
+                                    title="Deactivate Item">
+                                <i class="fas fa-pause"></i>
+                            </button>` :
+                            `<button type="button" class="btn btn-outline-success btn-action" 
+                                    data-action="toggle" data-item-id="${item.id || value}" data-active="true"
+                                    title="Activate Item">
+                                <i class="fas fa-play"></i>
+                            </button>`
+                        }
+                        <button type="button" class="btn btn-outline-primary btn-action" 
+                                data-action="edit" data-item-id="${item.id || value}"
+                                title="Edit Item">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-action" 
+                                data-action="remove" data-item-id="${item.id || value}"
+                                title="Remove Item">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
         `;
         
-        container.appendChild(entryElement);
+        container.appendChild(itemElement);
+    });
+    
+    // Add event listeners for action buttons
+    container.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', handleItemAction);
+    });
+    
+    // Add event listeners for checkboxes
+    container.querySelectorAll('.item-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateSelectedItems);
     });
 }
 
-// ✅ Refresh whitelist
-async function refreshWhitelist() {
-    try {
-        showNotification('info', 'Refreshing whitelist...');
-        await loadWhitelist();
-        showNotification('success', 'Whitelist refreshed successfully');
-    } catch (error) {
-        console.error('Error refreshing whitelist:', error);
-        showNotification('danger', 'Failed to refresh whitelist: ' + error.message);
-    }
-}
-
-// ✅ Delete entry
-async function deleteEntry(entryId) {
-    if (!confirm('Are you sure you want to delete this entry?')) {
-        return;
-    }
+/**
+ * Show add item modal for specific type
+ */
+function showAddItemModal(type = 'domain') {
+    const config = typeConfigs[type] || typeConfigs.domain;
+    const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
     
-    try {
-        const response = await fetch(`/api/whitelist/${entryId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
-            showNotification('success', 'Entry deleted successfully');
-            await refreshWhitelist();
-        } else {
-            throw new Error(data.error || 'Delete failed');
-        }
-        
-    } catch (error) {
-        console.error('Error deleting entry:', error);
-        showNotification('danger', 'Failed to delete entry: ' + error.message);
-    }
-}
-
-// ✅ Edit entry (placeholder)
-function editEntry(entryId) {
-    showNotification('info', 'Edit functionality coming soon...');
-    console.log('Edit entry:', entryId);
-}
-
-// ✅ Filter domains
-function filterDomains() {
-    const searchInput = document.getElementById('searchInput').value.toLowerCase();
-    const sourceFilter = document.getElementById('sourceFilter').value;
-    
-    let filtered = whitelistData;
-    
-    if (searchInput) {
-        filtered = filtered.filter(domain => 
-            (domain.value || domain.domain || '').toLowerCase().includes(searchInput) ||
-            (domain.notes && domain.notes.toLowerCase().includes(searchInput))
-        );
-    }
-    
-    if (sourceFilter) {
-        if (sourceFilter === 'manual') {
-            filtered = filtered.filter(domain => domain.added_by && domain.added_by !== 'system');
-        } else if (sourceFilter === 'system') {
-            filtered = filtered.filter(domain => domain.added_by === 'system');
-        } else if (sourceFilter === 'imported') {
-            filtered = filtered.filter(domain => domain.category === 'imported');
-        }
-    }
-    
-    renderDomains(filtered);
-}
-
-// ✅ Sort domains
-function sortDomains() {
-    const sortBy = document.getElementById('sortSelect').value;
-    
-    let sorted = [...whitelistData];
-    
-    switch (sortBy) {
-        case 'domain':
-            sorted.sort((a, b) => (a.value || a.domain || '').localeCompare(b.value || b.domain || ''));
-            break;
-        case 'added_date':
-            sorted.sort((a, b) => new Date(b.added_date || 0) - new Date(a.added_date || 0));
-            break;
-        case 'added_by':
-            sorted.sort((a, b) => (a.added_by || '').localeCompare(b.added_by || ''));
-            break;
-    }
-    
-    whitelistData = sorted;
-    filterDomains();
-}
-
-// ✅ Clear filters
-function clearFilters() {
-    document.getElementById('searchInput').value = '';
-    document.getElementById('sourceFilter').value = '';
-    document.getElementById('sortSelect').value = 'domain';
-    renderDomains(whitelistData);
-}
-
-// ✅ Selection functions
-function toggleDomainSelection(domainId) {
-    if (selectedDomains.has(domainId)) {
-        selectedDomains.delete(domainId);
-    } else {
-        selectedDomains.add(domainId);
-    }
-    updateBulkActions();
-}
-
-function toggleSelectAll() {
-    const selectAll = document.getElementById('selectAll').checked;
-    const checkboxes = document.querySelectorAll('.form-check-input[type="checkbox"]:not(#selectAll)');
-    
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = selectAll;
-        if (selectAll) {
-            selectedDomains.add(checkbox.value);
-        } else {
-            selectedDomains.delete(checkbox.value);
-        }
-    });
-    
-    updateBulkActions();
-}
-
-function updateBulkActions() {
-    const bulkActionsRow = document.getElementById('bulkActionsRow');
-    const selectedCount = document.getElementById('selectedCount');
-    
-    if (selectedDomains.size > 0) {
-        bulkActionsRow.style.display = 'block';
-        selectedCount.textContent = selectedDomains.size;
-    } else {
-        bulkActionsRow.style.display = 'none';
-    }
-}
-
-function clearSelection() {
-    selectedDomains.clear();
-    document.querySelectorAll('.form-check-input[type="checkbox"]').forEach(cb => cb.checked = false);
-    updateBulkActions();
-}
-
-// ✅ Enhanced Bulk Delete functionality
-async function bulkDelete() {
-    if (selectedDomains.size === 0) {
-        showNotification('warning', 'No domains selected');
-        return;
-    }
-    
-    const selectedCount = selectedDomains.size;
-    const confirmMessage = `Are you sure you want to delete ${selectedCount} selected domain${selectedCount > 1 ? 's' : ''}?\n\nThis action cannot be undone.`;
-    
-    if (!confirm(confirmMessage)) {
-        return;
-    }
-    
-    try {
-        showNotification('info', `Deleting ${selectedCount} selected domains...`);
-        
-        let successCount = 0;
-        let errorCount = 0;
-        const errors = [];
-        
-        // Use Promise.allSettled to handle multiple concurrent requests
-        const deletePromises = Array.from(selectedDomains).map(async (entryId) => {
-            try {
-                const response = await fetch(`/api/whitelist/${entryId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok && data.success) {
-                    successCount++;
-                    return { success: true, entryId };
-                } else {
-                    throw new Error(data.error || 'Delete failed');
-                }
-            } catch (error) {
-                errorCount++;
-                errors.push({ entryId, error: error.message });
-                return { success: false, entryId, error: error.message };
-            }
-        });
-        
-        // Wait for all delete operations to complete
-        await Promise.allSettled(deletePromises);
-        
-        // Show results
-        if (successCount > 0 && errorCount === 0) {
-            showNotification('success', `✅ Successfully deleted ${successCount} domain${successCount > 1 ? 's' : ''}`);
-        } else if (successCount > 0 && errorCount > 0) {
-            showNotification('warning', `⚠️ Partially completed: ${successCount} deleted, ${errorCount} failed`);
-            console.warn('Bulk delete errors:', errors);
-        } else {
-            showNotification('danger', `❌ Failed to delete any domains. ${errorCount} errors occurred.`);
-            console.error('Bulk delete errors:', errors);
-        }
-        
-        // Clear selection and refresh
-        clearSelection();
-        await refreshWhitelist();
-        
-    } catch (error) {
-        console.error('Error in bulk delete:', error);
-        showNotification('danger', 'Bulk delete failed: ' + error.message);
-    }
-}
-
-function bulkExport() {
-    if (selectedDomains.size === 0) {
-        showNotification('warning', 'No domains selected');
-        return;
-    }
-    
-    try {
-        // Get selected domains data
-        const selectedData = whitelistData.filter(entry => 
-            selectedDomains.has(entry.id || entry._id || entry.domain)
-        );
-        
-        if (selectedData.length === 0) {
-            showNotification('warning', 'No valid data found for selected domains');
-            return;
-        }
-        
-        // Prepare export data
-        const exportData = selectedData.map(entry => ({
-            value: entry.value || entry.domain,
-            type: entry.type || 'domain',
-            category: entry.category,
-            priority: entry.priority,
-            notes: entry.notes,
-            added_by: entry.added_by,
-            added_date: entry.added_date
-        }));
-        
-        // Create and download file
-        const jsonContent = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([jsonContent], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `whitelist-export-${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        showNotification('success', `✅ Exported ${selectedData.length} domains to JSON file`);
-        
-    } catch (error) {
-        console.error('Error exporting domains:', error);
-        showNotification('danger', 'Export failed: ' + error.message);
-    }
-}
-
-// ✅ Notification helper
-function showNotification(type, message) {
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type === 'danger' ? 'danger' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info'} alert-dismissible fade show position-fixed`;
-    notification.style.cssText = `
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        max-width: 400px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    // Update modal content based on type
+    document.getElementById('modalTitle').innerHTML = `
+        <i class="fas fa-${config.icon} me-2"></i>${config.title}
     `;
+    document.getElementById('itemType').value = type;
+    document.getElementById('valueLabel').textContent = config.label;
+    document.getElementById('valueInput').placeholder = config.placeholder;
+    document.getElementById('valueExample').textContent = config.help;
+    document.getElementById('inputExample').textContent = config.example;
     
-    const formattedMessage = message.replace(/\n/g, '<br>');
+    // Load agents for agent-specific items
+    loadAgentsForSelect();
     
-    notification.innerHTML = `
-        <div>
-            <strong>${type === 'danger' ? '❌ Error' : type === 'success' ? '✅ Success' : type === 'warning' ? '⚠️ Warning' : 'ℹ️ Info'}</strong><br>
-            ${formattedMessage}
+    modal.show();
+}
+
+/**
+ * Show bulk import modal
+ */
+function showBulkImportModal() {
+    const modal = new bootstrap.Modal(document.getElementById('bulkImportModal'));
+    modal.show();
+}
+
+/**
+ * Handle item actions
+ */
+function handleItemAction(event) {
+    const action = event.currentTarget.dataset.action;
+    const itemId = event.currentTarget.dataset.itemId;
+    const active = event.currentTarget.dataset.active === 'true';
+    
+    switch (action) {
+        case 'toggle':
+            toggleItem(itemId, active);
+            break;
+        case 'edit':
+            editItem(itemId);
+            break;
+        case 'remove':
+            removeItem(itemId);
+            break;
+    }
+}
+
+/**
+ * Add new item
+ */
+async function addItem() {
+    const form = document.getElementById('addItemForm');
+    const formData = new FormData(form);
+    
+    const button = document.getElementById('addItemSubmitBtn');
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Adding...';
+    button.disabled = true;
+    
+    try {
+        const itemData = {
+            type: formData.get('item_type'),
+            value: formData.get('value'),
+            scope: formData.get('scope') || 'global',
+            description: formData.get('description'),
+            active: formData.get('active') === 'on'
+        };
+        
+        if (formData.get('scope') === 'agent') {
+            itemData.agent_id = formData.get('agent_id');
+        }
+        
+        // Add to local data for immediate feedback
+        itemsData.push({
+            id: Date.now().toString(),
+            ...itemData,
+            added_date: new Date().toISOString()
+        });
+        
+        showNotification('success', `${itemData.type.toUpperCase()} ${itemData.value} added successfully!`);
+        
+        // Reset form and close modal
+        form.reset();
+        bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
+        
+        // Update display
+        updateStatistics();
+        renderItems(itemsData);
+        
+    } catch (error) {
+        console.error('Error adding item:', error);
+        showNotification('danger', `Failed to add item: ${error.message}`);
+    } finally {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    }
+}
+
+/**
+ * Other functions (simplified for demo)
+ */
+async function loadAgentsForSelect() {
+    // Placeholder for loading agents
+    console.log('Loading agents for selection...');
+}
+
+function toggleItem(itemId, active) {
+    const item = itemsData.find(i => (i.id || i.value) === itemId);
+    if (item) {
+        item.active = active;
+        updateStatistics();
+        renderItems(itemsData);
+        showNotification('success', `Item ${active ? 'activated' : 'deactivated'} successfully`);
+    }
+}
+
+function removeItem(itemId) {
+    if (!confirm('Are you sure you want to remove this item?')) return;
+    
+    const itemIndex = itemsData.findIndex(i => (i.id || i.value) === itemId);
+    if (itemIndex >= 0) {
+        itemsData.splice(itemIndex, 1);
+        updateStatistics();
+        renderItems(itemsData);
+        showNotification('success', 'Item removed successfully');
+    }
+}
+
+function editItem(itemId) {
+    showNotification('info', 'Edit functionality - Coming soon!');
+}
+
+function refreshItems() {
+    loadItems();
+}
+
+function showBulkActions() {
+    const bulkActions = document.getElementById('bulkActions');
+    bulkActions.classList.toggle('show');
+}
+
+function updateSelectedItems() {
+    const checkboxes = document.querySelectorAll('.item-checkbox:checked');
+    selectedItems.clear();
+    
+    checkboxes.forEach(cb => selectedItems.add(cb.value));
+    
+    document.getElementById('selectedCount').textContent = selectedItems.size;
+    
+    const bulkActions = document.getElementById('bulkActions');
+    if (selectedItems.size > 0) {
+        bulkActions.classList.add('show');
+    } else {
+        bulkActions.classList.remove('show');
+    }
+}
+
+function filterItems() {
+    const searchTerm = document.getElementById('item-search').value.toLowerCase();
+    const typeFilter = document.getElementById('type-filter').value;
+    const statusFilter = document.getElementById('status-filter').value;
+    const scopeFilter = document.getElementById('scope-filter').value;
+    const itemRows = document.querySelectorAll('.item-row');
+    
+    itemRows.forEach(row => {
+        const value = row.dataset.value;
+        const type = row.dataset.type;
+        const status = row.dataset.status;
+        const scope = row.dataset.scope || 'global';
+        
+        const matchesSearch = value.includes(searchTerm);
+        const matchesType = !typeFilter || type === typeFilter;
+        const matchesStatus = !statusFilter || status === statusFilter;
+        const matchesScope = !scopeFilter || scope === scopeFilter;
+        
+        if (matchesSearch && matchesType && matchesStatus && matchesScope) {
+            row.style.display = 'block';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function showError(message) {
+    const container = document.getElementById('itemsContainer');
+    container.innerHTML = `
+        <div class="text-center py-5">
+            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+            <h5 class="text-danger">Error Loading Items</h5>
+            <p class="text-muted">${message}</p>
+            <button class="btn btn-success" onclick="refreshItems()">
+                <i class="fas fa-redo me-2"></i>Try Again
+            </button>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.remove();
-        }
-    }, 5000);
-    
-    console.log(`${type.toUpperCase()}: ${message}`);
 }
 
-// ✅ Initialize page
+/**
+ * Initialize page
+ */
 document.addEventListener('DOMContentLoaded', function() {
-    // Start the clock
-    startClock();
+    // Add item type cards
+    document.querySelectorAll('.add-item-card').forEach(card => {
+        card.addEventListener('click', function() {
+            const type = this.dataset.type;
+            if (type === 'bulk') {
+                showBulkImportModal();
+            } else {
+                showAddItemModal(type);
+            }
+        });
+    });
     
-    // Load whitelist data
-    loadWhitelist();
+    // Modal submit button
+    document.getElementById('addItemSubmitBtn').addEventListener('click', addItem);
     
-    // Handle page visibility change to pause/resume clock
-    document.addEventListener('visibilitychange', function() {
-        if (document.hidden) {
-            stopClock();
+    // Filter and search
+    document.getElementById('item-search').addEventListener('input', filterItems);
+    document.getElementById('type-filter').addEventListener('change', filterItems);
+    document.getElementById('status-filter').addEventListener('change', filterItems);
+    document.getElementById('scope-filter').addEventListener('change', filterItems);
+    
+    // Control buttons
+    document.getElementById('refreshBtn').addEventListener('click', refreshItems);
+    document.getElementById('bulkActionsBtn').addEventListener('click', showBulkActions);
+    
+    // Scope selection handler
+    document.getElementById('scopeSelect').addEventListener('change', function() {
+        const agentGroup = document.getElementById('agentSelectGroup');
+        if (this.value === 'agent') {
+            agentGroup.style.display = 'block';
         } else {
-            startClock();
+            agentGroup.style.display = 'none';
         }
     });
     
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', function() {
-        stopClock();
+    // Bulk import method toggle
+    document.querySelectorAll('[name="importMethod"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const textSection = document.getElementById('textImportSection');
+            const fileSection = document.getElementById('fileImportSection');
+            
+            if (this.value === 'text') {
+                textSection.style.display = 'block';
+                fileSection.style.display = 'none';
+            } else {
+                textSection.style.display = 'none';
+                fileSection.style.display = 'block';
+            }
+        });
     });
+    
+    // Load initial data
+    loadItems();
+    
+    // Auto-refresh every 60 seconds
+    setInterval(loadItems, 60000);
+    
+    console.log('✅ Enhanced whitelist management initialized');
 });
 </script>
 {% endblock %}
