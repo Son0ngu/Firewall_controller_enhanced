@@ -248,14 +248,76 @@ class LogModel:
             return False
     
     def clear_logs(self, filters: Dict = None) -> int:
-        """Clear logs with optional filters"""
-        query = {}
-        if filters:
-            query = self.build_query_from_filters(filters)
-        
-        result = self.collection.delete_many(query)
-        logger.info(f"Cleared {result.deleted_count} logs")
-        return result.deleted_count
+        """Clear logs with optional filters - REAL database deletion"""
+        try:
+            if filters is None:
+                # ✅ Delete ALL logs
+                result = self.collection.delete_many({})
+            else:
+                # ✅ Delete with filters
+                query = self.build_query_from_filters(filters)
+                result = self.collection.delete_many(query)
+            
+            deleted_count = result.deleted_count
+            logger.info(f"Successfully deleted {deleted_count} logs from database")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error deleting logs from database: {e}")
+            return 0
+
+    def delete_logs_by_ids(self, log_ids: List[str]) -> int:
+        """Delete logs by specific ObjectIds"""
+        try:
+            if not log_ids:
+                return 0
+            
+            # Convert to ObjectIds
+            from bson import ObjectId
+            object_ids = []
+            
+            for log_id in log_ids:
+                try:
+                    if isinstance(log_id, str) and len(log_id) == 24:
+                        object_ids.append(ObjectId(log_id))
+                    else:
+                        logger.warning(f"Invalid log ID format: {log_id}")
+                except Exception as e:
+                    logger.warning(f"Could not convert log ID '{log_id}' to ObjectId: {e}")
+                    continue
+            
+            if not object_ids:
+                logger.warning("No valid ObjectIds to delete")
+                return 0
+            
+            # Delete from database
+            query = {'_id': {'$in': object_ids}}
+            result = self.collection.delete_many(query)
+            
+            deleted_count = result.deleted_count
+            logger.info(f"Deleted {deleted_count} logs by IDs from database")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error deleting logs by IDs: {e}")
+            return 0
+
+    def clear_logs_before_date(self, before_date: datetime) -> int:
+        """Clear logs before specific date"""
+        try:
+            query = {
+                'timestamp': {'$lt': before_date}
+            }
+            
+            result = self.collection.delete_many(query)
+            deleted_count = result.deleted_count
+            
+            logger.info(f"Deleted {deleted_count} logs before {before_date}")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error deleting logs before date: {e}")
+            return 0
     
     def build_query_from_filters(self, filters: Dict) -> Dict:
         """Build MongoDB query from filters with Vietnam timezone support"""

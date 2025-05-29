@@ -204,9 +204,77 @@ class LogService:
         """Delete log by ID"""
         return self.model.delete_log(log_id)
     
+    def clear_logs_by_ids(self, log_ids: List[str]) -> int:
+        """Clear logs by specific IDs"""
+        try:
+            if not log_ids:
+                return 0
+            
+            # ✅ Convert string IDs to ObjectIds
+            from bson import ObjectId
+            object_ids = []
+            
+            for log_id in log_ids:
+                try:
+                    object_ids.append(ObjectId(log_id))
+                except Exception as e:
+                    logger.warning(f"Invalid log ID '{log_id}': {e}")
+                    continue
+            
+            if not object_ids:
+                return 0
+            
+            # ✅ Delete from database using ObjectIds
+            query = {'_id': {'$in': object_ids}}
+            result = self.model.collection.delete_many(query)
+            
+            deleted_count = result.deleted_count
+            logger.info(f"Cleared {deleted_count} logs by IDs")
+            
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error clearing logs by IDs: {e}")
+            return 0
+
     def clear_logs(self, filters: Dict = None) -> int:
-        """Clear logs with optional filters"""
-        return self.model.clear_logs(filters)
+        """Clear logs with optional filters - ENHANCED"""
+        try:
+            if filters is None:
+                # ✅ Clear ALL logs
+                result = self.model.collection.delete_many({})
+                deleted_count = result.deleted_count
+            else:
+                # ✅ Clear with filters
+                query = self.model.build_query_from_filters(filters)
+                result = self.model.collection.delete_many(query)
+                deleted_count = result.deleted_count
+            
+            logger.info(f"Cleared {deleted_count} logs from database")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error clearing logs: {e}")
+            return 0
+
+    def clear_old_logs(self, days: int = 30) -> int:
+        """Clear logs older than specified days"""
+        try:
+            cutoff_date = self._now_local() - timedelta(days=days)
+            
+            query = {
+                'timestamp': {'$lt': cutoff_date}
+            }
+            
+            result = self.model.collection.delete_many(query)
+            deleted_count = result.deleted_count
+            
+            logger.info(f"Cleared {deleted_count} logs older than {days} days")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error clearing old logs: {e}")
+            return 0
     
     # ✅ ADD: Missing get_logs_summary method
     def get_logs_summary(self, period: str = "day") -> Dict:

@@ -26,10 +26,12 @@ class LogController:
         self.blueprint.add_url_rule('/logs', 'clear_all_logs', self.clear_all_logs, methods=['DELETE'])
         self.blueprint.add_url_rule('/logs/summary', 'get_logs_summary', self.get_logs_summary, methods=['GET'])
         self.blueprint.add_url_rule('/logs/<log_id>', 'delete_log', self.delete_log, methods=['DELETE'])
-        self.blueprint.add_url_rule('/logs/clear', 'clear_logs', self.clear_logs, methods=['POST'])
+        # ✅ FIX: Change to DELETE method for clear logs
+        self.blueprint.add_url_rule('/logs/clear', 'clear_logs', self.clear_logs, methods=['DELETE'])
         self.blueprint.add_url_rule('/logs/receive', 'receive_logs_agent', self.receive_logs_agent, methods=['POST'])
         self.blueprint.add_url_rule('/logs/timezone-info', 'get_timezone_info', self.get_timezone_info, methods=['GET'])
-    
+        self.blueprint.add_url_rule('/logs/stats', 'get_full_statistics', self.get_full_statistics, methods=['GET'])
+
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
         response = {"success": True, "message": message}
@@ -214,18 +216,51 @@ class LogController:
             return self._error_response("Failed to delete log", 500)
     
     def clear_logs(self):
-        """Clear logs by criteria"""
+        """Clear logs by criteria - REAL implementation"""
         try:
             data = self._validate_json_request()
             
-            # Call service method
-            deleted_count = self.service.clear_logs(data)
+            # ✅ FIX: Parse log_ids for selective clear
+            log_ids = data.get('log_ids', [])
+            action = data.get('action', 'selected')
+            
+            deleted_count = 0
+            
+            if action == 'all':
+                # ✅ Clear ALL logs
+                deleted_count = self.service.clear_logs({})
+                
+            elif action == 'selected' and log_ids:
+                # ✅ Clear specific logs by IDs
+                deleted_count = self.service.clear_logs_by_ids(log_ids)
+                
+            elif action == 'old':
+                # ✅ Clear logs older than 30 days
+                from datetime import datetime, timedelta
+                thirty_days_ago = datetime.now() - timedelta(days=30)
+                filters = {
+                    'until': thirty_days_ago.isoformat()
+                }
+                deleted_count = self.service.clear_logs(filters)
+                
+            else:
+                return self._error_response("Invalid clear action or no log IDs provided", 400)
+            
+            # ✅ Broadcast via Socket.IO
+            if self.socketio and deleted_count > 0:
+                self.socketio.emit('logs_cleared', {
+                    'action': action,
+                    'count': deleted_count,
+                    'timestamp': self.service._now_local().isoformat()
+                })
             
             return jsonify({
                 "success": True,
-                "message": f"Cleared {deleted_count} logs",
+                "message": f"Successfully cleared {deleted_count} logs",
                 "deleted_count": deleted_count,
-                "timezone": "UTC+7"
+                "action": action,
+                "timezone": "UTC+7",
+                "timestamp": self.service._now_local().isoformat()
             }), 200
             
         except ValueError as e:
@@ -235,16 +270,26 @@ class LogController:
             return self._error_response("Failed to clear logs", 500)
     
     def clear_all_logs(self):
-        """Clear all logs (DELETE /api/logs)"""
+        """Clear all logs (DELETE /api/logs) - REAL implementation"""
         try:
-            # Call service method to clear all logs
-            deleted_count = self.service.clear_logs()
+            # ✅ REAL database clear
+            deleted_count = self.service.clear_logs({})
+            
+            # ✅ Broadcast via Socket.IO
+            if self.socketio and deleted_count > 0:
+                self.socketio.emit('logs_cleared', {
+                    'action': 'all',
+                    'count': deleted_count,
+                    'timestamp': self.service._now_local().isoformat()
+                })
             
             return jsonify({
                 "success": True,
-                "message": f"Cleared {deleted_count} logs",
+                "message": f"Successfully cleared all {deleted_count} logs",
                 "deleted_count": deleted_count,
-                "timezone": "UTC+7"
+                "action": "all",
+                "timezone": "UTC+7",
+                "timestamp": self.service._now_local().isoformat()
             }), 200
             
         except Exception as e:
@@ -271,4 +316,56 @@ class LogController:
                 "success": False,
                 "error": "Failed to get timezone info",
                 "timezone": "UTC+7"
+            }), 500
+    
+    def get_full_statistics(self):
+        """Get full statistics without pagination limits"""
+        try:
+            # ✅ Đếm TOÀN BỘ logs trong database
+            total_logs = self.model.count_logs({})
+            allowed_logs = self.model.count_logs({'action': 'allow'})
+            blocked_logs = self.model.count_logs({'action': 'block'})
+            warning_logs = self.model.count_logs({'level': 'WARNING'})
+            error_logs = self.model.count_logs({'level': 'ERROR'})
+            info_logs = self.model.count_logs({'level': 'INFO'})
+            
+            # ✅ Thống kê theo time range nếu có filter
+            filters = self._get_filter_params()
+            filtered_stats = {}
+            
+            if filters:
+                query = self.model.build_query_from_filters(filters)
+                filtered_stats = {
+                    'filtered_total': self.model.count_logs(query),
+                    'filtered_allowed': self.model.count_logs({**query, 'action': 'allow'}),
+                    'filtered_blocked': self.model.count_logs({**query, 'action': 'block'}),
+                    'filtered_warnings': self.model.count_logs({**query, 'level': 'WARNING'}),
+                    'has_filters': True
+                }
+            else:
+                filtered_stats = {'has_filters': False}
+            
+            return jsonify({
+                'success': True,
+                'total': total_logs,
+                'allowed': allowed_logs,
+                'blocked': blocked_logs,
+                'warnings': warning_logs,
+                'errors': error_logs,
+                'info': info_logs,
+                'timezone': 'UTC+7',
+                'timestamp': self.service._now_local().isoformat(),
+                **filtered_stats
+            }), 200
+            
+        except Exception as e:
+            self.logger.error(f"Error getting full statistics: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'total': 0,
+                'allowed': 0,
+                'blocked': 0,
+                'warnings': 0,
+                'timezone': 'UTC+7'
             }), 500

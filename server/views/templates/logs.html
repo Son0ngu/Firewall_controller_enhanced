@@ -572,16 +572,18 @@
         <div class="modal-content" style="border-radius: 15px; border: none;">
             <div class="modal-header" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); color: white; border-radius: 15px 15px 0 0;">
                 <h5 class="modal-title">
-                    <i class="fas fa-exclamation-triangle me-2"></i>Confirm Clear Logs
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <!-- ✅ ADD missing ID -->
+                    <span id="clearModalTitle">Confirm Clear Logs</span>
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
                 <div class="text-center mb-4">
                     <i class="fas fa-trash fa-4x text-danger mb-3"></i>
-                    <h5 class="fw-bold" id="clearModalTitle">Clear All Logs?</h5>
+                    <!-- ✅ ADD missing message element -->
                     <p class="text-muted" id="clearModalMessage">
-                        This action will permanently delete all system logs and cannot be undone.
+                        This action will permanently delete logs and cannot be undone.
                     </p>
                 </div>
                 
@@ -615,8 +617,10 @@
 
 {% block extra_js %}
 <script>
+// ✅ SINGLE VARIABLE DECLARATION BLOCK
 let logsData = [];
 let selectedLogs = new Set();
+let allTimeStats = {};
 let currentFilter = {
     time: 'all',
     level: '',
@@ -627,13 +631,92 @@ let currentFilter = {
 let currentClearAction = null;
 
 /**
- * Load logs from API
+ * ✅ Load FULL statistics
+ */
+async function loadFullStatistics() {
+    try {
+        console.log('📊 Loading full statistics...');
+        
+        const params = new URLSearchParams();
+        if (currentFilter.level) params.append('level', currentFilter.level);
+        if (currentFilter.agent) params.append('agent_id', currentFilter.agent);
+        if (currentFilter.search) params.append('search', currentFilter.search);
+        if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
+        
+        const response = await fetch(`/api/logs/stats?${params.toString()}`);
+        
+        if (response.ok) {
+            allTimeStats = await response.json();
+            console.log('✅ Statistics loaded:', allTimeStats);
+            return allTimeStats;
+        } else {
+            console.error('❌ Failed to load statistics:', response.statusText);
+        }
+    } catch (error) {
+        console.error('❌ Error loading statistics:', error);
+    }
+    return null;
+}
+
+/**
+ * ✅ Update statistics display
+ */
+async function updateStatistics() {
+    try {
+        await loadFullStatistics();
+        
+        if (allTimeStats && allTimeStats.success) {
+            const hasFilters = currentFilter.time !== 'all' || 
+                              currentFilter.level || 
+                              currentFilter.agent || 
+                              currentFilter.search;
+            
+            if (hasFilters && allTimeStats.has_filters) {
+                document.getElementById('totalLogsCount').innerHTML = 
+                    `${(allTimeStats.filtered_total || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.total || 0).toLocaleString()}</small>`;
+                document.getElementById('allowedLogsCount').innerHTML = 
+                    `${(allTimeStats.filtered_allowed || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.allowed || 0).toLocaleString()}</small>`;
+                document.getElementById('blockedLogsCount').innerHTML = 
+                    `${(allTimeStats.filtered_blocked || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.blocked || 0).toLocaleString()}</small>`;
+                document.getElementById('warningLogsCount').innerHTML = 
+                    `${(allTimeStats.filtered_warnings || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.warnings || 0).toLocaleString()}</small>`;
+            } else {
+                document.getElementById('totalLogsCount').textContent = (allTimeStats.total || 0).toLocaleString();
+                document.getElementById('allowedLogsCount').textContent = (allTimeStats.allowed || 0).toLocaleString();
+                document.getElementById('blockedLogsCount').textContent = (allTimeStats.blocked || 0).toLocaleString();
+                document.getElementById('warningLogsCount').textContent = (allTimeStats.warnings || 0).toLocaleString();
+            }
+            
+            document.getElementById('logCount').textContent = `${logsData.length.toLocaleString()} displayed`;
+            
+        } else {
+            // Fallback
+            const total = logsData.length;
+            const allowed = logsData.filter(log => (log.level === 'ALLOWED' || log.action === 'ALLOWED')).length;
+            const blocked = logsData.filter(log => (log.level === 'BLOCKED' || log.action === 'BLOCKED')).length;
+            const warnings = logsData.filter(log => log.level === 'WARNING').length;
+            
+            document.getElementById('totalLogsCount').innerHTML = `${total.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('allowedLogsCount').innerHTML = `${allowed.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('blockedLogsCount').innerHTML = `${blocked.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('warningLogsCount').innerHTML = `${warnings.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('logCount').textContent = `${total.toLocaleString()} displayed`;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error updating statistics:', error);
+        document.getElementById('totalLogsCount').textContent = logsData.length.toLocaleString();
+        document.getElementById('logCount').textContent = `${logsData.length.toLocaleString()} displayed`;
+    }
+}
+
+/**
+ * ✅ Load logs function
  */
 async function loadLogs() {
     try {
         console.log('🔄 Loading logs...');
         
-        // Build query parameters
         const params = new URLSearchParams();
         if (currentFilter.level) params.append('level', currentFilter.level);
         if (currentFilter.agent) params.append('agent_id', currentFilter.agent);
@@ -641,14 +724,14 @@ async function loadLogs() {
         if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
         params.append('limit', currentFilter.limit);
         
-        const response = await fetch(`/api/logs?${params.toString()}`).catch(err => ({ ok: false, statusText: err.message }));
+        const response = await fetch(`/api/logs?${params.toString()}`);
         
         if (response.ok) {
             const data = await response.json();
             logsData = data.logs || [];
             console.log('✅ Loaded logs:', logsData.length);
             renderLogs(logsData);
-            updateStatistics();
+            await updateStatistics();
         } else {
             console.error('❌ Failed to load logs:', response.statusText);
             showError('Failed to load logs');
@@ -657,31 +740,27 @@ async function loadLogs() {
     } catch (error) {
         console.error('❌ Error loading logs:', error);
         showError('Error loading logs');
-        updateStatistics();
+        await updateStatistics();
     }
 }
 
 /**
- * Update statistics display
+ * ✅ Filter change handler
  */
-function updateStatistics() {
-    const total = logsData.length;
-    const allowed = logsData.filter(log => log.level === 'ALLOWED' || log.action === 'ALLOWED').length;
-    const blocked = logsData.filter(log => log.level === 'BLOCKED' || log.action === 'BLOCKED').length;
-    const warnings = logsData.filter(log => log.level === 'WARNING').length;
-    
-    document.getElementById('totalLogsCount').textContent = total;
-    document.getElementById('allowedLogsCount').textContent = allowed;
-    document.getElementById('blockedLogsCount').textContent = blocked;
-    document.getElementById('warningLogsCount').textContent = warnings;
-    document.getElementById('logCount').textContent = total;
+function onFilterChange() {
+    loadLogs();
 }
 
 /**
- * Render logs list
+ * ✅ Render logs
  */
 function renderLogs(logs) {
     const container = document.getElementById('logsContainer');
+    
+    if (!container) {
+        console.error('❌ Logs container not found');
+        return;
+    }
     
     if (logs.length === 0) {
         container.innerHTML = `
@@ -705,6 +784,7 @@ function renderLogs(logs) {
         const ip = log.source_ip || log.ip || 'Unknown';
         const agent = log.agent_id || log.agent || 'System';
         const destination = log.destination || log.domain || log.url || 'N/A';
+        const logId = log._id || log.id || index.toString();
         
         const logElement = document.createElement('div');
         logElement.className = 'p-3 border-bottom log-item';
@@ -716,8 +796,7 @@ function renderLogs(logs) {
             <div class="row align-items-center">
                 <div class="col-md-1">
                     <div class="form-check">
-                        <input class="form-check-input log-checkbox" type="checkbox" 
-                               value="${log.id || index}">
+                        <input class="form-check-input log-checkbox" type="checkbox" value="${logId}">
                     </div>
                 </div>
                 <div class="col-md-8">
@@ -740,13 +819,13 @@ function renderLogs(logs) {
                 </div>
                 <div class="col-md-3 text-md-end">
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-primary" onclick="showLogDetails('${log.id || index}')" title="View Details">
+                        <button class="btn btn-outline-primary" onclick="showLogDetails('${logId}')" title="View Details">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button class="btn btn-outline-success" onclick="exportSingleLog('${log.id || index}')" title="Export Log">
+                        <button class="btn btn-outline-success" onclick="exportSingleLog('${logId}')" title="Export Log">
                             <i class="fas fa-download"></i>
                         </button>
-                        <button class="btn btn-outline-danger" onclick="clearSingleLog('${log.id || index}')" title="Clear This Log">
+                        <button class="btn btn-outline-danger" onclick="clearSingleLog('${logId}')" title="Clear This Log">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -764,123 +843,124 @@ function renderLogs(logs) {
 }
 
 /**
- * Clear functionality
+ * ✅ Clear confirmation
  */
 function showClearConfirmation(action, count = 0, message = '') {
     currentClearAction = action;
-    const modal = new bootstrap.Modal(document.getElementById('clearConfirmModal'));
+    
+    // Check if modal elements exist
+    const modalTitle = document.getElementById('clearModalTitle');
+    const modalMessage = document.getElementById('clearModalMessage');
     const checkbox = document.getElementById('confirmClearCheckbox');
     const confirmBtn = document.getElementById('modalConfirmClearBtn');
     
-    let title, modalMessage;
+    if (!modalTitle || !modalMessage || !checkbox || !confirmBtn) {
+        console.error('❌ Modal elements not found');
+        return;
+    }
+    
+    let title, modalMessageText;
     
     switch (action) {
         case 'all':
             title = 'Clear All Logs?';
-            modalMessage = `This will permanently delete all ${logsData.length} system logs and cannot be undone.`;
+            modalMessageText = `This will permanently delete all system logs and cannot be undone.`;
             break;
         case 'selected':
             title = `Clear ${count} Selected Logs?`;
-            modalMessage = `This will permanently delete the ${count} selected logs and cannot be undone.`;
+            modalMessageText = `This will permanently delete the ${count} selected logs and cannot be undone.`;
             break;
         case 'old':
             title = 'Clear Old Logs?';
-            modalMessage = 'This will permanently delete all logs older than 30 days and cannot be undone.';
+            modalMessageText = 'This will permanently delete all logs older than 30 days and cannot be undone.';
             break;
         case 'single':
             title = 'Clear This Log?';
-            modalMessage = 'This will permanently delete this log entry and cannot be undone.';
+            modalMessageText = 'This will permanently delete this log entry and cannot be undone.';
             break;
         default:
             title = 'Clear Logs?';
-            modalMessage = message || 'This action cannot be undone.';
+            modalMessageText = message || 'This action cannot be undone.';
     }
     
-    document.getElementById('clearModalTitle').textContent = title;
-    document.getElementById('clearModalMessage').textContent = modalMessage;
+    modalTitle.textContent = title;
+    modalMessage.textContent = modalMessageText;
     
     // Reset checkbox and button
     checkbox.checked = false;
     confirmBtn.disabled = true;
     
+    const modal = new bootstrap.Modal(document.getElementById('clearConfirmModal'));
     modal.show();
 }
 
+/**
+ * ✅ Perform clear action
+ */
 async function performClearAction() {
     if (!currentClearAction) return;
     
     const confirmBtn = document.getElementById('modalConfirmClearBtn');
+    if (!confirmBtn) return;
+    
     const originalText = confirmBtn.innerHTML;
     confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Clearing...';
     confirmBtn.disabled = true;
     
     try {
-        let logIds = [];
+        let requestBody = {};
         let successMessage = '';
         
         switch (currentClearAction) {
             case 'all':
-                logIds = logsData.map(log => log.id || logsData.indexOf(log).toString());
-                successMessage = `All ${logIds.length} logs cleared successfully`;
+                requestBody = { action: 'all', log_ids: [] };
+                successMessage = `All logs cleared successfully`;
                 break;
                 
             case 'selected':
-                logIds = Array.from(selectedLogs);
+                const logIds = Array.from(selectedLogs);
+                requestBody = { action: 'selected', log_ids: logIds };
                 successMessage = `${logIds.length} selected logs cleared successfully`;
                 break;
                 
             case 'old':
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                logIds = logsData
-                    .filter(log => log.timestamp && new Date(log.timestamp) < thirtyDaysAgo)
-                    .map(log => log.id || logsData.indexOf(log).toString());
-                successMessage = `${logIds.length} old logs cleared successfully`;
+                requestBody = { action: 'old', log_ids: [] };
+                successMessage = 'Old logs cleared successfully';
                 break;
                 
             case 'single':
-                logIds = [currentClearAction.logId];
+                requestBody = { action: 'selected', log_ids: [currentClearAction.logId] };
                 successMessage = 'Log cleared successfully';
                 break;
         }
         
-        if (logIds.length === 0) {
-            showNotification('info', 'No logs to clear');
-            return;
-        }
-        
-        // Simulate API call for clearing logs
         const response = await fetch('/api/logs/clear', {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ log_ids: logIds, action: currentClearAction })
-        }).catch(() => ({ ok: false }));
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(requestBody)
+        });
         
-        if (response.ok || true) { // Always succeed for demo
-            // Remove cleared logs from local data
-            if (currentClearAction === 'all') {
-                logsData = [];
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            const actualDeleted = result.deleted_count || 0;
+            
+            if (actualDeleted > 0) {
+                selectedLogs.clear();
+                updateSelectedLogs();
+                await loadLogs();
+                showNotification('success', `${actualDeleted} logs cleared successfully`);
             } else {
-                logsData = logsData.filter(log => 
-                    !logIds.includes(log.id || logsData.indexOf(log).toString())
-                );
+                showNotification('warning', 'No logs were cleared');
             }
             
-            // Clear selections
-            selectedLogs.clear();
-            updateSelectedLogs();
-            
-            // Update display
-            updateStatistics();
-            renderLogs(logsData);
-            
-            showNotification('success', successMessage);
-            
-            // Close modal
             bootstrap.Modal.getInstance(document.getElementById('clearConfirmModal')).hide();
             
         } else {
-            throw new Error('Failed to clear logs');
+            throw new Error(result.error || 'Failed to clear logs');
         }
         
     } catch (error) {
@@ -893,13 +973,16 @@ async function performClearAction() {
     }
 }
 
+/**
+ * ✅ Single log clear
+ */
 function clearSingleLog(logId) {
     currentClearAction = { action: 'single', logId: logId };
     showClearConfirmation('single');
 }
 
 /**
- * Filter logs based on current criteria
+ * ✅ Filter logs
  */
 function filterLogs() {
     const searchTerm = currentFilter.search.toLowerCase();
@@ -925,14 +1008,16 @@ function filterLogs() {
 }
 
 /**
- * Show log details modal
+ * ✅ Show log details
  */
 function showLogDetails(logId) {
-    const log = logsData.find(l => (l.id || logsData.indexOf(l).toString()) === logId);
+    const log = logsData.find(l => (l._id || l.id || logsData.indexOf(l).toString()) === logId);
     if (!log) return;
     
     const modal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
     const content = document.getElementById('logDetailsContent');
+    
+    if (!content) return;
     
     content.innerHTML = `
         <div class="row">
@@ -965,21 +1050,13 @@ function showLogDetails(logId) {
                 </div>
             </div>
         ` : ''}
-        ${log.raw_data ? `
-            <div class="mt-3">
-                <h6 class="fw-bold">Raw Data</h6>
-                <div class="alert alert-light">
-                    <pre><code>${JSON.stringify(log.raw_data, null, 2)}</code></pre>
-                </div>
-            </div>
-        ` : ''}
     `;
     
     modal.show();
 }
 
 /**
- * Export functionality
+ * ✅ Export functionality
  */
 function exportLogs(logs = logsData) {
     const csvContent = [
@@ -1006,34 +1083,43 @@ function exportLogs(logs = logsData) {
 }
 
 function exportSingleLog(logId) {
-    const log = logsData.find(l => (l.id || logsData.indexOf(l).toString()) === logId);
+    const log = logsData.find(l => (l._id || l.id || logsData.indexOf(l).toString()) === logId);
     if (log) {
         exportLogs([log]);
     }
 }
 
 /**
- * Utility functions
+ * ✅ Utility functions
  */
 function refreshLogs() {
     const button = document.getElementById('refreshBtn');
-    const originalText = button.innerHTML;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    button.disabled = true;
-    
-    loadLogs().finally(() => {
-        button.innerHTML = originalText;
-        button.disabled = false;
-    });
+    if (button) {
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        button.disabled = true;
+        
+        loadLogs().finally(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+        });
+    }
 }
 
 function clearFilters() {
     currentFilter = { time: 'all', level: '', agent: '', search: '', limit: 100 };
-    document.getElementById('log-search').value = '';
-    document.getElementById('level-filter').value = '';
-    document.getElementById('agent-filter').value = '';
-    document.querySelector('.time-pill.active').classList.remove('active');
-    document.querySelector('[data-time="all"]').classList.add('active');
+    
+    const searchInput = document.getElementById('log-search');
+    const levelFilter = document.getElementById('level-filter');
+    const agentFilter = document.getElementById('agent-filter');
+    
+    if (searchInput) searchInput.value = '';
+    if (levelFilter) levelFilter.value = '';
+    if (agentFilter) agentFilter.value = '';
+    
+    document.querySelector('.time-pill.active')?.classList.remove('active');
+    document.querySelector('[data-time="all"]')?.classList.add('active');
+    
     loadLogs();
 }
 
@@ -1041,11 +1127,12 @@ function selectAllLogs() {
     const selectAllCheckbox = document.getElementById('selectAllLogs');
     const logCheckboxes = document.querySelectorAll('.log-checkbox');
     
-    logCheckboxes.forEach(cb => {
-        cb.checked = selectAllCheckbox.checked;
-    });
-    
-    updateSelectedLogs();
+    if (selectAllCheckbox) {
+        logCheckboxes.forEach(cb => {
+            cb.checked = selectAllCheckbox.checked;
+        });
+        updateSelectedLogs();
+    }
 }
 
 function updateSelectedLogs() {
@@ -1054,136 +1141,213 @@ function updateSelectedLogs() {
     
     checkboxes.forEach(cb => selectedLogs.add(cb.value));
     
-    document.getElementById('selectedCount').textContent = selectedLogs.size;
+    const selectedCountEl = document.getElementById('selectedCount');
+    if (selectedCountEl) {
+        selectedCountEl.textContent = selectedLogs.size;
+    }
     
     const bulkActions = document.getElementById('bulkActions');
-    if (selectedLogs.size > 0) {
-        bulkActions.classList.add('show');
-    } else {
-        bulkActions.classList.remove('show');
+    if (bulkActions) {
+        if (selectedLogs.size > 0) {
+            bulkActions.classList.add('show');
+        } else {
+            bulkActions.classList.remove('show');
+        }
     }
     
     // Update select all checkbox state
     const totalCheckboxes = document.querySelectorAll('.log-checkbox').length;
     const selectAllCheckbox = document.getElementById('selectAllLogs');
     
-    if (selectedLogs.size === 0) {
-        selectAllCheckbox.indeterminate = false;
-        selectAllCheckbox.checked = false;
-    } else if (selectedLogs.size === totalCheckboxes) {
-        selectAllCheckbox.indeterminate = false;
-        selectAllCheckbox.checked = true;
-    } else {
-        selectAllCheckbox.indeterminate = true;
+    if (selectAllCheckbox) {
+        if (selectedLogs.size === 0) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = false;
+        } else if (selectedLogs.size === totalCheckboxes) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = true;
+        } else {
+            selectAllCheckbox.indeterminate = true;
+        }
     }
 }
 
 function showError(message) {
     const container = document.getElementById('logsContainer');
-    container.innerHTML = `
-        <div class="text-center py-5">
-            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-            <h5 class="text-danger">Error Loading Logs</h5>
-            <p class="text-muted">${message}</p>
-            <button class="btn btn-primary" onclick="refreshLogs()">
-                <i class="fas fa-redo me-2"></i>Try Again
-            </button>
-        </div>
+    if (container) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                <h5 class="text-danger">Error Loading Logs</h5>
+                <p class="text-muted">${message}</p>
+                <button class="btn btn-primary" onclick="refreshLogs()">
+                    <i class="fas fa-redo me-2"></i>Try Again
+                </button>
+            </div>
+        `;
+    }
+}
+
+function showNotification(type, message) {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
 }
 
 /**
- * Initialize page
+ * ✅ SINGLE INITIALIZATION
  */
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing logs management...');
+    
     // Time filter pills
     document.querySelectorAll('.time-pill').forEach(pill => {
         pill.addEventListener('click', function() {
-            document.querySelector('.time-pill.active').classList.remove('active');
+            document.querySelector('.time-pill.active')?.classList.remove('active');
             this.classList.add('active');
             currentFilter.time = this.dataset.time;
-            loadLogs();
+            onFilterChange();
         });
     });
     
     // Search and filters
-    document.getElementById('log-search').addEventListener('input', function() {
-        currentFilter.search = this.value;
-        filterLogs();
-    });
+    const searchInput = document.getElementById('log-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            currentFilter.search = this.value;
+            filterLogs();
+        });
+    }
     
-    document.getElementById('level-filter').addEventListener('change', function() {
-        currentFilter.level = this.value;
-        loadLogs();
-    });
+    const levelFilter = document.getElementById('level-filter');
+    if (levelFilter) {
+        levelFilter.addEventListener('change', function() {
+            currentFilter.level = this.value;
+            onFilterChange();
+        });
+    }
     
-    document.getElementById('agent-filter').addEventListener('change', function() {
-        currentFilter.agent = this.value;
-        loadLogs();
-    });
+    const agentFilter = document.getElementById('agent-filter');
+    if (agentFilter) {
+        agentFilter.addEventListener('change', function() {
+            currentFilter.agent = this.value;
+            onFilterChange();
+        });
+    }
     
-    document.getElementById('limit-select').addEventListener('change', function() {
-        currentFilter.limit = parseInt(this.value);
-        loadLogs();
-    });
+    const limitSelect = document.getElementById('limit-select');
+    if (limitSelect) {
+        limitSelect.addEventListener('change', function() {
+            currentFilter.limit = parseInt(this.value);
+            loadLogs();
+        });
+    }
     
     // Control buttons
-    document.getElementById('refreshBtn').addEventListener('click', refreshLogs);
-    document.getElementById('exportBtn').addEventListener('click', () => exportLogs());
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshLogs);
+    }
+    
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => exportLogs());
+    }
     
     // Select all functionality
-    document.getElementById('selectAllLogs').addEventListener('change', selectAllLogs);
+    const selectAllLogs = document.getElementById('selectAllLogs');
+    if (selectAllLogs) {
+        selectAllLogs.addEventListener('change', selectAllLogs);
+    }
     
     // Clear functionality
-    document.getElementById('clearSelectedBtn').addEventListener('click', function(e) {
-        e.preventDefault();
-        if (selectedLogs.size === 0) {
-            showNotification('warning', 'No logs selected');
-            return;
-        }
-        showClearConfirmation('selected', selectedLogs.size);
-    });
+    const clearSelectedBtn = document.getElementById('clearSelectedBtn');
+    if (clearSelectedBtn) {
+        clearSelectedBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (selectedLogs.size === 0) {
+                showNotification('warning', 'No logs selected');
+                return;
+            }
+            showClearConfirmation('selected', selectedLogs.size);
+        });
+    }
     
-    document.getElementById('clearOldLogsBtn').addEventListener('click', function(e) {
-        e.preventDefault();
-        showClearConfirmation('old');
-    });
+    const clearOldLogsBtn = document.getElementById('clearOldLogsBtn');
+    if (clearOldLogsBtn) {
+        clearOldLogsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            showClearConfirmation('old');
+        });
+    }
     
-    document.getElementById('clearAllLogsBtn').addEventListener('click', function(e) {
-        e.preventDefault();
-        showClearConfirmation('all');
-    });
+    const clearAllLogsBtn = document.getElementById('clearAllLogsBtn');
+    if (clearAllLogsBtn) {
+        clearAllLogsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            showClearConfirmation('all');
+        });
+    }
     
     // Bulk actions
-    document.getElementById('bulkClearBtn').addEventListener('click', function() {
-        if (selectedLogs.size === 0) {
-            showNotification('warning', 'No logs selected');
-            return;
-        }
-        showClearConfirmation('selected', selectedLogs.size);
-    });
+    const bulkClearBtn = document.getElementById('bulkClearBtn');
+    if (bulkClearBtn) {
+        bulkClearBtn.addEventListener('click', function() {
+            if (selectedLogs.size === 0) {
+                showNotification('warning', 'No logs selected');
+                return;
+            }
+            showClearConfirmation('selected', selectedLogs.size);
+        });
+    }
     
-    document.getElementById('bulkExportBtn').addEventListener('click', function() {
-        const selectedLogsData = logsData.filter(log => 
-            selectedLogs.has(log.id || logsData.indexOf(log).toString())
-        );
-        exportLogs(selectedLogsData);
-    });
+    const bulkExportBtn = document.getElementById('bulkExportBtn');
+    if (bulkExportBtn) {
+        bulkExportBtn.addEventListener('click', function() {
+            const selectedLogsData = logsData.filter(log => 
+                selectedLogs.has(log._id || log.id || logsData.indexOf(log).toString())
+            );
+            exportLogs(selectedLogsData);
+        });
+    }
     
     // Modal confirmation
-    document.getElementById('confirmClearCheckbox').addEventListener('change', function() {
-        document.getElementById('modalConfirmClearBtn').disabled = !this.checked;
-    });
+    const confirmClearCheckbox = document.getElementById('confirmClearCheckbox');
+    if (confirmClearCheckbox) {
+        confirmClearCheckbox.addEventListener('change', function() {
+            const confirmBtn = document.getElementById('modalConfirmClearBtn');
+            if (confirmBtn) {
+                confirmBtn.disabled = !this.checked;
+            }
+        });
+    }
     
-    document.getElementById('modalConfirmClearBtn').addEventListener('click', performClearAction);
+    const modalConfirmClearBtn = document.getElementById('modalConfirmClearBtn');
+    if (modalConfirmClearBtn) {
+        modalConfirmClearBtn.addEventListener('click', performClearAction);
+    }
     
     // Load initial data
     loadLogs();
     
-    // Auto-refresh every 30 seconds
-    setInterval(loadLogs, 30000);
+    // Auto-refresh statistics every 30 seconds
+    setInterval(() => {
+        loadFullStatistics();
+    }, 30000);
     
-    console.log('✅ Enhanced logs management with clear functionality initialized');
+    console.log('✅ Logs management initialized successfully');
 });
 
 // Socket.IO for real-time updates
@@ -1192,14 +1356,12 @@ try {
         const socket = io();
         
         socket.on('connect', function() {
-            console.log('🔌 Connected to server for real-time updates');
+            console.log('🔌 Connected for real-time updates');
         });
         
         socket.on('new_log', function(logData) {
             console.log('📝 New log received:', logData);
-            // Add new log to the beginning of the array
             logsData.unshift(logData);
-            // Keep only the current limit
             logsData = logsData.slice(0, currentFilter.limit);
             updateStatistics();
             renderLogs(logsData);
@@ -1207,15 +1369,15 @@ try {
         
         socket.on('logs_cleared', function(data) {
             console.log('🗑️ Logs cleared:', data);
-            showNotification('info', `${data.count} logs were cleared by another user`);
-            loadLogs(); // Refresh logs
+            showNotification('info', `${data.count} logs were cleared`);
+            loadLogs();
         });
         
     } else {
-        console.log('❌ Socket.IO not available - real-time updates disabled');
+        console.log('❌ Socket.IO not available');
     }
 } catch (error) {
-    console.error('❌ Socket.IO initialization error:', error);
+    console.error('❌ Socket.IO error:', error);
 }
 </script>
 {% endblock %}
