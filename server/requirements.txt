@@ -1,3 +1,11 @@
 pymongo
 pydantic
 flask
+flask-socketio
+flask-cors
+python-dotenv
+pyjwt
+bcrypt
+email_validator
+eventlet
+tzdata
