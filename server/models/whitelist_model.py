@@ -1,267 +1,505 @@
-# Import các thư viện cần thiết
-import re  # Thư viện xử lý biểu thức chính quy, dùng để xác thực định dạng tên miền
-from datetime import datetime  # Thư viện xử lý ngày giờ, dùng để ghi thời gian thêm và cập nhật tên miền
-from typing import Dict, List, Optional, Set, Union  # Thư viện hỗ trợ kiểu dữ liệu tĩnh
+"""
+Whitelist Model - handles whitelist data operations
+"""
 
-from bson import ObjectId  # Thư viện để làm việc với ObjectId của MongoDB
-from pydantic import BaseModel, Field, field_validator, ConfigDict  # Thư viện Pydantic để xác thực dữ liệu và tạo model
+import re
+import socket
+import ipaddress
+from datetime import datetime, timedelta, timezone  # ✅ ADD: Import timezone
+from typing import Dict, List, Optional
+from urllib.parse import urlparse
+from bson import ObjectId
+from pymongo import ASCENDING, DESCENDING
+from pymongo.collection import Collection
+from pymongo.database import Database
+import logging
 
-
-class PyObjectId(ObjectId):
-    """Custom ObjectId type for proper serialization in Pydantic models."""
-    @classmethod
-    def __get_pydantic_core_schema__(cls, _source_type, _handler):
-        """
-        Định nghĩa schema cho Pydantic để xử lý ObjectId.
-        Phương thức này được gọi bởi Pydantic để hiểu cách xử lý kiểu dữ liệu ObjectId.
-        """
-        from pydantic_core import core_schema
-        return core_schema.union_schema([
-            # Cho phép đối tượng ObjectId trực tiếp
-            core_schema.is_instance_schema(ObjectId),
-            # Hoặc cho phép chuỗi mà sau đó sẽ được chuyển đổi thành ObjectId
-            core_schema.chain_schema([
-                core_schema.str_schema(),
-                core_schema.no_info_plain_validator_function(cls.validate),
-            ]),
-        ])
-
-    @classmethod
-    def validate(cls, v):
-        """
-        Xác thực một giá trị là ObjectId hợp lệ.
-        Kiểm tra nếu chuỗi nhập vào có thể chuyển thành ObjectId MongoDB.
-        """
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __modify_schema__(cls, field_schema):
-        """
-        Điều chỉnh schema cho OpenAPI (Swagger) để hiển thị kiểu dữ liệu này là chuỗi.
-        Giúp tài liệu API hiển thị kiểu dữ liệu một cách rõ ràng.
-        """
-        field_schema.update(type="string")
-
-
-class Whitelist(BaseModel):
-    """
-    Whitelist model for managing allowed domains.
-    Keeps track of domains that should not be blocked by the firewall.
-    """
-    # Thông tin cơ bản của bản ghi whitelist
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)  # ID MongoDB, sử dụng alias để tương thích với MongoDB
-    domain: str  # Tên miền (có thể bao gồm wildcard, ví dụ: *.example.com)
-    notes: Optional[str] = ""  # Ghi chú về tên miền, mặc định là chuỗi rỗng
-    added_by: str = "system"  # Người thêm tên miền, mặc định là "system" nếu được thêm tự động
-    added_date: datetime = Field(default_factory=datetime.utcnow)  # Thời điểm thêm tên miền, mặc định là thời gian hiện tại
-    last_updated: Optional[datetime] = None  # Thời điểm cập nhật gần nhất, ban đầu là None
+class WhitelistModel:
+    """Model for whitelist data operations"""
     
-    # Phân loại tùy chọn
-    category: Optional[str] = None  # Danh mục của tên miền (như business, social, v.v.)
-    tags: List[str] = Field(default_factory=list)  # Các thẻ gắn với tên miền, mặc định là danh sách rỗng
-    
-    # Cờ trạng thái
-    is_wildcard: bool = False  # Đánh dấu nếu là wildcard domain (*.example.com)
-    is_active: bool = True  # Đánh dấu nếu tên miền đang hoạt động, cho phép tạm thời vô hiệu hóa mà không cần xóa
-    
-    @field_validator('domain')
-    def validate_domain(cls, v):
-        """
-        Xác thực định dạng tên miền - cho phép tên miền wildcard.
-        Đảm bảo tên miền tuân theo chuẩn định dạng, bao gồm cả trường hợp wildcard.
-        """
-        domain = v.strip().lower()  # Loại bỏ khoảng trắng đầu/cuối và chuyển thành chữ thường
+    def __init__(self, db: Database):
+        self.db = db
+        self.collection: Collection = self.db.whitelist
+        self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Xử lý tên miền wildcard
-        if domain.startswith("*."):
-            domain = domain[2:]  # Loại bỏ phần "*." để kiểm tra phần còn lại
+        # ✅ FIXED: Better timezone setup
+        self.timezone = self._get_timezone()
+        self._setup_indexes()
+    
+    def _get_timezone(self):
+        """Get Vietnam timezone consistently"""
+        try:
+            from zoneinfo import ZoneInfo
+            return ZoneInfo("Asia/Ho_Chi_Minh")
+        except ImportError:
+            # ✅ FIX: Fallback should be more accurate
+            from datetime import timezone, timedelta
+            # Vietnam is UTC+7 (no DST since 1979)
+            return timezone(timedelta(hours=7), name="Asia/Ho_Chi_Minh")
+    
+    def _now_local(self) -> datetime:
+        """Get current time in Vietnam timezone"""
+        utc_now = datetime.now(timezone.utc)
+        local_now = utc_now.astimezone(self.timezone)
+        self.logger.debug(f"Current time: UTC {utc_now.strftime('%H:%M:%S')} -> VN {local_now.strftime('%H:%M:%S')}")
+        return local_now
+    
+    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
+        """Ensure datetime is timezone-aware with Vietnam timezone"""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=self.timezone)
+        return dt.astimezone(self.timezone)
+    
+    def _setup_indexes(self):
+        """Setup indexes for whitelist collection"""
+        try:
+            # ✅ FIX: Better index management
+            existing_indexes = self.collection.list_indexes()
+            index_names = [idx['name'] for idx in existing_indexes]
             
-        # Xác thực định dạng tên miền cơ bản
-        # Mẫu này đảm bảo tên miền có ít nhất 2 phần, phần mở rộng ít nhất 2 ký tự
-        pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-        if not re.match(pattern, domain):
-            raise ValueError("Invalid domain format")  # Báo lỗi nếu không đúng định dạng
+            # Clean up invalid documents first
+            cleanup_result = self.collection.delete_many({
+                "$or": [
+                    {"value": None},
+                    {"value": ""},
+                    {"value": {"$exists": False}},
+                    {"value": {"$type": "null"}}
+                ]
+            })
             
-        # Đặt cờ wildcard
-        is_wildcard = v.startswith("*.")
+            if cleanup_result.deleted_count > 0:
+                self.logger.info(f"Cleaned up {cleanup_result.deleted_count} invalid whitelist entries")
+            
+            # Drop problematic unique index if exists
+            if "value_1" in index_names:
+                try:
+                    self.collection.drop_index("value_1")
+                    self.logger.info("Dropped existing value_1 index")
+                except Exception as e:
+                    self.logger.warning(f"Could not drop value_1 index: {e}")
+            
+            # Create new indexes
+            indexes_to_create = [
+                ([("value", 1)], {"unique": True, "sparse": True, "name": "value_unique_sparse"}),
+                ([("type", 1)], {"name": "type_index"}),
+                ([("category", 1)], {"name": "category_index"}),
+                ([("added_date", -1)], {"name": "added_date_desc"}),
+                ([("is_active", 1)], {"name": "is_active_index"})
+            ]
+            
+            for index_spec, options in indexes_to_create:
+                try:
+                    if options["name"] not in index_names:
+                        self.collection.create_index(index_spec, **options)
+                        self.logger.debug(f"Created index: {options['name']}")
+                except Exception as e:
+                    self.logger.warning(f"Could not create index {options['name']}: {e}")
+            
+        except Exception as e:
+            self.logger.error(f"Error setting up indexes: {e}")
+            # Continue without indexes if creation fails
+
+    def insert_entry(self, entry_data: Dict) -> str:
+        """Insert a new whitelist entry"""
+        try:
+            # ✅ FIX: Get current time in UTC+7
+            current_time = self._now_local()
+            self.logger.info(f"Inserting entry at: {current_time} (timezone: {current_time.tzinfo})")
+            
+            # ✅ FIX: Convert to UTC before storing in MongoDB
+            current_time_utc = current_time.astimezone(timezone.utc)
+            
+            # Store timestamps as UTC (MongoDB standard)
+            entry_data["added_date"] = current_time_utc
+            entry_data["created_at"] = current_time_utc
+            entry_data["updated_at"] = current_time_utc
+            
+            # Store original timezone for reference
+            entry_data["timezone"] = "UTC+7"
+            entry_data["local_added_date"] = current_time.isoformat()  # Store as string for reference
+            
+            # Set essential defaults
+            entry_data.setdefault("is_active", True)
+            
+            # Validate value field
+            if not entry_data.get("value"):
+                raise ValueError("Value field is required")
+            
+            # Log the data being inserted
+            self.logger.debug(f"Entry data to insert (UTC): {entry_data}")
+            
+            result = self.collection.insert_one(entry_data)
+            self.logger.info(f"Successfully inserted whitelist entry: {entry_data.get('value')} with ID: {result.inserted_id}")
+            return str(result.inserted_id)
+            
+        except Exception as e:
+            self.logger.error(f"Error inserting entry: {e}")
+            raise
+
+    def find_all_entries(self, query: Dict = None, sort_field: str = "added_date", 
+                        sort_order: int = DESCENDING) -> List[Dict]:
+        """Find all whitelist entries"""
+        query = query or {}
         
-        return v  # Trả về tên miền gốc nếu hợp lệ
+        # Clean up expired entries first
+        self.cleanup_expired_entries()
+        
+        cursor = self.collection.find(query).sort(sort_field, sort_order)
+        
+        entries = []
+        for entry in cursor:
+            entry["_id"] = str(entry["_id"])
+            
+            # ✅ FIX: Use helper method
+            entry = self._convert_entry_timezones(entry)
+            entries.append(entry)
+        
+        return entries
+    
+    def find_entry_by_value(self, value: str) -> Optional[Dict]:
+        """Find entry by value"""
+        entry = self.collection.find_one({"value": value})
+        if entry:
+            entry["_id"] = str(entry["_id"])
+            # ✅ FIX: Use helper method
+            entry = self._convert_entry_timezones(entry)
+        return entry
+    
+    def find_entry_by_id(self, entry_id: str) -> Optional[Dict]:
+        """Find entry by ID"""
+        try:
+            object_id = ObjectId(entry_id)
+            entry = self.collection.find_one({"_id": object_id})
+            if entry:
+                entry["_id"] = str(entry["_id"])
+                # ✅ FIX: Use helper method
+                entry = self._convert_entry_timezones(entry)
+            return entry
+        except:
+            return None
+    
+    # ✅ ADD: Helper method to avoid code duplication
+    def _convert_entry_timezones(self, entry: Dict) -> Dict:
+        """Convert entry datetime fields from UTC to local timezone"""
+        if not entry:
+            return entry
+            
+        for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
+            if date_field in entry and entry[date_field]:
+                utc_time = entry[date_field]
+                
+                # Ensure it's timezone-aware UTC
+                if utc_time.tzinfo is None:
+                    utc_time = utc_time.replace(tzinfo=timezone.utc)
+                
+                # Convert to Vietnam timezone for display
+                local_time = utc_time.astimezone(self.timezone)
+                entry[date_field] = local_time
+                
+        return entry
+    
+    def update_entry(self, entry_id: str, update_data: Dict) -> bool:
+        """Update an entry"""
+        try:
+            object_id = ObjectId(entry_id)
+            
+            # ✅ FIX: Convert updated_at to UTC
+            local_time = self._now_local()
+            update_data["updated_at"] = local_time.astimezone(timezone.utc)
+            update_data["timezone"] = "UTC+7"
+            
+            result = self.collection.update_one(
+                {"_id": object_id},
+                {"$set": update_data}
+            )
+            return result.modified_count > 0
+        except:
+            return False
+    
+    def delete_entry(self, entry_id: str) -> bool:
+        """Delete an entry"""
+        try:
+            object_id = ObjectId(entry_id)
+            result = self.collection.delete_one({"_id": object_id})
+            return result.deleted_count > 0
+        except:
+            return False
+    
+    def delete_entry_by_value(self, value: str) -> bool:
+        """Delete entry by value"""
+        result = self.collection.delete_one({"value": value})
+        return result.deleted_count > 0
+    
+    def bulk_insert_entries(self, entries: List[Dict]) -> List[str]:
+        """Bulk insert entries"""
+        if not entries:
+            return []
+        
+        # ✅ FIX: Convert timestamps to UTC before bulk insert
+        current_time = self._now_local()
+        current_time_utc = current_time.astimezone(timezone.utc)
+        
+        for entry in entries:
+            entry["added_date"] = current_time_utc
+            entry["created_at"] = current_time_utc
+            entry["updated_at"] = current_time_utc
+            entry["timezone"] = "UTC+7"
+            entry["local_added_date"] = current_time.isoformat()
+            entry.setdefault("is_active", True)
+        
+        try:
+            result = self.collection.insert_many(entries, ordered=False)
+            return [str(id) for id in result.inserted_ids]
+        except Exception as e:
+            self.logger.error(f"Error bulk inserting entries: {e}")
+            return []
+    
+    def count_entries(self, query: Dict = None) -> int:
+        """Count entries matching query"""
+        query = query or {}
+        return self.collection.count_documents(query)
+    
+    def cleanup_expired_entries(self) -> int:
+        """Remove expired entries"""
+        try:
+            # ✅ FIX: Compare with UTC time
+            current_time = self._now_local()
+            current_time_utc = current_time.astimezone(timezone.utc)
+            
+            result = self.collection.delete_many({
+                "expiry_date": {"$lt": current_time_utc}
+            })
+            
+            if result.deleted_count > 0:
+                self.logger.info(f"Cleaned up {result.deleted_count} expired entries")
+            
+            return result.deleted_count
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning up expired entries: {e}")
+            return 0
+    
+    def get_entries_for_sync(self, since: datetime = None) -> List[str]:
+        """Get entries for agent sync (values only)"""
+        try:
+            query = {"is_active": True}
+            
+            if since:
+                # ✅ FIX: Convert since to UTC for comparison
+                if since.tzinfo is None:
+                    since = since.replace(tzinfo=self.timezone)
+                
+                # Convert to UTC for database comparison
+                since_utc = since.astimezone(timezone.utc)
+                
+                query["$or"] = [
+                    {"added_date": {"$gte": since_utc}},
+                    {"updated_at": {"$gte": since_utc}},
+                    {"created_at": {"$gte": since_utc}}
+                ]
+                
+                self.logger.debug(f"Sync query with since UTC: {since_utc.isoformat()}")
+            else:
+                self.logger.debug("Full sync - no since parameter")
+            
+            # Clean up expired entries first
+            expired_count = self.cleanup_expired_entries()
+            if expired_count > 0:
+                self.logger.info(f"Cleaned up {expired_count} expired entries before sync")
+            
+            cursor = self.collection.find(
+                query, 
+                {"value": 1, "_id": 0, "added_date": 1, "updated_at": 1}
+            ).sort("added_date", -1)
+            
+            values = []
+            processed_count = 0
+            
+            for entry in cursor:
+                processed_count += 1
+                value = entry.get("value")
+                if value and isinstance(value, str) and value.strip():
+                    clean_value = value.strip().lower()
+                    if clean_value not in values:  # Prevent duplicates
+                        values.append(clean_value)
+            
+            self.logger.info(f"Sync query processed {processed_count} entries, returning {len(values)} unique values")
+            
+            if since:
+                self.logger.debug(f"Incremental sync since {since.isoformat()}: found {len(values)} entries")
+            else:
+                self.logger.debug(f"Full sync: returning {len(values)} total entries")
+            
+            return values
+            
+        except Exception as e:
+            self.logger.error(f"Error getting entries for sync: {e}", exc_info=True)
+            return []
 
-    @field_validator('is_wildcard', mode='before')
-    def set_is_wildcard(cls, v, info):
-        """
-        Tự động xác định cờ is_wildcard dựa trên tên miền.
-        Nếu tên miền bắt đầu bằng "*.", đặt is_wildcard = True.
-        """
-        if 'domain' in info.data and info.data['domain'].startswith("*."):
-            return True  # Đặt is_wildcard = True nếu domain bắt đầu bằng "*."
-        return v  # Giữ nguyên giá trị hiện tại nếu không
-
-    # Cấu hình chung cho model
-    model_config = ConfigDict(
-        populate_by_alias=True,  # Cho phép sử dụng alias khi tạo đối tượng
-        arbitrary_types_allowed=True,  # Cho phép các kiểu dữ liệu tùy chỉnh
-        json_encoders={  # Định nghĩa cách chuyển đổi các kiểu dữ liệu đặc biệt sang JSON
-            ObjectId: str,  # Chuyển ObjectId thành chuỗi
-            datetime: lambda dt: dt.isoformat()  # Chuyển datetime thành chuỗi ISO
-        },
-        json_schema_extra={  # Ví dụ JSON cho tài liệu API
-            "example": {
-                "domain": "example.com",
-                "notes": "Example domain",
-                "added_by": "admin",
-                "added_date": "2023-01-01T12:34:56",
-                "category": "business",
-                "tags": ["trusted", "partner"],
-                "is_wildcard": False,
-                "is_active": True
-            }
+    def get_statistics(self) -> Dict:
+        """Get whitelist statistics"""
+        total = self.collection.count_documents({})
+        active = self.collection.count_documents({"is_active": True})
+        
+        # Count by type
+        type_stats = {}
+        type_pipeline = [
+            {"$group": {"_id": "$type", "count": {"$sum": 1}}}
+        ]
+        for result in self.collection.aggregate(type_pipeline):
+            type_stats[result["_id"]] = result["count"]
+        
+        # Count by category
+        category_stats = {}
+        category_pipeline = [
+            {"$group": {"_id": "$category", "count": {"$sum": 1}}}
+        ]
+        for result in self.collection.aggregate(category_pipeline):
+            category_stats[result["_id"]] = result["count"]
+        
+        return {
+            "total": total,
+            "active": active,
+            "inactive": total - active,
+            "by_type": type_stats,
+            "by_category": category_stats
         }
-    )
-
-
-class WhitelistCreate(BaseModel):
-    """
-    Schema cho việc tạo tên miền whitelist mới thông qua API.
-    Chỉ chứa các trường cần thiết khi tạo mới.
-    """
-    domain: str  # Tên miền cần thêm vào whitelist
-    notes: Optional[str] = ""  # Ghi chú tùy chọn
-    added_by: Optional[str] = "system"  # Người thêm, mặc định là "system"
-    category: Optional[str] = None  # Danh mục tùy chọn
-    tags: Optional[List[str]] = None  # Các thẻ tùy chọn
     
-    @field_validator('domain')
-    def validate_domain(cls, v):
-        """
-        Xác thực và làm sạch tên miền trước khi thêm.
-        Đảm bảo tên miền ở dạng chuẩn hóa và hợp lệ.
-        """
-        domain = v.strip().lower()  # Loại bỏ khoảng trắng và chuyển thành chữ thường
+    def build_query_from_filters(self, filters: Dict) -> Dict:
+        """Build MongoDB query from filter parameters"""
+        query = {}
         
-        # Xử lý tên miền wildcard
-        if domain.startswith("*."):
-            domain = domain[2:]  # Loại bỏ phần "*." để kiểm tra phần còn lại
-            
-        # Xác thực định dạng tên miền cơ bản
-        pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-        if not re.match(pattern, domain):
-            raise ValueError("Invalid domain format")  # Báo lỗi nếu không đúng định dạng
-            
-        return v.strip().lower()  # Trả về tên miền đã được chuẩn hóa
-
-
-class WhitelistUpdate(BaseModel):
-    """
-    Schema cho việc cập nhật thông tin tên miền whitelist.
-    Tất cả các trường đều là tùy chọn, chỉ cập nhật các trường được cung cấp.
-    """
-    domain: Optional[str] = None  # Tên miền mới (nếu muốn đổi)
-    notes: Optional[str] = None  # Ghi chú mới
-    category: Optional[str] = None  # Danh mục mới
-    tags: Optional[List[str]] = None  # Các thẻ mới
-    is_active: Optional[bool] = None  # Trạng thái hoạt động mới
-    
-    @field_validator('domain')
-    def validate_domain(cls, v):
-        """
-        Xác thực tên miền nếu được cung cấp.
-        Chỉ kiểm tra khi trường domain được cập nhật.
-        """
-        if v is None:  # Nếu không cung cấp domain, bỏ qua việc xác thực
-            return v
-            
-        domain = v.strip().lower()  # Loại bỏ khoảng trắng và chuyển thành chữ thường
+        if filters.get("type"):
+            query["type"] = filters["type"]
         
-        # Xử lý tên miền wildcard
-        if domain.startswith("*."):
-            domain = domain[2:]  # Loại bỏ phần "*." để kiểm tra phần còn lại
-            
-        # Xác thực định dạng tên miền cơ bản
-        pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-        if not re.match(pattern, domain):
-            raise ValueError("Invalid domain format")  # Báo lỗi nếu không đúng định dạng
-            
-        return v.strip().lower()  # Trả về tên miền đã được chuẩn hóa
-
-
-class WhitelistResponse(BaseModel):
-    """
-    Schema cho việc trả về thông tin whitelist qua API.
-    Đảm bảo dữ liệu được định dạng nhất quán khi trả về cho client.
-    """
-    id: str = Field(..., alias="_id")  # ID MongoDB
-    domain: str  # Tên miền
-    notes: Optional[str] = ""  # Ghi chú
-    added_by: str  # Người thêm
-    added_date: datetime  # Thời điểm thêm
-    last_updated: Optional[datetime] = None  # Thời điểm cập nhật gần nhất
-    category: Optional[str] = None  # Danh mục
-    tags: List[str] = []  # Các thẻ
-    is_wildcard: bool  # Cờ đánh dấu wildcard
-    is_active: bool  # Trạng thái hoạt động
-    
-    # Cấu hình chung cho model
-    model_config = ConfigDict(
-        populate_by_alias=True,  # Cho phép sử dụng alias
-        json_schema_extra={  # Ví dụ JSON cho tài liệu API
-            "example": {
-                "_id": "60d6ec9f5e8e7a721c97195a",
-                "domain": "example.com",
-                "notes": "Example domain",
-                "added_by": "admin",
-                "added_date": "2023-01-01T12:34:56",
-                "last_updated": "2023-01-02T10:11:12",
-                "category": "business",
-                "tags": ["trusted", "partner"],
-                "is_wildcard": False,
-                "is_active": True
-            }
-        }
-    )
-
-
-class WhitelistBulkCreate(BaseModel):
-    """
-    Schema cho việc tạo hàng loạt tên miền whitelist.
-    Cho phép thêm nhiều tên miền cùng lúc với thông tin chung.
-    """
-    domains: List[str]  # Danh sách các tên miền cần thêm
-    notes: Optional[str] = "Bulk import"  # Ghi chú mặc định cho nhập hàng loạt
-    added_by: Optional[str] = "system"  # Người thêm, mặc định là "system"
-    category: Optional[str] = None  # Danh mục tùy chọn
-    tags: Optional[List[str]] = None  # Các thẻ tùy chọn
-    
-    @field_validator('domains')
-    def validate_domains(cls, domains):
-        """
-        Xác thực tất cả các tên miền trong danh sách.
-        Lọc ra các tên miền không hợp lệ và chỉ giữ lại các tên miền hợp lệ.
-        """
-        valid_domains = []  # Danh sách tên miền hợp lệ
+        if filters.get("category"):
+            query["category"] = filters["category"]
         
-        for domain in domains:
-            if not isinstance(domain, str):  # Kiểm tra kiểu dữ liệu
-                continue  # Bỏ qua nếu không phải chuỗi
+        if filters.get("search"):
+            search_term = filters["search"]
+            query["$or"] = [
+                {"value": {"$regex": search_term, "$options": "i"}},
+                {"notes": {"$regex": search_term, "$options": "i"}}
+            ]
+        
+        if filters.get("added_by"):
+            query["added_by"] = filters["added_by"]
+        
+        if filters.get("is_active") is not None:
+            query["is_active"] = filters["is_active"]
+        
+        return query
+    
+    def validate_entry_value(self, entry_type: str, value: str) -> Dict:
+        """Validate entry value based on type"""
+        try:
+            if entry_type == "domain":
+                # Remove wildcard for validation
+                domain_to_check = value.replace("*.", "")
+                # Enhanced domain validation - allow hyphens and longer domains
+                domain_regex = re.compile(
+                    r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$',
+                    re.IGNORECASE
+                )
                 
-            domain = domain.strip().lower()  # Loại bỏ khoảng trắng và chuyển thành chữ thường
+                # Additional checks
+                if len(domain_to_check) > 253:
+                    return {"valid": False, "message": "Domain name too long (max 253 characters)"}
+                if not domain_regex.match(domain_to_check):
+                    return {"valid": False, "message": "Invalid domain format"}
+                if '..' in domain_to_check:
+                    return {"valid": False, "message": "Domain cannot contain consecutive dots"}
+                    
+            elif entry_type == "ip":
+                # Extract IP and port
+                if ':' in value and not value.startswith('['):
+                    # IPv4 with port
+                    parts = value.rsplit(':', 1)
+                    ip_part = parts[0]
+                    try:
+                        port = int(parts[1])
+                        if not (1 <= port <= 65535):
+                            return {"valid": False, "message": "Port must be between 1 and 65535"}
+                    except ValueError:
+                        return {"valid": False, "message": "Invalid port number"}
+                else:
+                    ip_part = value
+                    
+                # Validate IP address (supports CIDR)
+                try:
+                    if '/' in ip_part:
+                        ipaddress.ip_network(ip_part, strict=False)
+                    else:
+                        ipaddress.ip_address(ip_part)
+                except ValueError:
+                    return {"valid": False, "message": "Invalid IP address format"}
+                
+            elif entry_type == "url":
+                try:
+                    # More flexible URL validation
+                    if not (value.startswith('http://') or value.startswith('https://')):
+                        return {"valid": False, "message": "URL must start with http:// or https://"}
+                    
+                    # Handle wildcards by replacing them temporarily
+                    test_value = value.replace('*', 'test')
+                    parsed = urlparse(test_value)
+                    
+                    if not parsed.scheme or not parsed.netloc:
+                        return {"valid": False, "message": "Invalid URL format"}
+                        
+                    # Additional URL validation
+                    if len(value) > 2048:
+                        return {"valid": False, "message": "URL too long (max 2048 characters)"}
+                        
+                except Exception:
+                    return {"valid": False, "message": "Invalid URL format"}
+                
+            elif entry_type == "pattern":
+                if len(value.strip()) < 1:
+                    return {"valid": False, "message": "Pattern cannot be empty"}
+                if len(value) > 255:
+                    return {"valid": False, "message": "Pattern too long (max 255 characters)"}
+                
+            return {"valid": True, "message": "Valid"}
             
-            # Bỏ qua tên miền trống
-            if not domain:
-                continue
-                
-            # Xử lý tên miền wildcard cho việc xác thực
-            check_domain = domain
-            if domain.startswith("*."):
-                check_domain = domain[2:]  # Loại bỏ phần "*." để kiểm tra phần còn lại
-                
-            # Xác thực định dạng tên miền cơ bản
-            pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-            if not re.match(pattern, check_domain):  # Kiểm tra định dạng
-                continue  # Bỏ qua nếu không hợp lệ
-                
-            valid_domains.append(domain)  # Thêm vào danh sách hợp lệ nếu vượt qua kiểm tra
+        except Exception as e:
+            return {"valid": False, "message": f"Validation error: {str(e)}"}
+    
+    def verify_dns(self, domain: str) -> Dict:
+        """Verify DNS resolution for a domain"""
+        try:
+            # Remove wildcard prefix
+            domain_to_check = domain.replace("*.", "")
             
-        return valid_domains  # Trả về danh sách các tên miền hợp lệ
+            result = {"valid": True, "info": []}
+            
+            # IPv4 resolution
+            try:
+                ipv4_addresses = socket.getaddrinfo(domain_to_check, None, socket.AF_INET)
+                ipv4_list = list(set([addr[4][0] for addr in ipv4_addresses]))
+                if ipv4_list:
+                    result["ipv4"] = ipv4_list
+                    result["info"].extend([f"IPv4: {ip}" for ip in ipv4_list])
+            except socket.gaierror:
+                pass
+                
+            # IPv6 resolution
+            try:
+                ipv6_addresses = socket.getaddrinfo(domain_to_check, None, socket.AF_INET6)
+                ipv6_list = list(set([addr[4][0] for addr in ipv6_addresses]))
+                if ipv6_list:
+                    result["ipv6"] = ipv6_list
+                    result["info"].extend([f"IPv6: {ip}" for ip in ipv6_list])
+            except socket.gaierror:
+                pass
+                
+            if not result["info"]:
+                result["valid"] = False
+                result["message"] = "No DNS records found"
+                
+            return result
+            
+        except Exception as e:
+            return {"valid": False, "message": f"DNS verification failed: {str(e)}"}

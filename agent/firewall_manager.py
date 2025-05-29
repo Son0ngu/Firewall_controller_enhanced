@@ -15,7 +15,7 @@ class FirewallManager:
     Uses netsh advfirewall commands through subprocess to interact with Windows Firewall.
     """
     
-    def __init__(self, rule_prefix: str = "sown"):
+    def __init__(self, rule_prefix: str = "FirewallController"):
         """
         Initialize the firewall manager.
         
@@ -30,6 +30,10 @@ class FirewallManager:
         # Tập hợp lưu trữ các địa chỉ IP đã bị chặn
         # Sử dụng kiểu dữ liệu Set để tránh trùng lặp và tìm kiếm nhanh O(1)
         self.blocked_ips: Set[str] = set()
+        
+        # Tập hợp lưu trữ các địa chỉ IP được phép
+        # Theo dõi các IP được phép để có thể xóa quy tắc nếu cần
+        self.allowed_ips = set()  # Track allowed IPs
         
         # Kiểm tra quyền admin - cần thiết để thao tác với tường lửa Windows
         if not self._has_admin_privileges():
@@ -291,6 +295,7 @@ class FirewallManager:
                 command,
                 capture_output=True,
                 text=True,
+                timeout=30,  # ← Thêm timeout 30 giây
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
@@ -330,6 +335,8 @@ class FirewallManager:
             
             logger.info(f"Loaded {len(self.blocked_ips)} blocked IPs from existing firewall rules")
             
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout while loading existing firewall rules")
         except Exception as e:
             logger.error(f"Error loading existing firewall rules: {str(e)}")
     
@@ -441,6 +448,73 @@ class FirewallManager:
                 return False
                 
         return True
+
+    def allow_ip(self, ip_address: str, reason: str = None):
+        """Create allow rule for IP address."""
+        try:
+            if ip_address in self.allowed_ips:
+                logger.debug(f"IP {ip_address} already has allow rule")
+                return True
+            
+            rule_name = f"{self.rule_prefix}_Allow_{ip_address.replace('.', '_').replace(':', '_')}"
+            
+            # Create allow rule (higher priority than block rules)
+            command = [
+                "netsh", "advfirewall", "firewall", "add", "rule",
+                f"name={rule_name}",
+                "dir=out",
+                "action=allow",
+                f"remoteip={ip_address}",
+                "protocol=any"
+            ]
+            
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            
+            if result.returncode == 0:
+                self.allowed_ips.add(ip_address)
+                logger.info(f"✅ Allow rule created for {ip_address}" + (f" ({reason})" if reason else ""))
+                return True
+            else:
+                logger.error(f"❌ Failed to create allow rule for {ip_address}: {result.stderr}")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Command failed for allow rule {ip_address}: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error creating allow rule for {ip_address}: {str(e)}")
+            return False
+    
+    def unallow_ip(self, ip_address: str, reason: str = None):
+        """Remove allow rule for IP address."""
+        try:
+            if ip_address not in self.allowed_ips:
+                logger.debug(f"No allow rule exists for {ip_address}")
+                return True
+            
+            rule_name = f"{self.rule_prefix}_Allow_{ip_address.replace('.', '_').replace(':', '_')}"
+            
+            command = [
+                "netsh", "advfirewall", "firewall", "delete", "rule",
+                f"name={rule_name}"
+            ]
+            
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            
+            if result.returncode == 0:
+                self.allowed_ips.discard(ip_address)
+                logger.info(f"🗑️ Allow rule removed for {ip_address}" + (f" ({reason})" if reason else ""))
+                return True
+            else:
+                logger.warning(f"Failed to remove allow rule for {ip_address}: {result.stderr}")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Command failed for removing allow rule {ip_address}: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error removing allow rule for {ip_address}: {str(e)}")
+            return False
 
 
 # Example usage (for testing)

@@ -90,33 +90,44 @@ class PacketSniffer:
         logger.info("Packet sniffer stopped")
     
     def _capture_packets(self):
-        """Main packet capture loop using Scapy's sniff function."""
-        try:
-            # Xây dựng bộ lọc BPF (Berkeley Packet Filter) cho gói tin
-            # Chỉ bắt gói tin TCP đi ra và có cổng đích là 80 (HTTP) hoặc 443 (HTTPS)
-            # BPF là định dạng lọc gói tin chuẩn được sử dụng bởi nhiều công cụ bắt gói tin
-            filter_str = "tcp and (dst port 80 or dst port 443)"
-            
-            # Ghi log thông tin về bộ lọc đang sử dụng
-            logger.info("Started packet capture with filter: %s", filter_str)
-            
-            # Bắt đầu bắt gói tin với Scapy
-            # Các tham số:
-            # - filter: Chuỗi bộ lọc BPF, xác định gói tin nào sẽ được bắt
-            # - prn: Hàm xử lý cho mỗi gói tin được bắt
-            # - store=0: Không lưu gói tin trong bộ nhớ (tiết kiệm bộ nhớ)
-            # - stop_filter: Hàm kiểm tra khi nào dừng bắt gói tin
-            sniff(
-                filter=filter_str,
-                prn=self._process_packet,  # Gọi _process_packet cho mỗi gói tin
-                store=0,  # Không lưu gói tin vào bộ nhớ để tránh tràn bộ nhớ
-                stop_filter=lambda _: not self.running  # Dừng khi self.running = False
-            )
+        """Main packet capture loop với error recovery"""
+        max_retries = 3
+        retry_count = 0
         
-        except Exception as e:
-            # Bắt và xử lý mọi ngoại lệ có thể xảy ra trong quá trình bắt gói tin
-            # Ghi log lỗi để theo dõi và khắc phục
-            logger.error("Error in packet capture: %s", str(e))
+        while self.running and retry_count < max_retries:
+            try:
+                # Xây dựng bộ lọc BPF (Berkeley Packet Filter) cho gói tin
+                # Chỉ bắt gói tin TCP đi ra và có cổng đích là 80 (HTTP) hoặc 443 (HTTPS)
+                # BPF là định dạng lọc gói tin chuẩn được sử dụng bởi nhiều công cụ bắt gói tin
+                filter_str = "tcp and (dst port 80 or dst port 443)"
+                
+                # Ghi log thông tin về bộ lọc đang sử dụng
+                logger.info("Started packet capture with filter: %s", filter_str)
+                
+                # Bắt đầu bắt gói tin với Scapy
+                # Các tham số:
+                # - filter: Chuỗi bộ lọc BPF, xác định gói tin nào sẽ được bắt
+                # - prn: Hàm xử lý cho mỗi gói tin được bắt
+                # - store=0: Không lưu gói tin trong bộ nhớ (tiết kiệm bộ nhớ)
+                # - stop_filter: Hàm kiểm tra khi nào dừng bắt gói tin
+                sniff(
+                    filter=filter_str,
+                    prn=self._process_packet,  # Gọi _process_packet cho mỗi gói tin
+                    store=0,  # Không lưu gói tin vào bộ nhớ để tránh tràn bộ nhớ
+                    stop_filter=lambda _: not self.running  # Dừng khi self.running = False
+                )
+                break  # Thành công, thoát loop
+                
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"Error in packet capture (attempt {retry_count}/{max_retries}): {str(e)}")
+                
+                if retry_count < max_retries and self.running:
+                    logger.info(f"Retrying packet capture in 5 seconds...")
+                    time.sleep(5)
+                else:
+                    logger.error("Failed to start packet capture after all retries")
+                    break
     
     def _process_packet(self, packet: Packet):
         """
@@ -158,7 +169,7 @@ class PacketSniffer:
             if domain:
                 # Tạo từ điển chứa thông tin về kết nối
                 record = {
-                    "timestamp": datetime.now().isoformat(),  # Thời điểm hiện tại ISO format
+                    "timestamp": datetime.now().astimezone().isoformat(),  # ✅ SỬA: Thêm múi giờ
                     "domain": domain,  # Tên miền đã trích xuất
                     "dest_ip": dst_ip,  # IP đích
                     "dest_port": dst_port,  # Cổng đích
@@ -166,11 +177,9 @@ class PacketSniffer:
                 }
                 
                 # Gọi hàm callback với bản ghi đã tạo
-                # Callback này thường sẽ kiểm tra whitelist và quyết định xử lý
                 self.callback(record)
-        
+    
         except Exception as e:
-            # Bắt và xử lý mọi ngoại lệ có thể xảy ra trong quá trình xử lý gói tin
             logger.error("Error processing packet: %s", str(e))
     
     def _extract_http_host(self, packet) -> Optional[str]:
@@ -262,7 +271,7 @@ class PacketSniffer:
                 # Kiểm tra loại bản ghi TLS (0x16 = handshake) và phiên bản
                 if payload[0] != 0x16:  # Không phải handshake
                     return None
-                    
+                
                 # Kiểm tra nếu đây là bản tin ClientHello (loại handshake = 1)
                 if len(payload) <= 5 or payload[5] != 0x01:
                     return None
@@ -409,33 +418,3 @@ class PacketSniffer:
         # Nếu vượt qua tất cả kiểm tra, hostname được coi là hợp lệ
         return True
 
-
-# Phần code kiểm thử - chỉ chạy khi file được thực thi trực tiếp
-if __name__ == "__main__":
-    # Cấu hình hệ thống ghi log
-    logging.basicConfig(
-        level=logging.INFO,  # Ghi log từ mức INFO trở lên
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Định dạng log
-    )
-    
-    # Định nghĩa hàm callback đơn giản để kiểm thử
-    # Hàm này sẽ được gọi mỗi khi phát hiện tên miền trong lưu lượng mạng
-    def domain_callback(record):
-        print(f"Detected domain: {record['domain']} (IP: {record['dest_ip']}:{record['dest_port']})")
-    
-    # Tạo và khởi động bộ bắt gói tin
-    sniffer = PacketSniffer(callback=domain_callback)
-    
-    try:
-        sniffer.start()
-        
-        # Giữ script chạy cho đến khi người dùng nhấn Ctrl+C
-        print("Sniffer running. Press Ctrl+C to stop...")
-        while True:
-            time.sleep(1)  # Tạm dừng 1 giây để giảm tải CPU
-    except KeyboardInterrupt:
-        # Bắt sự kiện người dùng nhấn Ctrl+C
-        print("Stopping sniffer...")
-    finally:
-        # Đảm bảo dừng sniffer dù có lỗi xảy ra
-        sniffer.stop()
