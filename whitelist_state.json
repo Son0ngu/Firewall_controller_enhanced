@@ -1,9 +1,9 @@
 {
   "domains": [
-    "firewall-controller-vu7f.onrender.com",
-    "http://localhost:5000"
+    "http://localhost:5000",
+    "firewall-controller-vu7f.onrender.com"
   ],
-  "last_updated": "2025-05-29T08:09:07.290003+07:00",
+  "last_updated": "2025-05-29T08:24:00.450418+07:00",
   "domain_count": 2,
-  "saved_at": "2025-05-29T08:09:07.292318+07:00"
+  "saved_at": "2025-05-29T08:24:00.460500+07:00"
 }
