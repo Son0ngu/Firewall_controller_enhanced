@@ -4,4 +4,4 @@
 **.pyc
 __pycache__
 **.__pycache__
-**.json
+*.json
