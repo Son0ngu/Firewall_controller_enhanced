@@ -280,14 +280,26 @@ def _deep_update(base_dict: Dict, update_dict: Dict) -> None:
 
 
 def _validate_config(config: Dict) -> None:
-    """Simple configuration validation"""
+    """Enhanced configuration validation với whitelist_only support"""
     if not config["server"]["url"]:
         logger.warning("Server URL not configured")
     
-    if config["firewall"]["enabled"] and config["firewall"]["mode"] not in ["block", "warn", "monitor"]:
+    # ✅ FIX: Add whitelist_only to valid modes
+    valid_modes = ["block", "warn", "monitor", "whitelist_only"]
+    if config["firewall"]["mode"] not in valid_modes:
         logger.warning(f"Invalid firewall mode: {config['firewall']['mode']} - using 'monitor'")
         config["firewall"]["mode"] = "monitor"
-
+    
+    # ✅ NEW: Validate whitelist_only mode requirements
+    if config["firewall"]["mode"] == "whitelist_only":
+        if not config["firewall"]["enabled"]:
+            logger.warning("Whitelist-only mode requires firewall to be enabled - enabling firewall")
+            config["firewall"]["enabled"] = True
+        
+        if not _has_admin_privileges():
+            logger.warning("Whitelist-only mode requires admin privileges - switching to monitor mode")
+            config["firewall"]["mode"] = "monitor"
+            config["firewall"]["enabled"] = False
 
 def get_config() -> Dict[str, Any]:
     """

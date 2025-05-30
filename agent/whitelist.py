@@ -250,7 +250,7 @@ class WhitelistManager:
             return {"ipv4": [], "ipv6": []}
 
     def _resolve_domain_to_ips(self, domain: str) -> Dict[str, List[str]]:
-        """Enhanced domain to IP resolution"""
+        """Enhanced domain to IP resolution with comprehensive coverage"""
         try:
             clean_domain = domain.replace("*.", "")
             
@@ -260,7 +260,9 @@ class WhitelistManager:
             
             result = {"ipv4": [], "ipv6": []}
             
-            # ✅ ENHANCED: IPv4 resolution with better error handling
+            # ✅ ENHANCED: Multiple resolution methods for better coverage
+            
+            # Method 1: Standard getaddrinfo (IPv4)
             try:
                 ipv4_results = socket.getaddrinfo(
                     clean_domain, None, 
@@ -268,12 +270,44 @@ class WhitelistManager:
                     socket.SOCK_STREAM
                 )
                 ipv4_ips = [res[4][0] for res in ipv4_results]
-                result["ipv4"] = list(set(ipv4_ips))  # Remove duplicates
-                logger.debug(f"🌐 IPv4 for {domain}: {result['ipv4']}")
+                result["ipv4"].extend(ipv4_ips)
+                logger.debug(f"🌐 Method 1 - IPv4 for {domain}: {ipv4_ips}")
             except socket.gaierror as e:
-                logger.debug(f"No IPv4 records for {domain}: {e}")
+                logger.debug(f"Method 1 failed for {domain}: {e}")
             
-            # ✅ ENHANCED: IPv6 resolution (optional, often not needed for firewalls)
+            # Method 2: Try with different socket types
+            try:
+                ipv4_results_dgram = socket.getaddrinfo(
+                    clean_domain, None, 
+                    socket.AF_INET, 
+                    socket.SOCK_DGRAM
+                )
+                ipv4_ips_dgram = [res[4][0] for res in ipv4_results_dgram]
+                result["ipv4"].extend(ipv4_ips_dgram)
+                logger.debug(f"🌐 Method 2 - IPv4 DGRAM for {domain}: {ipv4_ips_dgram}")
+            except socket.gaierror as e:
+                logger.debug(f"Method 2 failed for {domain}: {e}")
+            
+            # Method 3: Try gethostbyname (legacy but sometimes gets different results)
+            try:
+                legacy_ip = socket.gethostbyname(clean_domain)
+                result["ipv4"].append(legacy_ip)
+                logger.debug(f"🌐 Method 3 - Legacy IPv4 for {domain}: {legacy_ip}")
+            except socket.gaierror as e:
+                logger.debug(f"Method 3 failed for {domain}: {e}")
+            
+            # Method 4: Try gethostbyname_ex for additional IPs
+            try:
+                hostname, aliaslist, ipaddrlist = socket.gethostbyname_ex(clean_domain)
+                result["ipv4"].extend(ipaddrlist)
+                logger.debug(f"🌐 Method 4 - Extended IPv4 for {domain}: {ipaddrlist}")
+            except socket.gaierror as e:
+                logger.debug(f"Method 4 failed for {domain}: {e}")
+        
+            # ✅ ENHANCED: Remove duplicates and sort
+            result["ipv4"] = sorted(list(set(result["ipv4"])))
+            
+            # Method 5: IPv6 resolution (optional but comprehensive)
             try:
                 ipv6_results = socket.getaddrinfo(
                     clean_domain, None, 
@@ -281,14 +315,14 @@ class WhitelistManager:
                     socket.SOCK_STREAM
                 )
                 ipv6_ips = [res[4][0] for res in ipv6_results]
-                result["ipv6"] = list(set(ipv6_ips))
+                result["ipv6"] = sorted(list(set(ipv6_ips)))
                 logger.debug(f"🌐 IPv6 for {domain}: {result['ipv6']}")
             except socket.gaierror as e:
                 logger.debug(f"No IPv6 records for {domain}: {e}")
             
             total_ips = len(result["ipv4"]) + len(result["ipv6"])
             if total_ips > 0:
-                logger.debug(f"✅ Resolved {domain} to {total_ips} IPs")
+                logger.debug(f"✅ Resolved {domain} to {total_ips} IPs (IPv4: {len(result['ipv4'])}, IPv6: {len(result['ipv6'])})")
             else:
                 logger.warning(f"❌ No IPs resolved for {domain}")
             
@@ -427,7 +461,7 @@ class WhitelistManager:
     # ========================================
 
     def update_whitelist_from_server(self) -> bool:
-        """Enhanced whitelist update from server với better datetime handling"""
+        """Enhanced whitelist update from server với better completion tracking"""
         if self.sync_in_progress:
             logger.debug("Sync already in progress, skipping")
             return False
@@ -443,8 +477,8 @@ class WhitelistManager:
                     params['since'] = self.last_updated.isoformat()
                 else:
                     params['since'] = str(self.last_updated)
-    
-            logger.debug(f"📡 Syncing whitelist from server: {self.server_url}")
+
+            logger.info(f"📡 Syncing whitelist from server: {self.server_url}")
             
             response = requests.get(
                 self.server_url,
@@ -473,6 +507,11 @@ class WhitelistManager:
                         
                         self.domains = new_domains
                         logger.info(f"📦 Updated whitelist: {len(self.domains)} domains")
+                        
+                        # ✅ ENHANCED: Log sample domains for verification
+                        if self.domains:
+                            sample_domains = list(self.domains)[:3]
+                            logger.info(f"   Sample domains: {sample_domains}")
                     else:
                         logger.warning("Invalid domains format in response")
                         return False
@@ -489,10 +528,27 @@ class WhitelistManager:
                     except Exception as save_error:
                         logger.error(f"Failed to save whitelist state: {save_error}")
                     
-                    # ✅ FIX: Sync with firewall if domains changed
-                    if old_domains != self.domains:
+                    # ✅ ENHANCED: Resolve IPs immediately if domains changed
+                    if old_domains != self.domains and len(self.domains) > 0:
                         logger.info(f"🔄 Domain changes detected: {len(old_domains)} -> {len(self.domains)}")
+                        logger.info("🔍 Immediately resolving IPs for new domains...")
+                        
+                        # Force IP resolution
+                        ip_resolution_success = self._resolve_all_domain_ips(force_refresh=True)
+                        
+                        if ip_resolution_success:
+                            resolved_count = len(self.current_resolved_ips)
+                            logger.info(f"✅ IP resolution completed: {resolved_count} total IPs")
+                        else:
+                            logger.warning("⚠️ IP resolution had some errors")
+                        
+                        # Sync with firewall if available
                         self._sync_with_firewall(old_domains, self.domains)
+                    
+                    # ✅ ENHANCED: Mark startup sync as completed
+                    if not self.startup_sync_completed:
+                        self.startup_sync_completed = True
+                        logger.info("✅ Startup whitelist sync completed")
                     
                     logger.info(f"✅ Whitelist sync completed successfully in {time.time() - start_time:.2f}s")
                     return True
@@ -585,6 +641,9 @@ class WhitelistManager:
                         shutil.move(state_file, backup_file)
                         logger.info(f"Corrupted state file backed up to {backup_file}")
                         return
+            else:
+                logger.debug("Whitelist state file not found, starting fresh")
+                return
             
             # Load domains
             domains_data = state.get("domains", [])
@@ -604,7 +663,7 @@ class WhitelistManager:
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Invalid last_updated format: {e}")
                     self.last_updated = None
-            
+        
             # Load resolved IPs
             if state.get("current_resolved_ips"):
                 resolved_ips_data = state["current_resolved_ips"]
@@ -694,38 +753,41 @@ class WhitelistManager:
                         shutil.move(cache_file, backup_file)
                         logger.info(f"Corrupted cache file backed up to {backup_file}")
                         return
+            else:
+                logger.debug("IP cache file not found, starting fresh")
+                return
                 
-                # ✅ FIX: Load cache with validation
-                cache_raw = cache_data.get("cache", {})
-                if isinstance(cache_raw, dict):
-                    self.ip_cache = {}
-                    for domain, ip_data in cache_raw.items():
-                        if isinstance(ip_data, dict):
-                            self.ip_cache[domain] = {
-                                "ipv4": list(ip_data.get("ipv4", [])),
-                                "ipv6": list(ip_data.get("ipv6", []))
-                            }
-                
-                # ✅ FIX: Parse timestamps with comprehensive error handling
-                timestamp_data = cache_data.get("timestamps", {})
-                if isinstance(timestamp_data, dict):
-                    self.ip_cache_timestamps = {}
-                    for domain, timestamp_str in timestamp_data.items():
-                        try:
-                            if isinstance(timestamp_str, str):
-                                if timestamp_str.endswith('Z'):
-                                    timestamp_str = timestamp_str[:-1] + '+00:00'
-                                self.ip_cache_timestamps[domain] = datetime.fromisoformat(timestamp_str)
-                        except (ValueError, TypeError) as e:
-                            logger.debug(f"Skipping invalid timestamp for {domain}: {e}")
-                            # Remove corresponding cache entry
-                            self.ip_cache.pop(domain, None)
-                
-                # ✅ FIX: Clean expired entries on load
-                self._clean_expired_cache()
-                
-                logger.debug(f"📂 Loaded IP cache: {len(self.ip_cache)} entries")
-                
+            # ✅ FIX: Load cache with validation
+            cache_raw = cache_data.get("cache", {})
+            if isinstance(cache_raw, dict):
+                self.ip_cache = {}
+                for domain, ip_data in cache_raw.items():
+                    if isinstance(ip_data, dict):
+                        self.ip_cache[domain] = {
+                            "ipv4": list(ip_data.get("ipv4", [])),
+                            "ipv6": list(ip_data.get("ipv6", []))
+                        }
+            
+            # ✅ FIX: Parse timestamps with comprehensive error handling
+            timestamp_data = cache_data.get("timestamps", {})
+            if isinstance(timestamp_data, dict):
+                self.ip_cache_timestamps = {}
+                for domain, timestamp_str in timestamp_data.items():
+                    try:
+                        if isinstance(timestamp_str, str):
+                            if timestamp_str.endswith('Z'):
+                                timestamp_str = timestamp_str[:-1] + '+00:00'
+                            self.ip_cache_timestamps[domain] = datetime.fromisoformat(timestamp_str)
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Skipping invalid timestamp for {domain}: {e}")
+                        # Remove corresponding cache entry
+                        self.ip_cache.pop(domain, None)
+            
+            # ✅ FIX: Clean expired entries on load
+            self._clean_expired_cache()
+            
+            logger.debug(f"📂 Loaded IP cache: {len(self.ip_cache)} entries")
+            
         except Exception as e:
             logger.warning(f"Could not load IP cache: {e}")
             self.ip_cache = {}

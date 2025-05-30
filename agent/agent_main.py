@@ -607,103 +607,182 @@ def _register_agent(agent_info: Dict) -> bool:
     return False
 
 def _setup_whitelist_firewall() -> bool:
-    """Setup whitelist-only firewall (STARTUP PHASE 3)"""
+    """Setup whitelist-only firewall (STARTUP PHASE 3) - ENHANCED"""
     try:
         if not firewall or not whitelist:
             logger.error("Firewall or whitelist not available for setup")
             return False
         
-        # ✅ ENHANCED: Wait for whitelist to be ready
-        max_wait = 30  # 30 seconds max wait
+        # ✅ ENHANCED: Wait for whitelist to be ready với extended timeout
+        max_wait = 90  # 90 seconds max wait (increased)
         wait_time = 0
+        sync_check_interval = 3  # Check every 3 seconds
+        
+        logger.info("⏳ Waiting for whitelist sync to complete...")
+        
         while not whitelist.startup_sync_completed and wait_time < max_wait:
-            logger.debug(f"Waiting for whitelist sync to complete... ({wait_time}s)")
-            time.sleep(1)
-            wait_time += 1
+            logger.info(f"   Waiting for whitelist sync... ({wait_time}s/{max_wait}s)")
+            time.sleep(sync_check_interval)
+            wait_time += sync_check_interval
+            
+            # ✅ ADD: Show progress
+            if wait_time % 15 == 0:  # Every 15 seconds
+                domain_count = len(whitelist.domains)
+                ip_count = len(whitelist.current_resolved_ips)
+                logger.info(f"   Current: {domain_count} domains → {ip_count} IPs")
         
         if not whitelist.startup_sync_completed:
-            logger.warning("Whitelist sync not completed, proceeding with cached data")
+            logger.warning("⚠️ Whitelist sync not completed within timeout")
+            logger.info(f"   Proceeding with {len(whitelist.domains)} cached domains")
+        else:
+            logger.info(f"✅ Whitelist sync completed with {len(whitelist.domains)} domains")
         
-        # ✅ ENHANCED: Get all whitelisted IPs (force refresh to ensure latest)
-        logger.info("🔍 Resolving all whitelisted domains to IPs...")
+        # ✅ ENHANCED: Ensure we have some domains before proceeding
+        if len(whitelist.domains) == 0:
+            logger.warning("⚠️ No domains in whitelist - adding emergency domains")
+            emergency_domains = {
+                "github.com",
+                "raw.githubusercontent.com", 
+                "google.com",
+                "microsoft.com",
+                config['server']['url'].replace('https://', '').replace('http://', '').split('/')[0]
+            }
+            whitelist.domains.update(emergency_domains)
+            logger.info(f"✅ Added {len(emergency_domains)} emergency domains")
+        
+        # ✅ ENHANCED: Force comprehensive IP resolution with multiple attempts
+        logger.info("🔍 Performing comprehensive IP resolution...")
+        max_resolution_attempts = 5  # Increased attempts
+        resolution_attempt = 0
+        best_ip_count = 0
+        
+        while resolution_attempt < max_resolution_attempts:
+            resolution_attempt += 1
+            logger.info(f"   Resolution attempt {resolution_attempt}/{max_resolution_attempts}")
+            
+            # ✅ ENHANCED: Clear cache on subsequent attempts
+            if resolution_attempt > 1:
+                logger.info("   Clearing IP cache for fresh resolution...")
+                whitelist.ip_cache.clear()
+                whitelist.ip_cache_timestamps.clear()
+            
+            # Force refresh all domain IPs
+            success = whitelist._resolve_all_domain_ips(force_refresh=True)
+            
+            resolved_ips = whitelist.get_all_whitelisted_ips(force_refresh=True)
+            current_count = len(resolved_ips)
+            
+            logger.info(f"   Attempt {resolution_attempt}: {current_count} IPs from {len(whitelist.domains)} domains")
+            
+            # ✅ ENHANCED: Track best result
+            if current_count > best_ip_count:
+                best_ip_count = current_count
+            
+            # ✅ ENHANCED: Success criteria - we need reasonable number of IPs
+            min_expected_ips = len(whitelist.domains) * 1  # At least 1 IP per domain
+            if current_count >= min_expected_ips:
+                logger.info(f"✅ Sufficient IPs resolved: {current_count} >= {min_expected_ips}")
+                break
+            
+            if resolution_attempt < max_resolution_attempts:
+                logger.warning(f"   Only {current_count} IPs resolved, retrying in 10 seconds...")
+                time.sleep(10)
+        
+        # ✅ ENHANCED: Get final whitelisted IPs
         whitelisted_ips = whitelist.get_all_whitelisted_ips(force_refresh=True)
         
         if not whitelisted_ips:
-            logger.warning("⚠️ No whitelisted IPs found - firewall will block everything!")
+            logger.error("❌ No whitelisted IPs found after all resolution attempts!")
             # ✅ ENHANCED: Add emergency allowlist
             emergency_ips = _get_emergency_allowlist()
             whitelisted_ips = emergency_ips
             logger.info(f"🆘 Using emergency allowlist: {len(emergency_ips)} IPs")
         
-        logger.info(f"📍 Total IPs to whitelist: {len(whitelisted_ips)}")
+        logger.info(f"📍 Final IPs to whitelist: {len(whitelisted_ips)}")
+        
+        # ✅ DEBUG: Log detailed IP breakdown
+        sample_ips = list(whitelisted_ips)[:8]
+        logger.info(f"   Sample IPs: {sample_ips}")
         
         # ✅ ENHANCED: Get essential IPs
         essential_ips = _get_essential_ips()
         logger.info(f"🔧 Essential IPs: {len(essential_ips)}")
+        logger.info(f"   Essential sample: {list(essential_ips)[:5]}")
         
-        # ✅ ENHANCED: Setup whitelist firewall
+        # ✅ ENHANCED: Final verification
+        total_allowed = len(whitelisted_ips) + len(essential_ips)
+        logger.info(f"📊 Total IPs to be allowed: {total_allowed}")
+        
+        if total_allowed < 10:
+            logger.warning(f"⚠️ Very few IPs to allow ({total_allowed}) - this may block too much traffic")
+        
+        # ✅ ENHANCED: Setup whitelist firewall with comprehensive logging
         logger.info("🔥 Creating firewall rules...")
+        logger.info(f"   Creating allow rules for {len(whitelisted_ips)} whitelisted IPs")
+        logger.info(f"   Creating allow rules for {len(essential_ips)} essential IPs")
+        logger.info("⚠️ WARNING: This will block ALL other outbound traffic!")
+        
         success = firewall.setup_whitelist_firewall(whitelisted_ips, essential_ips)
         
         if success:
-            # ✅ ENHANCED: Log setup summary
-            total_allowed = len(whitelisted_ips) + len(essential_ips)
-            logger.info(f"🎉 Whitelist firewall setup successful:")
-            logger.info(f"   - Whitelisted IPs: {len(whitelisted_ips)}")
-            logger.info(f"   - Essential IPs: {len(essential_ips)}")
-            logger.info(f"   - Total allowed: {total_allowed}")
-            logger.info(f"   - Default action: BLOCK all others")
+            logger.info("✅ Whitelist-only firewall setup completed successfully")
+            logger.info("🔒 Default policy: BLOCK all non-whitelisted traffic")
+            logger.info(f"✅ Total allowed IPs: {total_allowed}")
+            
+            # ✅ ENHANCED: Verify firewall status
+            status = firewall.get_whitelist_status()
+            logger.info(f"🔍 Firewall status: {status}")
             
             return True
         else:
-            logger.error("❌ Whitelist firewall setup failed")
+            logger.error("❌ Failed to setup whitelist-only firewall")
             return False
             
     except Exception as e:
         logger.error(f"Error setting up whitelist firewall: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def _get_emergency_allowlist() -> set:
     """Get emergency IPs that should always be allowed"""
     emergency_ips = set()
     
-    # ✅ ENHANCED: Server IPs
+    # ✅ ENHANCED: Server IPs - resolve all configured servers
     try:
         server_urls = config['server'].get('urls', [config['server']['url']])
         for url in server_urls:
-            # Extract domain from URL
-            if "://" in url:
-                domain = url.split("://")[1].split("/")[0].split(":")[0]
-            else:
-                domain = url.split("/")[0].split(":")[0]
-            
-            # Resolve server domain
+            # Extract hostname from URL
+            hostname = url.replace('https://', '').replace('http://', '').split('/')[0]
             try:
-                server_ips = socket.getaddrinfo(domain, None, socket.AF_INET)
+                server_ips = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
                 for ip_info in server_ips:
                     emergency_ips.add(ip_info[4][0])
-                logger.debug(f"Emergency: Added server IPs for {domain}")
-            except:
-                logger.warning(f"Could not resolve emergency server: {domain}")
-    except:
-        pass
+                logger.info(f"🆘 Added server IPs for {hostname}")
+            except Exception as e:
+                logger.warning(f"Could not resolve emergency server {hostname}: {e}")
+    except Exception as e:
+        logger.warning(f"Error resolving emergency server IPs: {e}")
     
-    # ✅ ENHANCED: Essential services
+    # ✅ ENHANCED: Essential services domains
     essential_domains = [
-        "github.com", "raw.githubusercontent.com",  # For updates
-        "pypi.org", "files.pythonhosted.org",      # Python packages
-        "microsoft.com", "windows.com",             # Windows updates
+        "github.com", "raw.githubusercontent.com",        # Git/GitHub
+        "pypi.org", "files.pythonhosted.org",           # Python packages
+        "microsoft.com", "windows.com", "live.com",     # Microsoft services
+        "google.com", "googleapis.com",                 # Google services
+        "cloudflare.com", "1.1.1.1"                    # DNS/CDN
     ]
     
     for domain in essential_domains:
         try:
-            domain_ips = socket.getaddrinfo(domain, None, socket.AF_INET)
+            domain_ips = socket.getaddrinfo(domain, None, socket.AF_INET, socket.SOCK_STREAM)
             for ip_info in domain_ips:
                 emergency_ips.add(ip_info[4][0])
-        except:
-            logger.debug(f"Could not resolve emergency domain: {domain}")
+            logger.debug(f"🆘 Added emergency IPs for {domain}")
+        except Exception as e:
+            logger.debug(f"Could not resolve emergency domain {domain}: {e}")
     
-    logger.info(f"🆘 Emergency allowlist: {len(emergency_ips)} IPs")
+    logger.info(f"🆘 Emergency allowlist compiled: {len(emergency_ips)} IPs")
     return emergency_ips
 
 def _get_essential_ips() -> set:
@@ -759,64 +838,52 @@ def _initialize_log_sender() -> LogSender:
     return log_sender
 
 def _start_command_polling():
-    """Enhanced command polling with better error handling"""
-    def poll_commands():
-        consecutive_failures = 0
-        max_failures = 5
-        base_poll_interval = 5
+    """Start command polling thread"""
+    def polling_loop():
+        logger.info("🎮 Command polling started")
         
-        while running and agent_state["components_initialized"]:
+        while running:
             try:
-                if not config.get('agent_id') or not config.get('agent_token'):
-                    time.sleep(30)
+                if not config.get('agent_id'):
+                    time.sleep(5)
                     continue
                 
-                # ✅ ENHANCED: Dynamic polling interval based on failures
-                poll_interval = min(base_poll_interval * (2 ** consecutive_failures), 60)
+                # Poll for commands from server
+                server_urls = config['server'].get('urls', [config['server']['url']])
                 
-                # ✅ ENHANCED: Check for pending commands
-                server_url = config.get('server_url', config["server"]["url"])
-                commands_url = f"{server_url.rstrip('/')}/api/agents/commands"
+                for server_url in server_urls:
+                    try:
+                        commands_url = f"{server_url.rstrip('/')}/api/agents/{config['agent_id']}/commands"
+                        
+                        response = requests.get(
+                            commands_url,
+                            timeout=config['server'].get('connect_timeout', 15),
+                            headers={'Content-Type': 'application/json'}
+                        )
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            commands = data.get('commands', [])
+                            
+                            for command in commands:
+                                _process_command(command)
+                            
+                            break  # Success, break out of server loop
+                            
+                    except Exception as e:
+                        logger.debug(f"Command polling failed for {server_url}: {e}")
+                        continue
                 
-                params = {
-                    'agent_id': config['agent_id'],
-                    'token': config['agent_token']
-                }
-                
-                response = requests.get(commands_url, params=params, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    commands = data.get('data', {}).get('commands', [])
-                    
-                    if commands:
-                        logger.info(f"📥 Received {len(commands)} commands")
-                        for command in commands:
-                            _process_command(command)
-                    
-                    consecutive_failures = 0  # Reset on success
-                else:
-                    consecutive_failures += 1
-                    logger.warning(f"Command polling failed: HTTP {response.status_code}")
-                
-                time.sleep(poll_interval)
+                time.sleep(30)  # Poll every 30 seconds
                 
             except Exception as e:
-                consecutive_failures += 1
-                logger.error(f"Error polling commands: {e}")
-                
-                if consecutive_failures >= max_failures:
-                    logger.error("Too many command polling failures, stopping")
-                    break
-                
-                time.sleep(min(30, base_poll_interval * consecutive_failures))
-        
-        logger.info("Command polling stopped")
+                logger.error(f"Error in command polling: {e}")
+                time.sleep(60)  # Wait longer on error
     
-    # ✅ ENHANCED: Start polling in background thread
-    polling_thread = threading.Thread(target=poll_commands, daemon=True)
-    polling_thread.start()
-    logger.info("✅ Command polling started")
+    if command_processor:
+        polling_thread = threading.Thread(target=polling_loop, daemon=True)
+        polling_thread.start()
+        logger.info("✅ Command polling thread started")
 
 def _process_command(command: Dict):
     """Enhanced command processing with better error handling"""

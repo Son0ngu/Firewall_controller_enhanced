@@ -43,61 +43,133 @@ class FirewallManager:
             logger.warning("Firewall operations require administrator privileges")
         
         # Load existing rules to sync state
-        self._load_existing_rules()
-        logger.info(f"FirewallManager initialized with prefix: {self.rule_prefix}")
+        try:
+            self._load_existing_rules()
+            logger.info(f"FirewallManager initialized with prefix: {self.rule_prefix}")
+        except Exception as e:
+            logger.error(f"Error loading existing rules: {e}")
     
     # ✅ NEW: Whitelist-only mode setup (STARTUP PHASE)
     def setup_whitelist_firewall(self, whitelisted_ips: Set[str], essential_ips: Set[str] = None) -> bool:
-        """
-        Setup complete whitelist-based firewall (STARTUP PHASE).
-        Creates allow rules for whitelisted IPs and default block rule.
-        
-        Args:
-            whitelisted_ips: Set of IP addresses that should be allowed
-            essential_ips: Set of essential IPs (localhost, DNS, etc.)
-            
-        Returns:
-            bool: True if setup successful, False otherwise
-        """
+        """Setup complete whitelist-based firewall - ENHANCED"""
         try:
             logger.info("🔧 Setting up whitelist-based firewall...")
             
-            # 1. Get essential IPs if not provided
+            # ✅ ENHANCED: Validate inputs
+            if not whitelisted_ips:
+                logger.error("❌ No whitelisted IPs provided")
+                return False
+            
+            # 1. Get essential IPs if not provided (IPv4 only)
             if essential_ips is None:
                 essential_ips = self._get_essential_ips()
-            
+        
+            # ✅ FIX: Filter out IPv6 addresses
+            whitelisted_ips_v4 = {ip for ip in whitelisted_ips if self._is_valid_ipv4(ip)}
+            essential_ips_v4 = {ip for ip in essential_ips if self._is_valid_ipv4(ip)}
+        
             # 2. Store essential IPs for tracking
-            self.essential_ips = essential_ips.copy()
+            self.essential_ips = essential_ips_v4.copy()
             
             # 3. Combine whitelisted + essential IPs
-            all_allowed_ips = whitelisted_ips.union(essential_ips)
-            logger.info(f"Total IPs to allow: {len(all_allowed_ips)} ({len(whitelisted_ips)} whitelist + {len(essential_ips)} essential)")
+            all_allowed_ips = whitelisted_ips_v4.union(essential_ips_v4)
+            logger.info(f"📊 Total IPv4 IPs to allow: {len(all_allowed_ips)}")
+            logger.info(f"   - Whitelisted IPv4: {len(whitelisted_ips_v4)}")
+            logger.info(f"   - Essential IPv4: {len(essential_ips_v4)}")
             
-            # 4. Create allow rules for all allowed IPs (HIGH PRIORITY)
+            # ✅ LOG: Filtered out IPs
+            filtered_whitelist = whitelisted_ips - whitelisted_ips_v4
+            filtered_essential = essential_ips - essential_ips_v4
+            if filtered_whitelist:
+                logger.info(f"   - Filtered whitelist (non-IPv4): {filtered_whitelist}")
+            if filtered_essential:
+                logger.info(f"   - Filtered essential (non-IPv4): {filtered_essential}")
+        
+            # ✅ ENHANCED: Ensure minimum IPs
+            if len(all_allowed_ips) < 5:
+                logger.warning(f"⚠️ Very few IPs to allow ({len(all_allowed_ips)}) - adding emergency IPs")
+                emergency_ips = {"8.8.8.8", "1.1.1.1", "127.0.0.1"}
+                all_allowed_ips.update(emergency_ips)
+                logger.info(f"   Added emergency IPs: {emergency_ips}")
+            
+            # ✅ ENHANCED: Clear any existing rules first
+            logger.info("🧹 Cleaning up existing rules...")
+            self.cleanup_all_rules()
+            
+            # ✅ Wait for cleanup
+            logger.info("⏳ Waiting for rule cleanup to complete...")
+            time.sleep(3)
+            
+            # 4. Create allow rules for all allowed IPs
+            logger.info("✅ Creating allow rules...")
             success_count = 0
             error_count = 0
             
-            for ip in all_allowed_ips:
-                if self._create_allow_rule(ip, "Whitelist startup"):
-                    success_count += 1
-                else:
-                    error_count += 1
+            # ✅ ENHANCED: Create rules in batches
+            ip_list = list(all_allowed_ips)
+            batch_size = 10
             
-            logger.info(f"Created {success_count}/{len(all_allowed_ips)} allow rules")
-            
-            # 5. Create default block rule (LOWEST PRIORITY)
-            if self._create_default_block_rule():
-                self.whitelist_mode_active = True
-                logger.info("🔒 Whitelist-only firewall setup completed")
-                logger.info("   - All non-whitelisted outbound traffic will be blocked")
-                logger.info(f"   - {len(all_allowed_ips)} IPs are explicitly allowed")
-                return True
-            else:
-                logger.error("❌ Failed to create default block rule")
-                return False
+            for i in range(0, len(ip_list), batch_size):
+                batch = ip_list[i:i + batch_size]
+                logger.info(f"   Creating batch {i//batch_size + 1}: {len(batch)} rules...")
                 
+                for ip in batch:
+                    if self._create_allow_rule(ip, "Whitelist startup"):
+                        success_count += 1
+                    else:
+                        error_count += 1
+                
+                # Small delay between batches
+                if i + batch_size < len(ip_list):
+                    time.sleep(1)
+        
+            logger.info(f"✅ Allow rules created: {success_count}/{len(all_allowed_ips)} (errors: {error_count})")
+            
+            # ✅ ENHANCED: Wait for rules to be applied
+            logger.info("⏳ Waiting for allow rules to be applied...")
+            time.sleep(5)
+            
+            # ✅ ENHANCED: Better verification
+            if success_count > 0:
+                logger.info("🔍 Verifying allow rules...")
+                test_ips = list(all_allowed_ips)[:5]  # Test first 5
+                verified_count = self._verify_allow_rules(test_ips)
+                logger.info(f"   Verified {verified_count}/{len(test_ips)} sample allow rules")
+                
+                # ✅ RELAXED: Accept if at least some rules work
+                if verified_count > 0 or success_count >= 5:
+                    logger.info(f"✅ Rule verification acceptable: {verified_count} verified, {success_count} created")
+                else:
+                    logger.error("❌ No allow rules could be verified - aborting default block creation")
+                    return False
+            
+            # 5. Create default block rule if we have enough allow rules
+            if success_count >= 3:
+                logger.info("🔒 Creating default block rule...")
+                logger.info(f"⚠️ WARNING: Will block ALL traffic except {success_count} allowed IPs")
+                
+                if self._create_default_block_rule():
+                    self.whitelist_mode_active = True
+                    logger.info("🎉 Whitelist-only firewall setup completed successfully!")
+                    logger.info("🔒 Default policy: BLOCK all non-whitelisted traffic")
+                    logger.info(f"✅ Protected IPs: {success_count} explicitly allowed")
+                    
+                    # Show final status
+                    status = self.get_whitelist_status()
+                    logger.info(f"📊 Final status: {status}")
+                    
+                    return True
+                else:
+                    logger.error("❌ Failed to create default block rule")
+                    return False
+            else:
+                logger.error(f"❌ Insufficient allow rules created ({success_count} < 3) - aborting")
+                return False
+            
         except Exception as e:
             logger.error(f"Error setting up whitelist firewall: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _create_allow_rule(self, ip: str, reason: str = None) -> bool:
@@ -122,20 +194,25 @@ class FirewallManager:
                 logger.warning(f"Invalid IP address format: {ip}")
                 return False
             
-            # Generate rule name
-            rule_name = f"{self.rule_prefix}_Allow_{ip.replace('.', '_').replace(':', '_')}"
+            # Generate rule name with timestamp for uniqueness
+            timestamp = int(time.time())
+            rule_name = f"{self.rule_prefix}_Allow_{ip.replace('.', '_').replace(':', '_')}_{timestamp}"
             
-            # Create high priority allow rule
+            # Create HIGH PRIORITY allow rule
             command = [
                 "netsh", "advfirewall", "firewall", "add", "rule",
                 f"name={rule_name}",
-                "dir=out",                    # Outbound traffic
-                "action=allow",               # Allow action
-                f"remoteip={ip}",            # Target IP
-                "protocol=any",               # All protocols
-                "enable=yes",                 # Enable immediately
-                f"description=Allow: {reason or 'Whitelist'}"
+                "dir=out",
+                "action=allow",
+                f"remoteip={ip}",
+                "protocol=any",
+                "enable=yes",
+                "edge=no",
+                "interfacetype=any",
+                f"description=High priority allow rule for {reason or 'Whitelist'} - IP: {ip}"
             ]
+            
+            logger.debug(f"🔓 Creating high-priority allow rule for {ip}")
             
             result = subprocess.run(
                 command,
@@ -149,7 +226,9 @@ class FirewallManager:
                 logger.debug(f"✅ Allow rule created for {ip}")
                 return True
             else:
-                logger.error(f"❌ Failed to create allow rule for {ip}: {result.stderr}")
+                logger.error(f"❌ Failed to create allow rule for {ip}")
+                logger.error(f"   Command: {' '.join(command)}")
+                logger.error(f"   Error: {result.stderr}")
                 return False
                 
         except Exception as e:
@@ -157,13 +236,7 @@ class FirewallManager:
             return False
     
     def _create_default_block_rule(self) -> bool:
-        """
-        Create default block rule with lowest priority.
-        This blocks all outbound traffic not explicitly allowed.
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Create default block rule with LOWEST priority"""
         if self.default_block_created:
             logger.debug("Default block rule already exists")
             return True
@@ -171,16 +244,21 @@ class FirewallManager:
         try:
             rule_name = f"{self.rule_prefix}_DefaultBlock"
             
-            # Create lowest priority default block rule
             command = [
                 "netsh", "advfirewall", "firewall", "add", "rule",
                 f"name={rule_name}",
-                "dir=out",                                    # Outbound traffic
-                "action=block",                               # Block action
-                "remoteip=any",                              # All remote IPs
-                "enable=yes",                                # Enable immediately
-                "description=Default block rule - blocks all non-whitelisted traffic"
+                "dir=out",
+                "action=block",
+                "remoteip=any",
+                "localip=any",
+                "protocol=any",
+                "enable=yes",
+                "edge=no",
+                "interfacetype=any",
+                f"description=LOWEST PRIORITY default block rule for whitelist-only mode - blocks all non-whitelisted outbound traffic"
             ]
+            
+            logger.info(f"🔒 Creating LOWEST PRIORITY default block rule: {rule_name}")
             
             result = subprocess.run(
                 command,
@@ -191,30 +269,62 @@ class FirewallManager:
             
             if result.returncode == 0:
                 self.default_block_created = True
-                logger.info("🔒 Default block rule created")
+                logger.info("✅ Default block rule created successfully")
                 return True
             else:
-                logger.error(f"❌ Failed to create default block rule: {result.stderr}")
+                logger.error(f"❌ Failed to create default block rule")
+                logger.error(f"   Command: {' '.join(command)}")
+                logger.error(f"   Error: {result.stderr}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error creating default block rule: {e}")
+            logger.error(f"Exception creating default block rule: {e}")
             return False
     
-    def _get_essential_ips(self) -> Set[str]:
-        """
-        Get essential IPs that should always be allowed.
-        Includes localhost, common DNS servers, and local gateway.
+    def _is_valid_ip(self, ip: str) -> bool:
+        """Enhanced IP validation supporting both IPv4 and IPv6"""
+        try:
+            # Method 1: Use ipaddress module (most reliable)
+            import ipaddress
+            ipaddress.ip_address(ip)
+            return True
+        except (ValueError, ipaddress.AddressValueError):
+            pass
         
-        Returns:
-            Set[str]: Set of essential IP addresses
-        """
+        try:
+            # Method 2: IPv4 regex validation (fallback)
+            pattern = r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$'
+            match = re.match(pattern, ip)
+            
+            if not match:
+                return False
+                
+            for i in range(1, 5):
+                octet = int(match.group(i))
+                if octet < 0 or octet > 255:
+                    return False
+                    
+            return True
+        except:
+            return False
+
+    def _is_valid_ipv4(self, ip: str) -> bool:
+        """Check if string is a valid IPv4 address"""
+        try:
+            import ipaddress
+            addr = ipaddress.ip_address(ip)
+            return isinstance(addr, ipaddress.IPv4Address)
+        except:
+            return False
+
+    def _get_essential_ips(self) -> Set[str]:
+        """Get essential IPs - IPv4 only for firewall compatibility"""
         essential = set()
         
-        # Localhost addresses
-        essential.update(["127.0.0.1", "::1"])
+        # IPv4 localhost only
+        essential.add("127.0.0.1")
         
-        # Common public DNS servers
+        # Common public DNS servers (IPv4 only)
         essential.update([
             "8.8.8.8", "8.8.4.4",              # Google DNS
             "1.1.1.1", "1.0.0.1",              # Cloudflare DNS
@@ -227,31 +337,19 @@ class FirewallManager:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 local_ip = s.getsockname()[0]
-                # Add likely gateway (usually .1 of local subnet)
+                essential.add(local_ip)
                 gateway_ip = '.'.join(local_ip.split('.')[:-1]) + '.1'
                 essential.add(gateway_ip)
-                logger.debug(f"Detected local gateway: {gateway_ip}")
+                logger.debug(f"Detected local network: {local_ip}, gateway: {gateway_ip}")
         except Exception as e:
-            logger.debug(f"Could not detect local gateway: {e}")
+            logger.debug(f"Could not detect local network: {e}")
         
-        logger.debug(f"Essential IPs: {essential}")
+        logger.debug(f"Essential IPs (IPv4 only): {essential}")
         return essential
     
-    # ✅ NEW: Runtime sync methods (RUNTIME PHASE)
     def sync_whitelist_changes(self, old_ips: Set[str], new_ips: Set[str]) -> bool:
-        """
-        Sync firewall rules with whitelist changes (RUNTIME PHASE).
-        Updates allow rules when whitelist changes.
-        
-        Args:
-            old_ips: Previous set of whitelisted IPs
-            new_ips: New set of whitelisted IPs
-            
-        Returns:
-            bool: True if sync successful, False otherwise
-        """
+        """Sync firewall rules with whitelist changes"""
         try:
-            # Calculate changes
             added_ips = new_ips - old_ips
             removed_ips = old_ips - new_ips
             
@@ -266,7 +364,6 @@ class FirewallManager:
             
             # Add new allow rules
             for ip in added_ips:
-                # Skip essential IPs (already handled)
                 if ip not in self.essential_ips:
                     if self._create_allow_rule(ip, "Whitelist update"):
                         success_count += 1
@@ -275,7 +372,6 @@ class FirewallManager:
             
             # Remove old allow rules
             for ip in removed_ips:
-                # Skip essential IPs (never remove)
                 if ip not in self.essential_ips:
                     if self._remove_allow_rule(ip, "Whitelist update"):
                         success_count += 1
@@ -290,26 +386,19 @@ class FirewallManager:
             return False
     
     def _remove_allow_rule(self, ip: str, reason: str = None) -> bool:
-        """
-        Remove allow rule for an IP address.
-        
-        Args:
-            ip: IP address to remove allow rule for
-            reason: Reason for removal (for logging)
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Remove allow rule for an IP address"""
         try:
             if ip not in self.allowed_ips:
                 logger.debug(f"No allow rule exists for {ip}")
                 return True
             
-            rule_name = f"{self.rule_prefix}_Allow_{ip.replace('.', '_').replace(':', '_')}"
+            # Find rule by IP pattern in name
+            rule_pattern = f"{self.rule_prefix}_Allow_{ip.replace('.', '_').replace(':', '_')}"
             
+            # Get all rules and find matching ones
             command = [
-                "netsh", "advfirewall", "firewall", "delete", "rule",
-                f"name={rule_name}"
+                "netsh", "advfirewall", "firewall", "show", "rule", 
+                "name=all", "verbose"
             ]
             
             result = subprocess.run(
@@ -319,13 +408,45 @@ class FirewallManager:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             
-            if result.returncode == 0:
-                self.allowed_ips.discard(ip)
-                logger.debug(f"🗑️ Allow rule removed for {ip}")
-                return True
-            else:
-                logger.warning(f"Failed to remove allow rule for {ip}: {result.stderr}")
+            if result.returncode != 0:
+                logger.error("Failed to list rules")
                 return False
+            
+            # Find matching rule names
+            rule_names_to_delete = []
+            lines = result.stdout.split('\n')
+            
+            for line in lines:
+                if line.strip().startswith("Rule Name:"):
+                    rule_name = line.strip()[10:].strip()
+                    if rule_pattern in rule_name:
+                        rule_names_to_delete.append(rule_name)
+            
+            # Delete found rules
+            success = True
+            for rule_name in rule_names_to_delete:
+                command = [
+                    "netsh", "advfirewall", "firewall", "delete", "rule",
+                    f"name={rule_name}"
+                ]
+                
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                
+                if result.returncode == 0:
+                    logger.debug(f"🗑️ Removed allow rule: {rule_name}")
+                else:
+                    logger.warning(f"Failed to remove rule {rule_name}: {result.stderr}")
+                    success = False
+            
+            if success:
+                self.allowed_ips.discard(ip)
+            
+            return success
                 
         except Exception as e:
             logger.error(f"Error removing allow rule for {ip}: {e}")
@@ -366,12 +487,7 @@ class FirewallManager:
             return False
     
     def _remove_default_block_rule(self) -> bool:
-        """
-        Remove the default block rule.
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Remove the default block rule"""
         if not self.default_block_created:
             return True
         
@@ -469,7 +585,6 @@ class FirewallManager:
         try:
             logger.debug("Loading existing firewall rules...")
             
-            # Get all firewall rules
             command = [
                 "netsh", "advfirewall", "firewall", "show", "rule", 
                 "name=all", "verbose"
@@ -490,29 +605,23 @@ class FirewallManager:
             # Parse output
             current_rule = None
             current_action = None
-            current_ip = None
             lines = result.stdout.split('\n')
             
             for line in lines:
                 line = line.strip()
                 
-                # Start of a new rule
                 if line.startswith("Rule Name:"):
                     current_rule = line[10:].strip()
                     current_action = None
-                    current_ip = None
                     
-                    # Check if it's our rule
                     if not current_rule.startswith(self.rule_prefix):
                         current_rule = None
                         continue
                     
-                    # Check for default block rule
                     if current_rule.endswith("_DefaultBlock"):
                         self.default_block_created = True
                         logger.debug("Found existing default block rule")
                 
-                # Only process lines if we're in a rule with our prefix
                 elif current_rule:
                     if line.startswith("Action:"):
                         current_action = line[7:].strip().lower()
@@ -525,9 +634,6 @@ class FirewallManager:
                             for part in ip_parts:
                                 part = part.strip()
                                 if self._is_valid_ip(part):
-                                    current_ip = part
-                                    
-                                    # Categorize based on action
                                     if current_action == "allow":
                                         self.allowed_ips.add(part)
                                         logger.debug(f"Found existing allow rule for: {part}")
@@ -547,12 +653,69 @@ class FirewallManager:
         except Exception as e:
             logger.error(f"Error loading existing firewall rules: {e}")
     
-    # ✅ LEGACY: Keep existing methods for backward compatibility
+    def _verify_allow_rules(self, ip_list: List[str]) -> int:
+        """Enhanced verification with better parsing"""
+        try:
+            command = [
+                "netsh", "advfirewall", "firewall", "show", "rule", 
+                "name=all", "verbose"
+            ]
+            
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            
+            if result.returncode != 0:
+                logger.warning("Could not verify allow rules")
+                return 0
+            
+            verified_count = 0
+            output_lines = result.stdout.split('\n')
+            
+            current_rule_name = None
+            current_action = None
+            current_remote_ip = None
+            
+            for line in output_lines:
+                line = line.strip()
+                
+                if line.startswith("Rule Name:"):
+                    current_rule_name = line[10:].strip()
+                    current_action = None
+                    current_remote_ip = None
+                    
+                elif line.startswith("Action:"):
+                    current_action = line[7:].strip().lower()
+                    
+                elif line.startswith("RemoteIP:"):
+                    current_remote_ip = line[9:].strip()
+                    
+                    if (current_rule_name and current_rule_name.startswith(self.rule_prefix) and
+                        current_action == "allow" and current_remote_ip):
+                        
+                        for ip in ip_list:
+                            if ip in current_remote_ip or current_remote_ip == ip:
+                                verified_count += 1
+                                logger.debug(f"✅ Verified allow rule for {ip} in rule {current_rule_name}")
+                                break
+            
+            logger.info(f"Rule verification: {verified_count}/{len(ip_list)} rules verified")
+            return verified_count
+            
+        except subprocess.TimeoutExpired:
+            logger.warning("Rule verification timed out")
+            return 0
+        except Exception as e:
+            logger.error(f"Error verifying allow rules: {e}")
+            return 0
+
+    # Legacy methods for backward compatibility
     def block_ip(self, ip: str, domain: Optional[str] = None) -> bool:
-        """
-        Legacy method: Block an IP address by creating a firewall rule.
-        Note: In whitelist-only mode, this is less relevant as default block handles most blocking.
-        """
+        """Legacy method: Block an IP address by creating a firewall rule"""
         if not self._is_valid_ip(ip):
             logger.warning(f"Invalid IP address format: {ip}")
             return False
@@ -561,7 +724,6 @@ class FirewallManager:
             logger.debug(f"IP {ip} is already blocked")
             return True
         
-        # In whitelist mode, check if IP is already handled by default block
         if self.whitelist_mode_active:
             if ip not in self.allowed_ips:
                 logger.debug(f"IP {ip} already blocked by default rule in whitelist mode")
@@ -606,7 +768,7 @@ class FirewallManager:
             return False
     
     def unblock_ip(self, ip: str) -> bool:
-        """Legacy method: Unblock an IP address by removing associated firewall rules."""
+        """Legacy method: Unblock an IP address by removing associated firewall rules"""
         if not self._is_valid_ip(ip):
             logger.warning(f"Invalid IP address format: {ip}")
             return False
@@ -654,19 +816,17 @@ class FirewallManager:
             return False
     
     def is_blocked(self, ip: str) -> bool:
-        """Check if an IP address is blocked."""
-        # In whitelist mode, check if IP is allowed
+        """Check if an IP address is blocked"""
         if self.whitelist_mode_active:
             return ip not in self.allowed_ips and ip not in self.essential_ips
-        # In legacy mode, check blocked list
         return ip in self.blocked_ips
     
     def get_blocked_ips(self) -> List[str]:
-        """Get a list of all IPs blocked by this firewall manager."""
+        """Get a list of all IPs blocked by this firewall manager"""
         return list(self.blocked_ips)
     
     def clear_all_rules(self) -> bool:
-        """Remove all firewall rules created by this firewall manager."""
+        """Remove all firewall rules created by this firewall manager"""
         try:
             command = [
                 "netsh", "advfirewall", "firewall", "show", "rule", 
@@ -727,7 +887,7 @@ class FirewallManager:
             return False
     
     def _find_rules_for_ip(self, ip: str) -> List[str]:
-        """Find all firewall rules that target the given IP."""
+        """Find all firewall rules that target the given IP"""
         rule_names = []
         
         try:
@@ -765,7 +925,7 @@ class FirewallManager:
             return rule_names
     
     def _has_admin_privileges(self) -> bool:
-        """Check if the application is running with administrator privileges."""
+        """Check if the application is running with administrator privileges"""
         try:
             command = ["netsh", "advfirewall", "show", "currentprofile"]
             
@@ -781,24 +941,8 @@ class FirewallManager:
         except Exception as e:
             logger.error(f"Error checking admin privileges: {str(e)}")
             return False
-    
-    def _is_valid_ip(self, ip: str) -> bool:
-        """Validate if a string is a valid IPv4 address."""
-        pattern = r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$'
-        match = re.match(pattern, ip)
-        
-        if not match:
-            return False
-            
-        for i in range(1, 5):
-            octet = int(match.group(i))
-            if octet < 0 or octet > 255:
-                return False
-                
-        return True
 
-
-# ✅ NEW: Example usage and testing
+# Example usage and testing
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
