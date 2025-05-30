@@ -452,6 +452,23 @@ class PacketSniffer:
                 
         return True
 
-    # ✅ FIX: Remove duplicate _extract_connection_info method
-    # (This method was already defined above and conflicts)
+    def _is_ip_address(self, address: str) -> bool:
+        """Check if string is an IP address (IPv4 or IPv6)"""
+        try:
+            # Try IPv4
+            parts = address.split('.')
+            if len(parts) == 4:
+                return all(0 <= int(part) <= 255 for part in parts)
+        except:
+            pass
+        
+        try:
+            # Try IPv6
+            import ipaddress
+            ipaddress.ip_address(address)
+            return True
+        except:
+            pass
+        
+        return False
 

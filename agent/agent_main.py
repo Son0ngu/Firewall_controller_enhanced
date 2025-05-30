@@ -8,45 +8,36 @@ Enhanced agent với auto-detection firewall mode:
 """
 
 # Import các thư viện cần thiết
+import sys
 import logging
 import signal
-import time
-import threading
 import socket
+import threading
+import time
 import platform
-import sys
+import subprocess
+import re
+import json
 import os
-import uuid
 import requests
 import psutil
-import subprocess  # ✅ ADD: For system commands
-from typing import Dict, Optional, Set, Any, List  # ✅ FIX: Add missing types
-from datetime import datetime
-
-# ✅ ENHANCED: Try importing optional modules
+import uuid
+import ctypes
+from datetime import datetime, timedelta  # ✅ FIX: Import datetime class correctly
+from typing import Dict, Any, Set
 try:
     import netifaces
     HAS_NETIFACES = True
 except ImportError:
     HAS_NETIFACES = False
 
-try:
-    import win32serviceutil
-    import win32service
-    import win32event
-    import servicemanager
-    HAS_WIN32_SERVICE = True
-except ImportError:
-    HAS_WIN32_SERVICE = False
-
 # ✅ FIX: Setup logging BEFORE other imports to avoid undefined logger
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("agent_main")
 
-# Import các module tự định nghĩa từ package agent
+# ✅ FIX: Import all required modules
 from config import get_config
 from firewall_manager import FirewallManager
 from log_sender import LogSender
@@ -54,6 +45,8 @@ from packet_sniffer import PacketSniffer
 from whitelist import WhitelistManager
 from heartbeat_sender import HeartbeatSender
 from command_processor import CommandProcessor
+
+logger = logging.getLogger("agent_main")
 
 # ✅ ENHANCED: Global variables với better state tracking
 config = None
@@ -74,6 +67,7 @@ agent_state = {
     "components_initialized": False
 }
 
+# ✅ FIX: Complete handle_domain_detection method
 def handle_domain_detection(record: Dict):
     """Enhanced domain detection handler with mode awareness"""
     try:
@@ -177,9 +171,9 @@ def handle_domain_detection(record: Dict):
             reason = "whitelist_check_failed"
             level = "ERROR"
         
-        # ✅ ENHANCED: Enhanced record với mode information
+        # ✅ ENHANCED: Enhanced record with mode information
         enhanced_record = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
             "agent_id": config.get("agent_id", "unknown"),
             "level": level,
             "action": action,
@@ -246,7 +240,7 @@ def handle_domain_detection(record: Dict):
         # ✅ Error logging
         if log_sender:
             error_record = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
                 "agent_id": config.get("agent_id", "unknown"),
                 "level": "ERROR",
                 "action": "ERROR",
@@ -291,6 +285,131 @@ def _detect_service_type(port, protocol):
     }
     
     return service_map.get(port_str, f"{protocol.upper()} Service")
+
+def _check_admin_privileges() -> bool:
+    """Check if running with administrator privileges"""
+    try:
+        if platform.system() == "Windows":
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        else:
+            return os.geteuid() == 0
+    except Exception:
+        return False
+
+def _get_local_ip() -> str:
+    """Get the local IP address of this machine"""
+    try:
+        # Method 1: Connect to external server to determine local IP
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception as e:
+        logger.debug(f"Method 1 failed: {e}")
+    
+    try:
+        # Method 2: Use hostname resolution
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        if local_ip != "127.0.0.1":
+            return local_ip
+    except Exception as e:
+        logger.debug(f"Method 2 failed: {e}")
+    
+    try:
+        # Method 3: Get all network interfaces (if available)
+        if HAS_NETIFACES:
+            interfaces = netifaces.interfaces()
+            for interface in interfaces:
+                addresses = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addresses:
+                    for addr in addresses[netifaces.AF_INET]:
+                        ip = addr['addr']
+                        if not ip.startswith('127.') and not ip.startswith('169.254.'):
+                            return ip
+    except Exception as e:
+        logger.debug(f"Method 3 failed: {e}")
+    
+    try:
+        # Method 4: Use platform-specific commands
+        if platform.system() == "Windows":
+            import subprocess
+            result = subprocess.run(['ipconfig'], capture_output=True, text=True)
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'IPv4 Address' in line and ':' in line:
+                    ip = line.split(':')[1].strip()
+                    if not ip.startswith('127.') and not ip.startswith('169.254.'):
+                        return ip
+    except Exception as e:
+        logger.debug(f"Method 4 failed: {e}")
+    
+    # Fallback: return localhost
+    logger.warning("Could not detect local IP, using localhost")
+    return "127.0.0.1"
+
+def _get_agent_info(local_ip: str) -> Dict[str, Any]:
+    """Get comprehensive agent information for registration"""
+    try:
+        hostname = socket.gethostname()
+        platform_info = platform.platform()
+        os_name = platform.system()
+        os_version = platform.version()
+        
+        # Basic agent info
+        agent_info = {
+            "agent_id": str(uuid.uuid4()),
+            "hostname": hostname,
+            "ip_address": local_ip,
+            "platform": os_name,
+            "os_info": f"{os_name} {os_version}",
+            "agent_version": "2.0.0",
+            "python_version": platform.python_version(),
+            "platform_detail": platform_info,
+            "registration_time": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
+            "capabilities": {
+                "packet_capture": True,
+                "firewall_management": _check_admin_privileges(),
+                "process_monitoring": True,
+                "real_time_monitoring": True,
+                "whitelist_sync": True,
+                "command_execution": True
+            },
+            "firewall_enabled": config["firewall"]["enabled"],
+            "firewall_mode": config["firewall"]["mode"],
+            "auto_sync_enabled": config["whitelist"]["auto_sync"],
+            "log_level": config["logging"]["level"],
+            "status": "initializing"
+        }
+        
+        # Add system info if psutil available
+        try:
+            memory_info = psutil.virtual_memory()
+            disk_info = psutil.disk_usage('/')
+            
+            agent_info.update({
+                "memory_total": memory_info.total,
+                "memory_available": memory_info.available,
+                "disk_total": disk_info.total,
+                "disk_free": disk_info.free,
+                "cpu_count": psutil.cpu_count(),
+                "cpu_count_logical": psutil.cpu_count(logical=True)
+            })
+        except Exception as e:
+            logger.debug(f"Could not get system info: {e}")
+        
+        return agent_info
+        
+    except Exception as e:
+        logger.error(f"Error generating agent info: {e}")
+        return {
+            "agent_id": str(uuid.uuid4()),
+            "hostname": socket.gethostname(),
+            "ip_address": local_ip,
+            "platform": platform.system(),
+            "agent_version": "2.0.0",
+            "error": f"Could not gather full agent info: {str(e)}",
+            "registration_time": datetime.now().isoformat()  # ✅ FIX: Use datetime.now() correctly
+        }
 
 def initialize_components():
     """Enhanced initialization với auto-detection mode"""
@@ -390,12 +509,7 @@ def initialize_components():
         raise
 
 def _detect_and_log_mode() -> Dict[str, Any]:
-    """
-    Phát hiện và log mode được chọn dựa trên quyền admin.
-    
-    Returns:
-        Dict: Thông tin về mode detection
-    """
+    """Phát hiện và log mode được chọn dựa trên quyền admin"""
     has_admin = _check_admin_privileges()
     current_mode = config["firewall"]["mode"]
     firewall_enabled = config["firewall"]["enabled"]
@@ -451,8 +565,8 @@ def _register_agent(agent_info: Dict) -> bool:
     
     for server_url in server_urls:
         try:
-            # ✅ FIX: Use correct endpoint with /agents prefix
-            register_url = f"{server_url.rstrip('/')}/api/agents/register"  # ✅ CHANGED: /api/agents/register
+            # ✅ FIX: Use correct endpoint
+            register_url = f"{server_url.rstrip('/')}/api/agents/register"
             logger.info(f"🔗 Attempting registration with: {register_url}")
             
             response = requests.post(
@@ -549,7 +663,7 @@ def _setup_whitelist_firewall() -> bool:
         logger.error(f"Error setting up whitelist firewall: {e}")
         return False
 
-def _get_emergency_allowlist() -> Set[str]:
+def _get_emergency_allowlist() -> set:
     """Get emergency IPs that should always be allowed"""
     emergency_ips = set()
     
@@ -592,7 +706,7 @@ def _get_emergency_allowlist() -> Set[str]:
     logger.info(f"🆘 Emergency allowlist: {len(emergency_ips)} IPs")
     return emergency_ips
 
-def _get_essential_ips() -> Set[str]:
+def _get_essential_ips() -> set:
     """Get essential IPs that should always be allowed"""
     essential = set()
     
@@ -746,7 +860,7 @@ def _send_command_result(command_id: str, result: Dict, execution_time: float):
             'status': 'completed' if result.get('success') else 'failed',
             'result': result.get('message') or result.get('error', 'No result'),
             'execution_time': execution_time,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat()  # ✅ FIX: Use datetime.now() correctly
         }
         
         response = requests.post(result_url, json=result_data, timeout=10)
@@ -779,7 +893,7 @@ def _log_startup_summary():
                 "update_interval": config["whitelist"]["update_interval"],
                 "firewall_cleanup_on_exit": config["firewall"]["cleanup_on_exit"]
             },
-            "timestamp": datetime.now().isoformat(),  # ✅ FIX: ISO string
+            "timestamp": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
             "level": "INFO",
             "source": "agent_startup"
         }
@@ -810,14 +924,14 @@ def cleanup():
     # ✅ ENHANCED: Stop log sender gracefully
     if log_sender:
         try:
-            # ✅ FIX: Send shutdown log trước khi dừng với proper serialization
+            # ✅ FIX: Send shutdown log before stopping
             if config.get('agent_id'):
                 shutdown_log = {
                     "agent_id": config['agent_id'],
                     "event_type": "agent_shutdown",
                     "hostname": socket.gethostname(),
                     "uptime_info": agent_state,
-                    "timestamp": datetime.now().isoformat(),  # ✅ FIX: ISO string
+                    "timestamp": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
                     "level": "INFO",
                     "source": "agent_shutdown"
                 }
@@ -879,7 +993,7 @@ def signal_handler(sig, frame):
     running = False
 
 def main():
-    """Enhanced main function với automatic mode detection"""
+    """Enhanced main function with automatic mode detection"""
     global config, running
     
     try:
@@ -887,7 +1001,7 @@ def main():
         logger.info("⚙️ Loading agent configuration...")
         config = get_config()
         
-        # ✅ NEW: Display banner với mode information
+        # ✅ NEW: Display banner with mode information
         _display_startup_banner()
         
         # ✅ ENHANCED: Validate critical config sections
@@ -907,7 +1021,7 @@ def main():
         # ✅ ENHANCED: Send comprehensive startup log
         _send_startup_notification()
         
-        # ✅ NEW: Display running status với mode info
+        # ✅ NEW: Display running status with mode info
         _display_running_status()
         
         # ✅ ENHANCED: Main loop with status monitoring
@@ -934,8 +1048,9 @@ def main():
     finally:
         cleanup()
 
+# ✅ FIX: Add all missing helper methods
 def _display_startup_banner():
-    """Display startup banner với mode information"""
+    """Display startup banner with mode information"""
     has_admin = _check_admin_privileges()
     firewall_mode = config["firewall"]["mode"]
     firewall_enabled = config["firewall"]["enabled"]
@@ -956,25 +1071,9 @@ def _display_startup_banner():
         print("   • All traffic is monitored and logged")
         print("   • No blocking or firewall rules created")
     else:
-        print("⚠️ MIXED MODE: Configuration may not be optimal")
+        print("⚠️ MIXED MODE: Configuration may không be optimal")
         
     print("="*60 + "\n")
-
-def _display_running_status():
-    """Display running status information"""
-    firewall_active = firewall.whitelist_mode_active if firewall else False
-    domain_count = len(whitelist.domains) if whitelist else 0
-    ip_count = len(whitelist.current_resolved_ips) if whitelist else 0
-    
-    logger.info("🚀 Agent initialization completed, entering main loop")
-    logger.info(f"🔥 Mode: {config['firewall']['mode']} ({'active' if firewall_active else 'monitoring'})")
-    logger.info(f"📋 Whitelist: {domain_count} domains → {ip_count} IPs")
-    logger.info(f"🌐 Server: {config.get('server_url', config['server']['url'])}")
-    
-    if config["firewall"]["enabled"] and config["firewall"]["mode"] == "whitelist_only":
-        logger.info("🔒 All non-whitelisted outbound traffic will be blocked")
-    else:
-        logger.info("📊 Traffic monitoring active - no blocking performed")
 
 def _validate_critical_config():
     """Validate critical configuration sections"""
@@ -996,7 +1095,7 @@ def _validate_critical_config():
     # ✅ Admin privileges validation for firewall modes
     if config["firewall"]["enabled"] and not _check_admin_privileges():
         if config["firewall"]["mode"] in ["whitelist_only", "block"]:
-            errors.append(f"Firewall mode '{config['firewall']['mode']}' requires administrator privileges")
+            errors.append("Firewall blocking modes require administrator privileges")
     
     # ✅ Logging configuration validation
     if not config.get("logging", {}).get("level"):
@@ -1013,68 +1112,50 @@ def _validate_critical_config():
     
     logger.info("✅ Configuration validation passed")
 
-def _log_config_summary():
-    """Log configuration summary"""
-    logger.info("📊 Configuration Summary:")
-    logger.info(f"   - Primary server: {config['server']['url']}")
-    logger.info(f"   - Fallback servers: {len(config['server'].get('urls', [])) - 1}")
-    logger.info(f"   - Firewall mode: {config['firewall']['mode']}")
-    logger.info(f"   - Firewall enabled: {config['firewall']['enabled']}")
-    logger.info(f"   - Auto-sync whitelist: {config['whitelist']['auto_sync']}")
-    logger.info(f"   - Update interval: {config['whitelist']['update_interval']}s")
-    logger.info(f"   - Log level: {config['logging']['level']}")
-    logger.info(f"   - Admin privileges: {_check_admin_privileges()}")
+def _display_running_status():
+    """Display running status information"""
+    firewall_active = firewall.whitelist_mode_active if firewall else False
+    domain_count = len(whitelist.domains) if whitelist else 0
+    ip_count = len(whitelist.current_resolved_ips) if whitelist else 0
+    
+    logger.info("🚀 Agent initialization completed, entering main loop")
+    logger.info(f"🔥 Mode: {config['firewall']['mode']} ({'active' if firewall_active else 'monitoring'})")
+    logger.info(f"📋 Whitelist: {domain_count} domains → {ip_count} IPs")
+    logger.info(f"🌐 Server: {config.get('server_url', config['server']['url'])}")
+    
+    if config["firewall"]["enabled"] and config["firewall"]["mode"] == "whitelist_only":
+        logger.info("🔒 All non-whitelisted outbound traffic will be blocked")
+    else:
+        logger.info("📊 Traffic monitoring active - no blocking performed")
 
 def _send_startup_notification():
     """Send comprehensive startup notification"""
     try:
         if log_sender and config.get('agent_id'):
-            notification = {
+            startup_log = {
                 "agent_id": config['agent_id'],
-                "event_type": "agent_ready",
-                "message": "Agent fully initialized and ready",
-                "level": "INFO",
-                "action": "STARTUP",
-                "timestamp": datetime.now().isoformat(),
-                "source": "agent_startup",
-                
-                # ✅ ADD: Status information
-                "firewall_status": {
-                    "enabled": config["firewall"]["enabled"],
-                    "mode": config["firewall"]["mode"],
-                    "active": firewall.whitelist_mode_active if firewall else False,
-                    "rules_count": len(firewall.get_current_rules()) if firewall else 0
-                } if firewall else None,
-                
-                "whitelist_status": {
-                    "domains_count": len(whitelist.domains) if whitelist else 0,
-                    "resolved_ips_count": len(whitelist.current_resolved_ips) if whitelist else 0,
+                "event_type": "agent_startup_complete",
+                "hostname": socket.gethostname(),
+                "local_ip": _get_local_ip(),
+                "os": f"{platform.system()} {platform.version()}",
+                "agent_version": "2.0.0",
+                "firewall_enabled": config["firewall"]["enabled"],
+                "firewall_mode": config["firewall"]["mode"],
+                "whitelist_domains": len(whitelist.domains) if whitelist else 0,
+                "whitelisted_ips": len(whitelist.current_resolved_ips) if whitelist else 0,
+                "startup_state": agent_state,
+                "config_summary": {
                     "auto_sync": config["whitelist"]["auto_sync"],
-                    "last_sync": whitelist.last_sync_time.isoformat() if whitelist and whitelist.last_sync_time else None
-                } if whitelist else None,
-                
-                "system_info": {
-                    "hostname": socket.gethostname(),
-                    "local_ip": _get_local_ip(),
-                    "platform": platform.system(),
-                    "admin_privileges": _check_admin_privileges()
+                    "update_interval": config["whitelist"]["update_interval"],
+                    "firewall_cleanup_on_exit": config["firewall"]["cleanup_on_exit"]
                 },
-                
-                "component_status": {
-                    "packet_sniffer": packet_sniffer.running if packet_sniffer else False,
-                    "heartbeat_sender": heartbeat_sender.running if heartbeat_sender else False,
-                    "log_sender": log_sender.running if log_sender else False,
-                    "command_processor": command_processor is not None
-                }
+                "timestamp": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
+                "level": "INFO",
+                "source": "agent_startup"
             }
-            
-            success = log_sender.queue_log(notification)
-            if success:
-                logger.info("✅ Startup notification sent to server")
-            else:
-                logger.warning("⚠️ Failed to send startup notification")
+            log_sender.queue_log(startup_log)
         else:
-            logger.debug("Skipping startup notification - agent not registered or log sender not available")
+            logger.debug("No log sender or agent ID available for startup notification")
             
     except Exception as e:
         logger.error(f"Error sending startup notification: {e}")
@@ -1088,13 +1169,13 @@ def _log_periodic_status(loop_count: int):
         resolved_ips = len(whitelist.current_resolved_ips) if whitelist else 0
         
         # ✅ System metrics
-        memory_info = psutil.virtual_memory()
-        cpu_percent = psutil.cpu_percent(interval=1)
-        
-        # ✅ Network connections count
         try:
+            memory_info = psutil.virtual_memory()
+            cpu_percent = psutil.cpu_percent(interval=1)
             connections = len(psutil.net_connections())
         except Exception:
+            memory_info = None
+            cpu_percent = 0
             connections = 0
         
         status_info = {
@@ -1102,7 +1183,7 @@ def _log_periodic_status(loop_count: int):
             "firewall_active": firewall_active,
             "whitelist_domains": whitelist_domains,
             "resolved_ips": resolved_ips,
-            "memory_usage_percent": memory_info.percent,
+            "memory_usage_percent": memory_info.percent if memory_info else 0,
             "cpu_usage_percent": cpu_percent,
             "network_connections": connections
         }
@@ -1113,339 +1194,49 @@ def _log_periodic_status(loop_count: int):
                    f"Domains: {whitelist_domains}, "
                    f"IPs: {resolved_ips}, "
                    f"CPU: {cpu_percent:.1f}%, "
-                   f"Memory: {memory_info.percent:.1f}%")
+                   f"Memory: {memory_info.percent:.1f}%" if memory_info else "Memory: N/A")
         
         # ✅ Send detailed status to server
         if log_sender and config.get('agent_id') and loop_count % 12 == 0:  # Every hour
             status_log = {
                 "agent_id": config['agent_id'],
-                "event_type": "periodic_status",
-                "timestamp": datetime.now().isoformat(),
+                "event_type": "agent_status_report",
+                "status_info": status_info,
+                "timestamp": datetime.now().isoformat(),  # ✅ FIX: Use datetime.now() correctly
                 "level": "INFO",
-                "source": "periodic_status",
-                **status_info
+                "source": "agent_status"
             }
             log_sender.queue_log(status_log)
                    
     except Exception as e:
         logger.debug(f"Error logging periodic status: {e}")
 
-def run_as_service():
-    """Enhanced Windows service support"""
-    try:
-        import servicemanager
-        import win32event
-        import win32service
-        import win32serviceutil
-        
-        class AgentService(win32serviceutil.ServiceFramework):
-            _svc_name_ = "FirewallControllerAgent"
-            _svc_display_name_ = "Firewall Controller Agent (Enhanced Mode)"
-            _svc_description_ = "Enhanced network traffic monitoring with auto-detected firewall mode"
-
-            def __init__(self, args):
-                win32serviceutil.ServiceFramework.__init__(self, args)
-                self.stop_event = win32event.CreateEvent(None, 0, 0, None)
-
-            def SvcStop(self):
-                self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-                win32event.SetEvent(self.stop_event)
-                global running
-                running = False
-                servicemanager.LogMsg(
-                    servicemanager.EVENTLOG_INFORMATION_TYPE,
-                    servicemanager.PYS_SERVICE_STOPPED,
-                    (self._svc_name_, '')
-                )
-
-            def SvcDoRun(self):
-                self.ReportServiceStatus(win32service.SERVICE_RUNNING)
-                servicemanager.LogMsg(
-                    servicemanager.EVENTLOG_INFORMATION_TYPE,
-                    servicemanager.PYS_SERVICE_STARTED,
-                    (self._svc_name_, '')
-                )
-                
-                try:
-                    main()
-                except Exception as e:
-                    servicemanager.LogErrorMsg(f"Service error: {str(e)}")
-
-        if len(sys.argv) == 1:
-            servicemanager.Initialize()
-            servicemanager.PrepareToHostSingle(AgentService)
-            servicemanager.StartServiceCtrlDispatcher()
-        else:
-            win32serviceutil.HandleCommandLine(AgentService)
-            
-    except ImportError:
-        logger.error("Windows service modules not available. Please install pywin32:")
-        logger.error("pip install pywin32")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Service error: {e}")
-        sys.exit(1)
-
-def _get_system_metrics() -> Dict[str, Any]:
-    """Get current system metrics"""
-    try:
-        return {
-            "cpu_percent": psutil.cpu_percent(interval=1),
-            "memory": {
-                "total": psutil.virtual_memory().total,
-                "available": psutil.virtual_memory().available,
-                "percent": psutil.virtual_memory().percent
-            },
-            "disk": {
-                "total": psutil.disk_usage('/').total,
-                "free": psutil.disk_usage('/').free,
-                "percent": psutil.disk_usage('/').percent
-            },
-            "network": {
-                "connections": len(psutil.net_connections()),
-                "bytes_sent": psutil.net_io_counters().bytes_sent,
-                "bytes_recv": psutil.net_io_counters().bytes_recv
-            },
-            "processes": len(psutil.pids()),
-            "boot_time": psutil.boot_time(),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.debug(f"Error getting system metrics: {e}")
-        return {
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-def _get_local_ip() -> str:
-    """
-    Get the local IP address of this machine.
-    
-    Returns:
-        str: Local IP address
-    """
-    try:
-        # Method 1: Connect to external server để determine local IP
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            # Connect to Google DNS, không gửi data
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            logger.debug(f"Detected local IP via external connection: {local_ip}")
-            return local_ip
-    except Exception as e:
-        logger.debug(f"Method 1 failed: {e}")
-    
-    try:
-        # Method 2: Use hostname resolution
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-        if local_ip != "127.0.0.1":
-            logger.debug(f"Detected local IP via hostname: {local_ip}")
-            return local_ip
-    except Exception as e:
-        logger.debug(f"Method 2 failed: {e}")
-    
-    try:
-        # Method 3: Get all network interfaces (nếu có netifaces)
-        if HAS_NETIFACES:
-            import netifaces
-            for interface in netifaces.interfaces():
-                addresses = netifaces.ifaddresses(interface)
-                if netifaces.AF_INET in addresses:
-                    for addr_info in addresses[netifaces.AF_INET]:
-                        ip = addr_info['addr']
-                        if ip != "127.0.0.1" and not ip.startswith("169.254"):
-                            logger.debug(f"Detected local IP via interfaces: {ip}")
-                            return ip
-    except Exception as e:
-        logger.debug(f"Method 3 failed: {e}")
-    
-    try:
-        # Method 4: Windows specific - using ipconfig
-        if platform.system() == "Windows":
-            result = subprocess.run(
-                ["ipconfig"], 
-                capture_output=True, 
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            
-            for line in result.stdout.split('\n'):
-                if 'IPv4' in line and '192.168.' in line:
-                    ip = line.split(':')[1].strip()
-                    logger.debug(f"Detected local IP via ipconfig: {ip}")
-                    return ip
-    except Exception as e:
-        logger.debug(f"Method 4 failed: {e}")
-    
-    # Fallback: return localhost
-    logger.warning("Could not detect local IP, using localhost")
-    return "127.0.0.1"
-
-def _get_agent_info(local_ip: str) -> Dict[str, Any]:
-    """
-    Get comprehensive agent information for registration.
-    
-    Args:
-        local_ip: Local IP address of the agent
-        
-    Returns:
-        Dict: Agent information for registration
-    """
-    try:
-        # ✅ ENHANCED: Basic system information
-        hostname = socket.gethostname()
-        platform_info = platform.platform()
-        os_name = platform.system()
-        os_version = platform.version()
-        architecture = platform.architecture()[0]
-        processor = platform.processor()
-        
-        # ✅ ENHANCED: Python information
-        python_version = platform.python_version()
-        python_implementation = platform.python_implementation()
-        
-        # ✅ ENHANCED: Memory and disk information
-        memory_info = psutil.virtual_memory()
-        disk_info = psutil.disk_usage('/')
-        
-        # ✅ ENHANCED: Network interfaces
-        network_interfaces = []
-        try:
-            for interface_name, interface_addresses in psutil.net_if_addrs().items():
-                for address in interface_addresses:
-                    if address.family == socket.AF_INET:  # IPv4
-                        network_interfaces.append({
-                            "interface": interface_name,
-                            "ip": address.address,
-                            "netmask": address.netmask
-                        })
-        except Exception as e:
-            logger.debug(f"Could not get network interfaces: {e}")
-        
-        # ✅ ENHANCED: Agent capabilities
-        capabilities = {
-            "packet_capture": True,
-            "firewall_management": _check_admin_privileges(),
-            "process_monitoring": True,
-            "real_time_monitoring": True,
-            "whitelist_sync": True,
-            "command_execution": True
-        }
-        
-        # ✅ ENHANCED: Generate unique agent ID nếu chưa có
-        agent_id = config.get('agent_id') or str(uuid.uuid4())
-        
-        agent_info = {
-            # ✅ Basic identification
-            "agent_id": agent_id,
-            "hostname": hostname,
-            "ip_address": local_ip,
-            "platform": os_name,
-            "os_info": f"{os_name} {os_version}",
-            "architecture": architecture,
-            "processor": processor,
-            
-            # ✅ Software information
-            "agent_version": "2.0.0",
-            "python_version": python_version,
-            "python_implementation": python_implementation,
-            "platform_detail": platform_info,
-            
-            # ✅ Hardware information
-            "memory_total": memory_info.total,
-            "memory_available": memory_info.available,
-            "disk_total": disk_info.total,
-            "disk_free": disk_info.free,
-            "cpu_count": psutil.cpu_count(),
-            "cpu_count_logical": psutil.cpu_count(logical=True),
-            
-            # ✅ Network information
-            "network_interfaces": network_interfaces,
-            "primary_interface_ip": local_ip,
-            
-            # ✅ Agent capabilities
-            "capabilities": capabilities,
-            "supported_commands": [
-                "ping", "status", "restart", "update_whitelist",
-                "reload_config", "get_logs", "clear_logs"
-            ],
-            
-            # ✅ Configuration information
-            "firewall_enabled": config["firewall"]["enabled"],
-            "firewall_mode": config["firewall"]["mode"],
-            "auto_sync_enabled": config["whitelist"]["auto_sync"],
-            "log_level": config["logging"]["level"],
-            
-            # ✅ Registration metadata
-            "registration_time": datetime.now().isoformat(),
-            "timezone": str(datetime.now().astimezone().tzinfo),
-            "uptime": 0,  # Will be updated later
-            "last_seen": datetime.now().isoformat(),
-            "status": "initializing"
-        }
-        
-        # ✅ ENHANCED: Add Windows-specific information
-        if os_name == "Windows":
-            try:
-                agent_info["windows_version"] = platform.win32_ver()
-                agent_info["is_admin"] = _check_admin_privileges()
-            except Exception as e:
-                logger.debug(f"Could not get Windows-specific info: {e}")
-        
-        logger.debug(f"Generated agent info for {hostname} ({local_ip})")
-        return agent_info
-        
-    except Exception as e:
-        logger.error(f"Error generating agent info: {e}")
-        # ✅ FALLBACK: Minimal agent info
-        return {
-            "agent_id": str(uuid.uuid4()),
-            "hostname": socket.gethostname(),
-            "ip_address": local_ip,
-            "platform": platform.system(),
-            "os_info": platform.platform(),
-            "agent_version": "2.0.0",
-            "error": f"Could not gather full agent info: {str(e)}",
-            "registration_time": datetime.now().isoformat()
-        }
-
-def _check_admin_privileges() -> bool:
-    """Check if running with administrator privileges"""
-    try:
-        import ctypes
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except Exception:
-        try:
-            result = subprocess.run(
-                ["netsh", "advfirewall", "show", "currentprofile"],
-                capture_output=True,
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-if __name__ == "__main__":
-    # ✅ ENHANCED: Set up signal handler for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    # ✅ ENHANCED: Increase file descriptor limit (Linux)
-    try:
-        if platform.system() != "Windows":
-            import resource
-            soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-            resource.setrlimit(resource.RLIMIT_NOFILE, (4096, hard))
-            logger.info("✅ Increased file descriptor limit to 4096")
-    except Exception as e:
-        logger.warning(f"Could not increase file descriptor limit: {e}")
-    
-    # ✅ ENHANCED: Start as Windows service if requested
-    if len(sys.argv) > 1 and sys.argv[1] == "--install":
-        logger.info("🔧 Installing as Windows service...")
-        run_as_service()
+# ✅ FIX: Add signal handlers
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown"""
+    if platform.system() != "Windows":
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
     else:
-        logger.info("🚀 Starting agent...")
-        main()
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+# ✅ ENTRY POINT
+if __name__ == "__main__":
+    try:
+        # ✅ Setup signal handlers
+        setup_signal_handlers()
+        
+        # ✅ Check if running as service
+        if len(sys.argv) > 1 and sys.argv[1] in ['install', 'remove', 'start', 'stop', 'restart']:
+            run_as_service()
+        else:
+            # ✅ Run normally
+            main()
+            
+    except KeyboardInterrupt:
+        logger.info("Application terminated by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Fatal error: {e}", exc_info=True)
+        sys.exit(1)

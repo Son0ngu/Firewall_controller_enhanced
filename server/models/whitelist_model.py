@@ -39,7 +39,7 @@ class WhitelistModel:
             return dt_timezone.utc
     
     def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone"""
+        """Get current time in Vietnam timezone as naive datetime"""
         try:
             # Get current UTC time
             utc_now = datetime.now(dt_timezone.utc)
@@ -47,16 +47,19 @@ class WhitelistModel:
             # Convert to Vietnam timezone
             vn_time = utc_now.astimezone(self.server_timezone)
             
-            self.logger.debug(f"UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            self.logger.debug(f"VN time:  {vn_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            # ✅ FIX: Return as naive datetime for MongoDB compatibility
+            naive_vn_time = vn_time.replace(tzinfo=None)
             
-            return vn_time
+            self.logger.debug(f"UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            self.logger.debug(f"VN time (naive): {naive_vn_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            return naive_vn_time
             
         except Exception as e:
             self.logger.error(f"Error getting local time: {e}")
-            # Fallback to UTC
-            return datetime.now(dt_timezone.utc)
-    
+            # Fallback to naive UTC
+            return datetime.now()
+
     def _ensure_timezone_aware(self, dt: datetime) -> datetime:
         """Ensure datetime is timezone-aware and convert to Vietnam timezone"""
         if dt is None:
@@ -179,15 +182,15 @@ class WhitelistModel:
             # Continue anyway - indexes are not critical for basic functionality
     
     def insert_entry(self, entry_data: Dict) -> str:
-        """Insert a new whitelist entry with proper timezone handling"""
+        """Insert a new whitelist entry với naive datetime storage"""
         try:
-            # ✅ FIX: Use UTC consistently for storage
-            current_time_utc = datetime.now(dt_timezone.utc)
+            # ✅ FIX: Use naive datetime consistently for storage
+            current_time = self._now_local()  # This now returns naive datetime
             
-            # Store all timestamps as UTC in MongoDB
-            entry_data["added_date"] = current_time_utc
-            entry_data["created_at"] = current_time_utc
-            entry_data["updated_at"] = current_time_utc
+            # Store all timestamps as naive datetime in MongoDB
+            entry_data["added_date"] = current_time
+            entry_data["created_at"] = current_time
+            entry_data["updated_at"] = current_time
             
             # ✅ FIX: Set essential defaults BEFORE validation
             entry_data.setdefault("is_active", True)
@@ -200,7 +203,7 @@ class WhitelistModel:
             # ✅ FIX: Ensure value is lowercase and trimmed
             entry_data["value"] = entry_data["value"].strip().lower()
             
-            self.logger.info(f"Inserting entry: {entry_data['value']} at {current_time_utc.isoformat()}")
+            self.logger.info(f"Inserting entry: {entry_data['value']} at {current_time.isoformat()}")
             
             result = self.collection.insert_one(entry_data)
             
@@ -249,32 +252,29 @@ class WhitelistModel:
         return entries
     
     def _convert_entry_timezones(self, entry: Dict) -> Dict:
-        """Convert entry datetime fields for display (UTC -> Vietnam time)"""
+        """Convert entry datetime fields for display với safe conversion"""
         if not entry:
             return entry
             
         for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
             if date_field in entry and entry[date_field]:
-                utc_time = entry[date_field]
-                
-                # Ensure it's timezone-aware UTC
-                if utc_time.tzinfo is None:
-                    utc_time = utc_time.replace(tzinfo=dt_timezone.utc)
-                elif utc_time.tzinfo != dt_timezone.utc:
-                    utc_time = utc_time.astimezone(dt_timezone.utc)
-                
-                # Convert to Vietnam timezone for display
                 try:
-                    local_time = utc_time.astimezone(self.server_timezone)
-                    entry[date_field] = local_time
+                    naive_time = entry[date_field]
                     
-                    # ✅ ADD: Include both UTC and local timestamps for debugging
-                    entry[f"{date_field}_utc"] = utc_time.isoformat()
-                    entry[f"{date_field}_local"] = local_time.isoformat()
-                    
+                    # ✅ FIX: Handle both naive and timezone-aware datetimes
+                    if isinstance(naive_time, datetime):
+                        # Store original naive datetime for display
+                        entry[date_field] = naive_time
+                        
+                        # ✅ FIX: Add formatted strings for debugging
+                        entry[f"{date_field}_formatted"] = naive_time.strftime('%Y-%m-%d %H:%M:%S VN')
+                        entry[f"{date_field}_iso"] = naive_time.isoformat()
+                        
                 except Exception as e:
                     self.logger.warning(f"Timezone conversion error for {date_field}: {e}")
-                    entry[date_field] = utc_time  # Fallback to UTC
+                    # ✅ FIX: Fallback to original value
+                    if hasattr(entry[date_field], 'replace'):
+                        entry[date_field] = entry[date_field].replace(tzinfo=None)
                     
         return entry
     
@@ -297,13 +297,13 @@ class WhitelistModel:
             return None
     
     def cleanup_expired_entries(self) -> int:
-        """Remove expired entries"""
+        """Remove expired entries với naive datetime comparison"""
         try:
-            # ✅ FIX: Use UTC time for comparison
-            current_time_utc = datetime.now(dt_timezone.utc)
+            # ✅ FIX: Use naive datetime for comparison
+            current_time = self._now_local()  # Returns naive datetime
             
             # ✅ ADD: Debug log before cleanup
-            expired_query = {"expiry_date": {"$lt": current_time_utc}}
+            expired_query = {"expiry_date": {"$lt": current_time}}
             expired_count = self.collection.count_documents(expired_query)
             
             if expired_count > 0:
@@ -384,10 +384,10 @@ class WhitelistModel:
             return False
     
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
-        """Update entry by ID"""
+        """Update entry by ID với naive datetime"""
         try:
-            # Add updated timestamp
-            update_data["updated_at"] = datetime.now(dt_timezone.utc)
+            # Add updated timestamp as naive datetime
+            update_data["updated_at"] = self._now_local()
             
             result = self.collection.update_one(
                 {"_id": ObjectId(entry_id)},
@@ -485,18 +485,18 @@ class WhitelistModel:
             return []
 
     def bulk_insert_entries(self, entries: List[Dict]) -> List[str]:
-        """Bulk insert multiple entries"""
+        """Bulk insert multiple entries với naive datetime"""
         if not entries:
             return []
         
         try:
-            # Set timestamps for all entries
-            current_time_utc = datetime.now(dt_timezone.utc)
+            # Set timestamps for all entries as naive datetime
+            current_time = self._now_local()
             
             for entry in entries:
-                entry["added_date"] = current_time_utc
-                entry["created_at"] = current_time_utc
-                entry["updated_at"] = current_time_utc
+                entry["added_date"] = current_time
+                entry["created_at"] = current_time
+                entry["updated_at"] = current_time
                 entry.setdefault("is_active", True)
                 entry.setdefault("type", "domain")
             

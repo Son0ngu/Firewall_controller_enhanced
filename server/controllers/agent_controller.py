@@ -39,8 +39,9 @@ class AgentController:
         
         # Agent command routes
         self.blueprint.add_url_rule('/agents/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
-        self.blueprint.add_url_rule('/agents/commands', 'get_commands', self.get_commands, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/commands', 'list_commands', self.list_commands, methods=['GET'])
         self.blueprint.add_url_rule('/agents/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
+        self.blueprint.add_url_rule('/agents/<agent_id>/commands', 'get_agent_commands', self.get_agent_commands, methods=['GET'])
         
         # Utility routes
         self.blueprint.add_url_rule('/agents/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
@@ -178,15 +179,13 @@ class AgentController:
             return self._error_response("Failed to process heartbeat", 500)
     
     def list_agents(self):
-        """List all agents with filtering - SIMPLIFIED"""
+        """List all agents with filtering - COMPLETE VERSION"""
         try:
             self.logger.info("📊 List agents called")
             
-            # Get pagination and filters from request
             pagination = self._get_pagination_params()
             filters = self._get_filter_params(['status', 'hostname'])
             
-            # ✅ SIMPLIFIED: Direct call to get_agents_with_status
             agents_with_status = self.service.get_agents_with_status()
             self.logger.info(f"📊 Found {len(agents_with_status)} agents")
             
@@ -204,10 +203,9 @@ class AgentController:
             total_count = len(filtered_agents)
             agents_list = filtered_agents[pagination['skip']:pagination['skip']+pagination['limit']]
             
-            # ✅ SIMPLIFIED: Format for API response
+            # Format for API response
             formatted_agents = []
             for agent in agents_list:
-                # Simple timestamp formatting
                 last_heartbeat_iso = None
                 if agent.get("last_heartbeat"):
                     if isinstance(agent["last_heartbeat"], str):
@@ -353,7 +351,7 @@ class AgentController:
             return self._error_response("Failed to retrieve commands", 500)
     
     def list_commands(self):
-        """List commands (admin endpoint)"""
+        """List all commands (admin endpoint)"""
         try:
             # Get filters and pagination
             agent_id = request.args.get('agent_id')
@@ -389,6 +387,30 @@ class AgentController:
         except Exception as e:
             self.logger.error(f"Error listing commands: {e}")
             return self._error_response("Failed to list commands", 500)
+    
+    def get_agent_commands(self, agent_id: str):
+        """Get commands for specific agent (admin endpoint)"""
+        try:
+            # Get filters and pagination
+            status = request.args.get('status')
+            pagination = self._get_pagination_params()
+            
+            filters = {"agent_id": agent_id}
+            if status:
+                filters["status"] = status
+            
+            # Call service method
+            result = self.service.list_commands(
+                filters=filters,
+                limit=pagination['limit'],
+                skip=pagination['skip']
+            )
+            
+            return self._success_response(result)
+            
+        except Exception as e:
+            self.logger.error(f"Error getting commands for agent {agent_id}: {e}")
+            return self._error_response("Failed to get agent commands", 500)
     
     def update_command_result(self):
         """Update command execution result"""
@@ -441,20 +463,19 @@ class AgentController:
                 last_heartbeat = agent.get("last_heartbeat")
                 if last_heartbeat:
                     if last_heartbeat.tzinfo is None:
-                        last_heartbeat = last_heartbeat.replace(tzinfo=self.server_timezone)
+                        last_heartbeat_utc = last_heartbeat.replace(tzinfo=self.server_timezone)
+                    else:
+                        last_heartbeat_utc = last_heartbeat.astimezone(self.server_timezone)
                     
-                    time_diff = (current_time - last_heartbeat).total_seconds() / 60
-                    calculated_status = self.service._calculate_agent_status(agent, current_time)
+                    time_diff = (current_time - last_heartbeat_utc).total_seconds()
                     
-                    agent_debug = {
-                        "agent_id": agent.get("agent_id"),
+                    debug_info["agents"].append({
                         "hostname": agent.get("hostname"),
                         "last_heartbeat": last_heartbeat.isoformat(),
-                        "time_since_heartbeat": round(time_diff, 2),
-                        "calculated_status": calculated_status,
-                        "stored_status": agent.get("status", "unknown")
-                    }
-                    debug_info["agents"].append(agent_debug)
+                        "time_since_heartbeat": time_diff,
+                        "status": "active" if time_diff < self.service.active_threshold else 
+                                 "inactive" if time_diff < self.service.inactive_threshold else "offline"
+                    })
             
             return self._success_response(debug_info)
             

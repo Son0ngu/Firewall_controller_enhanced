@@ -22,15 +22,27 @@ class WhitelistController:
     
     def _register_routes(self):
         """Register routes for this controller"""
-        # ✅ FIX: Add the missing '/whitelist' route
+        # GET /api/whitelist - List all entries
         self.blueprint.add_url_rule('/whitelist', 
                                    methods=['GET'], 
                                    view_func=self.list_whitelist)
         
+        # POST /api/whitelist - Add new entry
         self.blueprint.add_url_rule('/whitelist', 
                                    methods=['POST'], 
                                    view_func=self.add_entry)
         
+        # PUT /api/whitelist/<entry_id> - Update entry
+        self.blueprint.add_url_rule('/whitelist/<entry_id>', 
+                                   methods=['PUT'], 
+                                   view_func=self.update_entry)
+        
+        # DELETE /api/whitelist/<entry_id> - Delete entry
+        self.blueprint.add_url_rule('/whitelist/<entry_id>', 
+                                   methods=['DELETE'], 
+                                   view_func=self.delete_entry)
+        
+        # Other routes...
         self.blueprint.add_url_rule('/whitelist/test', 
                                    methods=['POST'], 
                                    view_func=self.test_entry)
@@ -46,10 +58,6 @@ class WhitelistController:
         self.blueprint.add_url_rule('/whitelist/bulk', 
                                    methods=['POST'], 
                                    view_func=self.bulk_add)
-        
-        self.blueprint.add_url_rule('/whitelist/<entry_id>', 
-                                   methods=['DELETE'], 
-                                   view_func=self.delete_entry)
         
         self.blueprint.add_url_rule('/whitelist/statistics', 
                                    methods=['GET'], 
@@ -281,3 +289,22 @@ class WhitelistController:
         except Exception as e:
             self.logger.error(f"Error getting statistics: {str(e)}")
             return self._error_response("Failed to get statistics", 500)
+    
+    def update_entry(self, entry_id: str):
+        """Update an entry"""
+        try:
+            data = self._validate_json_request()
+            
+            # Call service method to update entry
+            success = self.service.update_entry(entry_id, data)
+            
+            if success:
+                return self._success_response(message="Entry updated successfully")
+            else:
+                return self._error_response("Failed to update entry", 500)
+                
+        except ValueError as e:
+            return self._error_response(str(e), 404)
+        except Exception as e:
+            self.logger.error(f"Error updating entry: {str(e)}")
+            return self._error_response("Failed to update entry", 500)

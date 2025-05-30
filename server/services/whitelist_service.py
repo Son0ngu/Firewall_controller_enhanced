@@ -418,3 +418,35 @@ class WhitelistService:
     def get_statistics(self) -> Dict:
         """Get whitelist statistics"""
         return self.model.get_statistics()
+    
+    def update_entry(self, entry_id: str, update_data: Dict) -> bool:
+        """Update an entry"""
+        entry = self.model.find_entry_by_id(entry_id)
+        if not entry:
+            raise ValueError("Entry not found")
+        
+        # Validate update data
+        if 'value' in update_data:
+            value = update_data['value'].strip().lower()
+            entry_type = update_data.get('type', entry.get('type', 'domain'))
+            
+            validation_result = self.model.validate_entry_value(entry_type, value)
+            if not validation_result["valid"]:
+                raise ValueError(validation_result["message"])
+            
+            update_data['value'] = value
+        
+        # Update timestamp
+        update_data['updated_at'] = self._now_local()
+        
+        success = self.model.update_entry(entry_id, update_data)
+        
+        if success and self.socketio:
+            self.socketio.emit("whitelist_updated", {
+                "id": entry_id,
+                "value": update_data.get('value', entry.get('value')),
+                "type": update_data.get('type', entry.get('type', 'domain')),
+                "timestamp": update_data['updated_at'].isoformat()
+            })
+        
+        return success
