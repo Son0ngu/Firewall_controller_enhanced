@@ -297,18 +297,13 @@
     <div class="logs-hero-content">
         <div class="row align-items-center">
             <div class="col-md-8">
-                <h1 class="display-5 fw-bold mb-3">
-                    <i class="fas fa-file-alt me-3"></i>
-                    System Logs
-                </h1>
-                <p class="lead mb-0">
-                    Real-time monitoring and analysis of firewall activities and security events
-                </p>
+                <h1 class="display-5 fw-bold mb-3">System Logs</h1>
+                <p class="lead mb-0">Monitor and analyze firewall activity in real-time</p>
             </div>
             <div class="col-md-4 text-md-end">
                 <div class="auto-refresh-indicator">
-                    <i class="fas fa-circle me-2" style="font-size: 0.6rem;"></i>
-                    <span>Auto-refreshing</span>
+                    <i class="fas fa-circle text-success me-2"></i>
+                    Live Updates Active
                 </div>
             </div>
         </div>
@@ -321,11 +316,9 @@
         <div class="card stats-card">
             <div class="card-body text-center p-4">
                 <div class="stats-icon primary mx-auto">
-                    <i class="fas fa-file-alt"></i>
+                    <i class="fas fa-list"></i>
                 </div>
-                <div class="stats-number text-primary" id="totalLogsCount">
-                    <i class="fas fa-spinner fa-spin"></i>
-                </div>
+                <div class="stats-number" id="totalLogsCount">0</div>
                 <div class="stats-label">Total Logs</div>
             </div>
         </div>
@@ -335,11 +328,9 @@
         <div class="card stats-card">
             <div class="card-body text-center p-4">
                 <div class="stats-icon success mx-auto">
-                    <i class="fas fa-check-circle"></i>
+                    <i class="fas fa-check"></i>
                 </div>
-                <div class="stats-number text-success" id="allowedLogsCount">
-                    <i class="fas fa-spinner fa-spin"></i>
-                </div>
+                <div class="stats-number" id="allowedLogsCount">0</div>
                 <div class="stats-label">Allowed</div>
             </div>
         </div>
@@ -349,11 +340,9 @@
         <div class="card stats-card">
             <div class="card-body text-center p-4">
                 <div class="stats-icon danger mx-auto">
-                    <i class="fas fa-shield-alt"></i>
+                    <i class="fas fa-ban"></i>
                 </div>
-                <div class="stats-number text-danger" id="blockedLogsCount">
-                    <i class="fas fa-spinner fa-spin"></i>
-                </div>
+                <div class="stats-number" id="blockedLogsCount">0</div>
                 <div class="stats-label">Blocked</div>
             </div>
         </div>
@@ -365,100 +354,71 @@
                 <div class="stats-icon warning mx-auto">
                     <i class="fas fa-exclamation-triangle"></i>
                 </div>
-                <div class="stats-number text-warning" id="warningLogsCount">
-                    <i class="fas fa-spinner fa-spin"></i>
-                </div>
+                <div class="stats-number" id="warningLogsCount">0</div>
                 <div class="stats-label">Warnings</div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Filter and Search -->
-<div class="card filter-card">
-    <div class="card-body">
-        <!-- Time Filter Pills -->
-        <div class="time-filter-pills">
-            <span class="time-pill active" data-time="all">All Time</span>
-            <span class="time-pill" data-time="1h">Last Hour</span>
-            <span class="time-pill" data-time="24h">Last 24h</span>
-            <span class="time-pill" data-time="7d">Last 7 days</span>
-            <span class="time-pill" data-time="30d">Last 30 days</span>
+<!-- Filter controls -->
+<div class="row align-items-center">
+    <div class="col-md-4">
+        <input type="text" class="form-control" id="log-search" placeholder="Search logs...">
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" id="level-filter">
+            <option value="">All Levels</option>
+            <option value="ALLOWED">Allowed</option>
+            <option value="BLOCKED">Blocked</option>
+            <option value="WARNING">Warning</option>
+            <option value="ERROR">Error</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" id="agent-filter">
+            <option value="">All Agents</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" id="limit-select">
+            <option value="50">50 logs</option>
+            <option value="100" selected>100 logs</option>
+            <option value="200">200 logs</option>
+            <option value="500">500 logs</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-outline-primary w-100" id="refreshBtn">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Logs header -->
+<div class="card-header bg-light">
+    <div class="row align-items-center">
+        <div class="col-md-6">
+            <h6 class="mb-0">
+                <input type="checkbox" class="form-check-input me-2" id="selectAllLogs" onchange="selectAllLogs()">
+                Log Entries
+                <span class="text-muted ms-2" id="logCount">Loading...</span>
+            </h6>
         </div>
-        
-        <div class="row align-items-center">
-            <div class="col-md-4">
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0">
-                        <i class="fas fa-search text-muted"></i>
-                    </span>
-                    <input type="text" class="form-control border-start-0" 
-                           placeholder="Search logs..." 
-                           id="log-search">
-                </div>
-            </div>
-            <div class="col-md-2">
-                <select class="form-select" id="level-filter">
-                    <option value="">All Levels</option>
-                    <option value="ALLOWED">Allowed</option>
-                    <option value="BLOCKED">Blocked</option>
-                    <option value="WARNING">Warning</option>
-                    <option value="INFO">Info</option>
-                    <option value="ERROR">Error</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <select class="form-select" id="agent-filter">
-                    <option value="">All Agents</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <select class="form-select" id="limit-select">
-                    <option value="50">50 logs</option>
-                    <option value="100" selected>100 logs</option>
-                    <option value="250">250 logs</option>
-                    <option value="500">500 logs</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <div class="d-flex gap-1">
-                    <button class="btn btn-outline-primary" id="refreshBtn" title="Refresh Logs">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                    <button class="btn btn-outline-success" id="exportBtn" title="Export Logs">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    
-                    <!-- Clear Dropdown -->
-                    <div class="dropdown">
-                        <button class="btn btn-clear dropdown-toggle" type="button" id="clearDropdown" 
-                                data-bs-toggle="dropdown" aria-expanded="false" title="Clear Logs">
-                            <i class="fas fa-trash me-1"></i>Clear
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="clearDropdown">
-                            <li>
-                                <a class="dropdown-item text-warning" href="#" id="clearSelectedBtn">
-                                    <i class="fas fa-check-square me-2"></i>Clear Selected Logs
-                                    <small class="d-block text-muted">Remove selected logs only</small>
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item text-info" href="#" id="clearOldLogsBtn">
-                                    <i class="fas fa-calendar-times me-2"></i>Clear Old Logs (>30 days)
-                                    <small class="d-block text-muted">Remove logs older than 30 days</small>
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item text-danger" href="#" id="clearAllLogsBtn">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>Clear All Logs
-                                    <small class="d-block text-muted">⚠️ This cannot be undone!</small>
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
+        <div class="col-md-6 text-end">
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" id="exportBtn">
+                    <i class="fas fa-download"></i> Export
+                </button>
+                <button class="btn btn-outline-danger dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="fas fa-trash"></i> Clear
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#" id="clearSelectedBtn">Clear Selected</a></li>
+                    <li><a class="dropdown-item" href="#" id="clearOldLogsBtn">Clear Old Logs</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="#" id="clearAllLogsBtn">Clear All Logs</a></li>
+                </ul>
             </div>
         </div>
     </div>
@@ -509,28 +469,6 @@
 
 <!-- Logs List -->
 <div class="card">
-    <div class="card-header bg-light">
-        <div class="row align-items-center">
-            <div class="col-md-6">
-                <h6 class="mb-0 fw-bold">
-                    <i class="fas fa-list-ul me-2"></i>System Activity Logs
-                </h6>
-            </div>
-            <div class="col-md-6 text-end">
-                <div class="d-flex align-items-center justify-content-end gap-3">
-                    <small class="text-muted">
-                        <span id="logCount">Loading...</span> logs loaded
-                    </small>
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="checkbox" id="selectAllLogs">
-                        <label class="form-check-label" for="selectAllLogs">
-                            <small>Select All</small>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
     <div class="card-body p-0">
         <div id="logsContainer">
             <div class="text-center py-5">
@@ -631,7 +569,7 @@ let currentFilter = {
 let currentClearAction = null;
 
 /**
- * ✅ Load FULL statistics
+ * ✅ Load FULL statistics với better error handling
  */
 async function loadFullStatistics() {
     try {
@@ -643,27 +581,51 @@ async function loadFullStatistics() {
         if (currentFilter.search) params.append('search', currentFilter.search);
         if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
         
-        const response = await fetch(`/api/logs/stats?${params.toString()}`);
+        const url = `/api/logs/stats?${params.toString()}`;
+        console.log('📡 Fetching statistics from:', url);
+        
+        const response = await fetch(url);
+        console.log('📊 Statistics response status:', response.status);
         
         if (response.ok) {
-            allTimeStats = await response.json();
-            console.log('✅ Statistics loaded:', allTimeStats);
-            return allTimeStats;
+            const responseText = await response.text();
+            console.log('📊 Raw statistics response:', responseText.substring(0, 500));
+            
+            try {
+                allTimeStats = JSON.parse(responseText);
+                console.log('✅ Statistics loaded:', allTimeStats);
+                return allTimeStats;
+            } catch (parseError) {
+                console.error('❌ Statistics JSON parse error:', parseError);
+                console.log('📊 Response text:', responseText);
+            }
         } else {
-            console.error('❌ Failed to load statistics:', response.statusText);
+            console.error('❌ Failed to load statistics:', response.status, await response.text());
         }
     } catch (error) {
         console.error('❌ Error loading statistics:', error);
     }
-    return null;
+    
+    // Fallback statistics
+    return {
+        success: false,
+        total: 0,
+        allowed: 0,
+        blocked: 0,
+        warnings: 0
+    };
 }
 
 /**
- * ✅ Update statistics display
+ * ✅ Update statistics display với fallback handling
  */
 async function updateStatistics() {
     try {
+        console.log('📊 Updating statistics display...');
+        
         await loadFullStatistics();
+        
+        console.log('📊 Statistics data:', allTimeStats);
         
         if (allTimeStats && allTimeStats.success) {
             const hasFilters = currentFilter.time !== 'all' || 
@@ -671,26 +633,59 @@ async function updateStatistics() {
                               currentFilter.agent || 
                               currentFilter.search;
             
-            if (hasFilters && allTimeStats.has_filters) {
-                document.getElementById('totalLogsCount').innerHTML = 
-                    `${(allTimeStats.filtered_total || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.total || 0).toLocaleString()}</small>`;
-                document.getElementById('allowedLogsCount').innerHTML = 
-                    `${(allTimeStats.filtered_allowed || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.allowed || 0).toLocaleString()}</small>`;
-                document.getElementById('blockedLogsCount').innerHTML = 
-                    `${(allTimeStats.filtered_blocked || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.blocked || 0).toLocaleString()}</small>`;
-                document.getElementById('warningLogsCount').innerHTML = 
-                    `${(allTimeStats.filtered_warnings || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.warnings || 0).toLocaleString()}</small>`;
-            } else {
-                document.getElementById('totalLogsCount').textContent = (allTimeStats.total || 0).toLocaleString();
-                document.getElementById('allowedLogsCount').textContent = (allTimeStats.allowed || 0).toLocaleString();
-                document.getElementById('blockedLogsCount').textContent = (allTimeStats.blocked || 0).toLocaleString();
-                document.getElementById('warningLogsCount').textContent = (allTimeStats.warnings || 0).toLocaleString();
+            console.log('📊 Has filters:', hasFilters);
+            
+            // Update display elements
+            const totalEl = document.getElementById('totalLogsCount');
+            const allowedEl = document.getElementById('allowedLogsCount');
+            const blockedEl = document.getElementById('blockedLogsCount');
+            const warningsEl = document.getElementById('warningLogsCount');
+            
+            if (totalEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    totalEl.innerHTML = `${(allTimeStats.filtered_total || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.total || 0).toLocaleString()}</small>`;
+                } else {
+                    totalEl.textContent = (allTimeStats.total || 0).toLocaleString();
+                }
+                console.log('✅ Updated total count:', totalEl.textContent);
             }
             
-            document.getElementById('logCount').textContent = `${logsData.length.toLocaleString()} displayed`;
+            if (allowedEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    allowedEl.innerHTML = `${(allTimeStats.filtered_allowed || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.allowed || 0).toLocaleString()}</small>`;
+                } else {
+                    allowedEl.textContent = (allTimeStats.allowed || 0).toLocaleString();
+                }
+                console.log('✅ Updated allowed count:', allowedEl.textContent);
+            }
+            
+            if (blockedEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    blockedEl.innerHTML = `${(allTimeStats.filtered_blocked || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.blocked || 0).toLocaleString()}</small>`;
+                } else {
+                    blockedEl.textContent = (allTimeStats.blocked || 0).toLocaleString();
+                }
+                console.log('✅ Updated blocked count:', blockedEl.textContent);
+            }
+            
+            if (warningsEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    warningsEl.innerHTML = `${(allTimeStats.filtered_warnings || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.warnings || 0).toLocaleString()}</small>`;
+                } else {
+                    warningsEl.textContent = (allTimeStats.warnings || 0).toLocaleString();
+                }
+                console.log('✅ Updated warnings count:', warningsEl.textContent);
+            }
+            
+            // Update log count
+            const logCountEl = document.getElementById('logCount');
+            if (logCountEl) {
+                logCountEl.textContent = `${logsData.length.toLocaleString()} displayed`;
+            }
             
         } else {
-            // Fallback
+            console.log('⚠️ Using fallback statistics calculation');
+            // Fallback: calculate from current logs data
             const total = logsData.length;
             const allowed = logsData.filter(log => (log.level === 'ALLOWED' || log.action === 'ALLOWED')).length;
             const blocked = logsData.filter(log => (log.level === 'BLOCKED' || log.action === 'BLOCKED')).length;
@@ -705,7 +700,11 @@ async function updateStatistics() {
         
     } catch (error) {
         console.error('❌ Error updating statistics:', error);
+        // Emergency fallback
         document.getElementById('totalLogsCount').textContent = logsData.length.toLocaleString();
+        document.getElementById('allowedLogsCount').textContent = '0';
+        document.getElementById('blockedLogsCount').textContent = '0';
+        document.getElementById('warningLogsCount').textContent = '0';
         document.getElementById('logCount').textContent = `${logsData.length.toLocaleString()} displayed`;
     }
 }
@@ -715,7 +714,7 @@ async function updateStatistics() {
  */
 async function loadLogs() {
     try {
-        console.log('🔄 Loading logs...');
+        console.log('🔄 Loading logs with filter:', currentFilter);
         
         const params = new URLSearchParams();
         if (currentFilter.level) params.append('level', currentFilter.level);
@@ -724,22 +723,58 @@ async function loadLogs() {
         if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
         params.append('limit', currentFilter.limit);
         
-        const response = await fetch(`/api/logs?${params.toString()}`);
+        const url = `/api/logs?${params.toString()}`;
+        console.log('📡 Fetching from URL:', url);
+        
+        const response = await fetch(url);
+        console.log('📥 Response status:', response.status);
+        console.log('📥 Response headers:', response.headers.get('content-type'));
         
         if (response.ok) {
-            const data = await response.json();
-            logsData = data.logs || [];
-            console.log('✅ Loaded logs:', logsData.length);
-            renderLogs(logsData);
-            await updateStatistics();
+            const responseText = await response.text();
+            console.log('📥 Raw response length:', responseText.length);
+            console.log('📥 Raw response start:', responseText.substring(0, 200));
+            
+            try {
+                const data = JSON.parse(responseText);
+                console.log('✅ Parsed JSON successfully');
+                console.log('📊 Response structure:', {
+                    success: data.success,
+                    hasLogs: !!data.logs,
+                    logsLength: data.logs ? data.logs.length : 0,
+                    total: data.total,
+                    keys: Object.keys(data)
+                });
+                
+                if (data.logs && Array.isArray(data.logs)) {
+                    logsData = data.logs;
+                    console.log('📋 Logs data assigned:', logsData.length, 'items');
+                    
+                    if (logsData.length > 0) {
+                        console.log('📋 First log sample:', JSON.stringify(logsData[0], null, 2));
+                    }
+                    
+                    renderLogs(logsData);
+                    await updateStatistics();
+                } else {
+                    console.error('❌ No valid logs array in response');
+                    console.log('📊 Full response:', data);
+                    showError('Invalid response format - no logs array');
+                }
+            } catch (parseError) {
+                console.error('❌ JSON parse error:', parseError);
+                console.log('📊 Response text:', responseText.substring(0, 500));
+                showError('Failed to parse server response');
+            }
         } else {
-            console.error('❌ Failed to load logs:', response.statusText);
-            showError('Failed to load logs');
+            const errorText = await response.text();
+            console.error('❌ Failed to load logs:', response.status, errorText);
+            showError(`Failed to load logs: ${response.status}`);
         }
         
     } catch (error) {
         console.error('❌ Error loading logs:', error);
-        showError('Error loading logs');
+        showError('Error loading logs: ' + error.message);
         await updateStatistics();
     }
 }
@@ -755,6 +790,8 @@ function onFilterChange() {
  * ✅ Render logs
  */
 function renderLogs(logs) {
+    console.log('🎨 renderLogs called with:', logs ? logs.length : 0, 'logs');
+    
     const container = document.getElementById('logsContainer');
     
     if (!container) {
@@ -762,84 +799,150 @@ function renderLogs(logs) {
         return;
     }
     
-    if (logs.length === 0) {
+    if (!logs || !Array.isArray(logs) || logs.length === 0) {
+        console.log('📋 No logs to render');
         container.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-file-alt"></i>
-                <h5 class="fw-bold">No Logs Found</h5>
-                <p>No log entries match your current filter criteria.</p>
-                <button class="btn btn-primary" onclick="clearFilters()">
-                    <i class="fas fa-filter me-2"></i>Clear Filters
+                <h5>No logs found</h5>
+                <p class="text-muted">No log entries match your current filters.</p>
+                <button class="btn btn-outline-primary btn-sm" onclick="clearFilters()">
+                    <i class="fas fa-filter"></i> Clear Filters
                 </button>
             </div>
         `;
         return;
     }
     
+    console.log('📋 Starting to render', logs.length, 'logs');
     container.innerHTML = '';
     
+    let renderedCount = 0;
+    
     logs.forEach((log, index) => {
-        const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown';
-        const level = log.level || log.action || 'INFO';
-        const ip = log.source_ip || log.ip || 'Unknown';
-        const agent = log.agent_id || log.agent || 'System';
-        const destination = log.destination || log.domain || log.url || 'N/A';
-        const logId = log._id || log.id || index.toString();
-        
-        const logElement = document.createElement('div');
-        logElement.className = 'p-3 border-bottom log-item';
-        logElement.dataset.level = level.toLowerCase();
-        logElement.dataset.agent = agent.toLowerCase();
-        logElement.dataset.search = `${ip} ${destination} ${log.message || ''}`.toLowerCase();
-        
-        logElement.innerHTML = `
-            <div class="row align-items-center">
-                <div class="col-md-1">
-                    <div class="form-check">
-                        <input class="form-check-input log-checkbox" type="checkbox" value="${logId}">
+        try {
+            // ✅ Enhanced data extraction with better fallbacks
+            console.log(`🔍 Processing log ${index}:`, log);
+            
+            const timestamp = log.timestamp ? 
+                (typeof log.timestamp === 'string' ? 
+                    new Date(log.timestamp).toLocaleString('vi-VN') : 
+                    log.timestamp.toLocaleString ? log.timestamp.toLocaleString('vi-VN') : log.timestamp
+                ) : 
+                'Unknown';
+                
+            const level = (log.level || log.action || 'INFO').toString().toUpperCase();
+            const action = (log.action || 'UNKNOWN').toString().toUpperCase();
+            
+            // ✅ FIX: Better data extraction with multiple fallbacks
+            const domain = log.domain || log.destination || log.url || 'N/A';
+            const source_ip = log.source_ip || log.src_ip || log.client_ip || 'N/A';
+            const dest_ip = log.dest_ip || log.ip || log.destination_ip || 'N/A';
+            const agent = log.agent_id || log.agent || 'N/A';
+            const protocol = log.protocol || 'N/A';
+            const port = log.port ? log.port.toString() : 'N/A';
+            const message = log.message || `${action}: ${domain}`;
+            const logId = log._id || log.id || index.toString();
+            
+            const logElement = document.createElement('div');
+            logElement.className = 'p-3 border-bottom log-item';
+            logElement.dataset.level = level.toLowerCase();
+            logElement.dataset.agent = agent.toLowerCase();
+            logElement.dataset.search = `${source_ip} ${dest_ip} ${domain} ${message}`.toLowerCase();
+            
+            logElement.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <input type="checkbox" class="form-check-input log-checkbox" value="${logId}">
                     </div>
-                </div>
-                <div class="col-md-8">
-                    <div class="d-flex align-items-center mb-2">
-                        <span class="log-level ${level} me-3">${level}</span>
-                        <span class="log-timestamp me-3">${timestamp}</span>
-                        <span class="log-agent">${agent}</span>
-                    </div>
-                    <div class="d-flex align-items-center mb-2">
-                        <span class="log-ip me-3">${ip}</span>
-                        <i class="fas fa-arrow-right text-muted me-2"></i>
-                        <span class="text-muted">${destination}</span>
-                    </div>
-                    ${log.message ? `
-                        <div class="log-details">
-                            <i class="fas fa-info-circle me-2"></i>
-                            ${log.message}
+                    <div class="col">
+                        <div class="d-flex align-items-start justify-content-between">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="log-level ${level}">${level}</span>
+                                    <span class="log-timestamp ms-2">${timestamp}</span>
+                                    <span class="log-agent ms-2">${agent}</span>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-1">
+                                            <small class="text-muted">Domain:</small>
+                                            <strong class="ms-1">${domain}</strong>
+                                        </div>
+                                        <div class="mb-1">
+                                            <small class="text-muted">Source:</small>
+                                            <span class="log-ip ms-1">${source_ip}</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-1">
+                                            <small class="text-muted">Destination:</small>
+                                            <span class="log-ip ms-1">${dest_ip}</span>
+                                        </div>
+                                        <div class="mb-1">
+                                            <small class="text-muted">Protocol:</small>
+                                            <span class="log-action ms-1">${protocol}:${port}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                ${message && message !== `${action}: ${domain}` ? `
+                                    <div class="log-details mt-2">
+                                        <small class="text-muted">Details:</small>
+                                        <div class="mt-1">${message}</div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            <div class="ms-3">
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                            type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void(0)" 
+                                               onclick="showLogDetails('${logId}')">
+                                                <i class="fas fa-eye me-2"></i>View Details
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void(0)" 
+                                               onclick="exportSingleLog('${logId}')">
+                                                <i class="fas fa-download me-2"></i>Export
+                                            </a>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a class="dropdown-item text-danger" href="javascript:void(0)" 
+                                               onclick="clearSingleLog('${logId}')">
+                                                <i class="fas fa-trash me-2"></i>Delete
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
-                    ` : ''}
-                </div>
-                <div class="col-md-3 text-md-end">
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-primary" onclick="showLogDetails('${logId}')" title="View Details">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="btn btn-outline-success" onclick="exportSingleLog('${logId}')" title="Export Log">
-                            <i class="fas fa-download"></i>
-                        </button>
-                        <button class="btn btn-outline-danger" onclick="clearSingleLog('${logId}')" title="Clear This Log">
-                            <i class="fas fa-trash"></i>
-                        </button>
                     </div>
                 </div>
-            </div>
-        `;
-        
-        container.appendChild(logElement);
+            `;
+            
+            container.appendChild(logElement);
+            renderedCount++;
+            
+        } catch (error) {
+            console.error(`❌ Error rendering log ${index}:`, error, log);
+        }
     });
     
     // Add event listeners for checkboxes
     container.querySelectorAll('.log-checkbox').forEach(cb => {
         cb.addEventListener('change', updateSelectedLogs);
     });
+    
+    console.log(`✅ Successfully rendered ${renderedCount}/${logs.length} logs`);
 }
 
 /**
@@ -895,7 +998,7 @@ function showClearConfirmation(action, count = 0, message = '') {
 }
 
 /**
- * ✅ Perform clear action
+ * ✅ Perform clear action - FIXED
  */
 async function performClearAction() {
     if (!currentClearAction) return;
@@ -913,27 +1016,42 @@ async function performClearAction() {
         
         switch (currentClearAction) {
             case 'all':
-                requestBody = { action: 'all', log_ids: [] };
-                successMessage = `All logs cleared successfully`;
+                requestBody = { action: 'all' };
+                successMessage = 'All logs cleared successfully';
                 break;
                 
             case 'selected':
-                const logIds = Array.from(selectedLogs);
-                requestBody = { action: 'selected', log_ids: logIds };
-                successMessage = `${logIds.length} selected logs cleared successfully`;
+                const selectedLogIds = Array.from(selectedLogs);
+                requestBody = { 
+                    action: 'selected',
+                    log_ids: selectedLogIds 
+                };
+                successMessage = `${selectedLogIds.length} selected logs cleared successfully`;
                 break;
                 
             case 'old':
-                requestBody = { action: 'old', log_ids: [] };
+                requestBody = { action: 'old' };
                 successMessage = 'Old logs cleared successfully';
                 break;
                 
             case 'single':
-                requestBody = { action: 'selected', log_ids: [currentClearAction.logId] };
-                successMessage = 'Log cleared successfully';
+                if (currentClearAction.logId) {
+                    requestBody = { 
+                        action: 'selected',
+                        log_ids: [currentClearAction.logId] 
+                    };
+                    successMessage = 'Log cleared successfully';
+                }
                 break;
+                
+            default:
+                requestBody = { action: 'all' };
+                successMessage = 'Logs cleared successfully';
         }
         
+        console.log('🗑️ Clearing logs with:', requestBody);
+        
+        // ✅ FIX: Use correct URL
         const response = await fetch('/api/logs/clear', {
             method: 'DELETE',
             headers: { 
@@ -943,28 +1061,44 @@ async function performClearAction() {
             body: JSON.stringify(requestBody)
         });
         
-        const result = await response.json();
+        console.log('🗑️ Clear response status:', response.status);
         
-        if (response.ok && result.success) {
-            const actualDeleted = result.deleted_count || 0;
+        if (response.ok) {
+            const result = await response.json();
+            console.log('🗑️ Clear result:', result);
             
-            if (actualDeleted > 0) {
-                selectedLogs.clear();
-                updateSelectedLogs();
-                await loadLogs();
-                showNotification('success', `${actualDeleted} logs cleared successfully`);
+            if (result.success) {
+                const actualDeleted = result.deleted_count || 0;
+                
+                if (actualDeleted > 0) {
+                    showNotification('success', `${actualDeleted} logs cleared successfully`);
+                    
+                    // Reload data
+                    await loadLogs();
+                    
+                    // Clear selection
+                    selectedLogs.clear();
+                    updateSelectedLogs();
+                    
+                } else {
+                    showNotification('info', 'No logs were found to clear');
+                }
+                
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('clearConfirmModal'));
+                if (modal) modal.hide();
+                
             } else {
-                showNotification('warning', 'No logs were cleared');
+                throw new Error(result.error || 'Failed to clear logs');
             }
-            
-            bootstrap.Modal.getInstance(document.getElementById('clearConfirmModal')).hide();
-            
         } else {
-            throw new Error(result.error || 'Failed to clear logs');
+            const errorText = await response.text();
+            console.error('❌ Clear failed:', response.status, errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
     } catch (error) {
-        console.error('Error clearing logs:', error);
+        console.error('❌ Error clearing logs:', error);
         showNotification('danger', `Failed to clear logs: ${error.message}`);
     } finally {
         confirmBtn.innerHTML = originalText;
@@ -1340,14 +1474,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Load initial data
+    console.log('📋 Loading initial data...');
     loadLogs();
     
-    // Auto-refresh statistics every 30 seconds
-    setInterval(() => {
-        loadFullStatistics();
-    }, 30000);
+    // Emergency fallback
+    setTimeout(() => {
+        if (!logsData || logsData.length === 0) {
+            console.log('🚨 No logs loaded after 3 seconds, running emergency test');
+            emergencyTest();
+        }
+    }, 3000);
     
-    console.log('✅ Logs management initialized successfully');
+    console.log('✅ Logs management initialized');
 });
 
 // Socket.IO for real-time updates
@@ -1378,6 +1516,210 @@ try {
     }
 } catch (error) {
     console.error('❌ Socket.IO error:', error);
+}
+
+// ✅ Add emergency test function
+function emergencyTest() {
+    console.log('🚨 Running emergency test');
+    
+    // Test direct API call
+    fetch('/api/logs?limit=5')
+        .then(response => {
+            console.log('📡 Emergency test response status:', response.status);
+            return response.text();
+        })
+        .then(text => {
+            console.log('📡 Emergency test response text length:', text.length);
+            console.log('📡 Emergency test response start:', text.substring(0, 300));
+            
+            try {
+                const data = JSON.parse(text);
+                console.log('📡 Emergency test parsed data:', data);
+                
+                if (data.logs) {
+                    console.log('📡 Emergency test logs count:', data.logs.length);
+                    renderLogs(data.logs);
+                }
+            } catch (e) {
+                console.error('📡 Emergency test parse error:', e);
+            }
+        })
+        .catch(error => {
+            console.error('📡 Emergency test error:', error);
+        });
+}
+
+// ✅ Add test render function
+function testRender() {
+    console.log('🧪 Testing render with sample data');
+    
+    const sampleLogs = [
+        {
+            _id: 'test1',
+            timestamp: new Date().toISOString(),
+            level: 'ALLOWED',
+            action: 'ALLOWED',
+            domain: 'google.com',
+            source_ip: '192.168.1.100',
+            dest_ip: '8.8.8.8',
+            agent_id: 'test-agent',
+            protocol: 'TCP',
+            port: '443',
+            message: 'Test log entry'
+        },
+        {
+            _id: 'test2',
+            timestamp: new Date().toISOString(),
+            level: 'BLOCKED',
+            action: 'BLOCKED',
+            domain: 'malicious-site.com',
+            source_ip: '192.168.1.100',
+            dest_ip: '1.2.3.4',
+            agent_id: 'test-agent',
+            protocol: 'TCP',
+            port: '80',
+            message: 'Test blocked entry'
+        }
+    ];
+    
+    console.log('🧪 Rendering sample logs:', sampleLogs);
+    renderLogs(sampleLogs);
+}
+
+function renderLogItem(log, index) {
+    const logId = log._id || log.id || index.toString();
+    
+    // ✅ FIX: Enhanced protocol display
+    let protocolDisplay = log.protocol || 'unknown';
+    let portDisplay = log.port || 'unknown';
+    
+    if (protocolDisplay !== 'unknown' && portDisplay !== 'unknown') {
+        protocolDisplay = `${protocolDisplay}:${portDisplay}`;
+    } else if (protocolDisplay === 'unknown' && portDisplay !== 'unknown') {
+        protocolDisplay = `Port ${portDisplay}`;
+    }
+    
+    // ✅ FIX: Enhanced source IP display
+    let sourceDisplay = log.source_ip || 'unknown';
+    if (sourceDisplay === 'unknown') {
+        sourceDisplay = '<span class="text-muted">Local</span>';
+    } else {
+        sourceDisplay = `<span class="log-ip">${sourceDisplay}</span>`;
+    }
+    
+    // ✅ FIX: Enhanced destination display
+    let destinationDisplay = log.destination || log.domain || log.dest_ip || 'unknown';
+    if (log.service_type && log.service_type !== 'unknown') {
+        destinationDisplay += `<small class="text-muted ms-1">(${log.service_type})</small>`;
+    }
+    
+    return `
+        <div class="log-item p-3 border-bottom" data-log-id="${logId}" 
+             data-level="${(log.level || 'info').toLowerCase()}"
+             data-agent="${(log.agent_id || '').toLowerCase()}"
+             data-search="${(log.domain || '' + log.destination || '' + log.source_ip || '' + log.message || '').toLowerCase()}">
+            
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <input type="checkbox" class="form-check-input log-checkbox" value="${logId}">
+                </div>
+                
+                <div class="col-auto">
+                    <span class="log-level ${log.level || 'INFO'}">${log.level || 'INFO'}</span>
+                </div>
+                
+                <div class="col-2">
+                    <div class="log-timestamp">${formatTimestamp(log.timestamp)}</div>
+                    <small class="text-muted">${log.display_time || formatTime(log.timestamp)}</small>
+                </div>
+                
+                <div class="col-3">
+                    <div class="fw-medium">${destinationDisplay}</div>
+                    ${log.dest_ip && log.dest_ip !== 'unknown' ? `
+                        <small class="text-muted d-block">
+                            <i class="fas fa-arrow-right me-1"></i>${log.dest_ip}
+                        </small>
+                    ` : ''}
+                </div>
+                
+                <div class="col-2">
+                    <div class="small">
+                        <div class="mb-1">
+                            <i class="fas fa-network-wired me-1"></i>
+                            Protocol<span class="log-action ms-1">${protocolDisplay}</span>
+                        </div>
+                        <div>
+                            <i class="fas fa-desktop me-1"></i>
+                            Source${sourceDisplay}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-2">
+                    <span class="log-agent">${log.agent_id || 'unknown'}</span>
+                    ${log.process_name ? `
+                        <small class="d-block text-muted mt-1">
+                            <i class="fas fa-cog me-1"></i>${log.process_name}
+                        </small>
+                    ` : ''}
+                </div>
+                
+                <div class="col-auto">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="showLogDetails('${logId}')">
+                                <i class="fas fa-info-circle me-2"></i>View Details
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="exportSingleLog('${logId}')">
+                                <i class="fas fa-download me-2"></i>Export
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="#" onclick="clearSingleLog('${logId}')">
+                                <i class="fas fa-trash me-2"></i>Delete
+                            </a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            ${log.message && log.message !== 'Log entry' ? `
+                <div class="log-details mt-2">
+                    <i class="fas fa-comment-alt me-2"></i>${log.message}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// ✅ ADD: Helper functions
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'Unknown';
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleString('vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    } catch (e) {
+        return timestamp.toString();
+    }
+}
+
+function formatTime(timestamp) {
+    if (!timestamp) return '00:00:00';
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('vi-VN');
+    } catch (e) {
+        return '00:00:00';
+    }
 }
 </script>
 {% endblock %}

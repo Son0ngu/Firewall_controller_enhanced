@@ -83,19 +83,91 @@ class LogSender:
     def queue_log(self, log_data: Dict) -> bool:
         """Thêm log vào hàng đợi để gửi"""
         try:
+            # ✅ FIX: Serialize datetime objects trước khi queue
+            serialized_log = self._serialize_log_data(log_data.copy())
+            
             # Thêm ID agent và timestamp
-            if "agent_id" not in log_data:
-                log_data["agent_id"] = self.agent_id
+            if "agent_id" not in serialized_log:
+                serialized_log["agent_id"] = self.agent_id
                 
-            if "timestamp" not in log_data:
-                log_data["timestamp"] = datetime.now().astimezone().isoformat()  # ✅ SỬA: Thêm múi giờ
+            if "timestamp" not in serialized_log:
+                serialized_log["timestamp"] = datetime.now().astimezone().isoformat()
         
             # Thêm log vào hàng đợi
-            self.log_queue.put_nowait(log_data)
+            self.log_queue.put_nowait(serialized_log)
             return True
         except queue.Full:
             logger.warning("Log queue is full, dropping log")
             return False
+        except Exception as e:
+            logger.error(f"Error queueing log: {e}")
+            return False
+    
+    def _serialize_log_data(self, log_data: Dict) -> Dict:
+        """Serialize datetime objects và ensure all fields có value"""
+        try:
+            serialized = {}
+            
+            for key, value in log_data.items():
+                if isinstance(value, datetime):
+                    # ✅ FIX: Convert datetime to ISO string
+                    serialized[key] = value.isoformat()
+                elif isinstance(value, dict):
+                    # Recursively serialize nested dicts
+                    serialized[key] = self._serialize_log_data(value)
+                elif isinstance(value, list):
+                    # Handle lists that might contain datetime objects
+                    serialized[key] = [
+                        item.isoformat() if isinstance(item, datetime) 
+                        else (self._serialize_log_data(item) if isinstance(item, dict) else item)
+                        for item in value
+                    ]
+                elif value is None:
+                    # ✅ FIX: Convert None to "unknown"
+                    serialized[key] = "unknown"
+                else:
+                    serialized[key] = value
+            
+            # ✅ FIX: Ensure essential fields exist
+            essential_fields = {
+                "timestamp": datetime.now().isoformat(),
+                "agent_id": self.agent_id,
+                "level": "INFO",
+                "action": "UNKNOWN",
+                "domain": "unknown",
+                "destination": "unknown", 
+                "source_ip": "unknown",
+                "dest_ip": "unknown",
+                "protocol": "unknown",
+                "port": "unknown",
+                "message": "Log entry"
+            }
+            
+            for field, default_value in essential_fields.items():
+                if field not in serialized or not serialized[field]:
+                    serialized[field] = default_value
+            
+            return serialized
+            
+        except Exception as e:
+            logger.error(f"Error serializing log data: {e}")
+            # ✅ Fallback: return complete basic log data
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "agent_id": self.agent_id,
+                "level": "ERROR",
+                "action": "ERROR",
+                "domain": "serialization_error",
+                "destination": "serialization_error",
+                "source_ip": "unknown",
+                "dest_ip": "unknown",
+                "protocol": "unknown", 
+                "port": "unknown",
+                "message": f"Log serialization failed: {str(e)}",
+                "source": "log_sender_error",
+                "original_data": str(log_data)[:200] + "..." if len(str(log_data)) > 200 else str(log_data),
+                "serialization_error": str(e)
+            }
     
     def _sender_loop(self):
         """Vòng lặp gửi log theo định kỳ với tối ưu hóa"""
@@ -156,28 +228,80 @@ class LogSender:
         if not self.server_urls:
             logger.error("Server URL not configured")
             return False
+        
+        # ✅ FIX: Additional serialization check before sending
+        try:
+            # ✅ Test JSON serialization trước khi gửi
+            serialized_logs = []
+            for log in logs:
+                try:
+                    # ✅ Ensure all datetime objects are converted
+                    clean_log = self._ensure_json_serializable(log)
+                    serialized_logs.append(clean_log)
+                except Exception as e:
+                    logger.error(f"Failed to serialize log: {e}")
+                    # ✅ Create fallback log entry
+                    fallback_log = {
+                        "message": f"Log serialization failed: {str(e)}",
+                        "level": "error",
+                        "timestamp": datetime.now().isoformat(),
+                        "agent_id": self.agent_id,
+                        "original_log_preview": str(log)[:200] + "..." if len(str(log)) > 200 else str(log)
+                    }
+                    serialized_logs.append(fallback_log)
+            
+            # ✅ Test JSON serialization
+            test_json = json.dumps({"logs": serialized_logs})
+            
+        except Exception as e:
+            logger.error(f"JSON serialization test failed: {e}")
+            return False
             
         try:
             # Gửi request đơn giản không cần xác thực
             url = f"{self.server_urls[0].rstrip('/')}/api/logs"
+            
+            # ✅ FIX: Use serialized logs
+            payload = {"logs": serialized_logs}
+            
             response = requests.post(
                 url=url,
-                json={"logs": logs},
+                json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=10
+                timeout=15  # ✅ Increase timeout for Render
             )
             
             # Kiểm tra kết quả
             if response.status_code in (200, 201, 202):
-                logger.info(f"Successfully sent {len(logs)} logs to server")
+                logger.info(f"Successfully sent {len(serialized_logs)} logs to server")
                 return True
             else:
-                logger.error(f"Failed to send logs: HTTP {response.status_code}")
+                logger.error(f"Failed to send logs: HTTP {response.status_code} - {response.text}")
                 return False
                 
+        except requests.exceptions.Timeout:
+            logger.error("Timeout sending logs to server")
+            return False
+        except requests.exceptions.ConnectionError:
+            logger.error("Connection error sending logs to server")
+            return False
         except Exception as e:
             logger.error(f"Error sending logs: {str(e)}")
             return False
+    
+    def _ensure_json_serializable(self, obj):
+        """Ensure object is JSON serializable"""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {k: self._ensure_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._ensure_json_serializable(item) for item in obj]
+        elif isinstance(obj, (str, int, float, bool)) or obj is None:
+            return obj
+        else:
+            # ✅ Convert unknown types to string
+            return str(obj)
     
     def _generate_agent_id(self) -> str:
         """Tạo ID định danh cho agent"""

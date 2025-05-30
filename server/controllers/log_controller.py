@@ -2,114 +2,270 @@
 Log Controller - handles log HTTP requests
 """
 
-import logging
 from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.log_model import LogModel
 from services.log_service import LogService
+import logging
 
 class LogController:
     """Controller for log operations"""
     
     def __init__(self, log_model: LogModel, log_service: LogService, socketio=None):
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.model = log_model
         self.service = log_service
         self.socketio = socketio
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Create Blueprint
         self.blueprint = Blueprint('logs', __name__)
         self._register_routes()
     
     def _register_routes(self):
-        """Register routes for this controller"""
-        self.blueprint.add_url_rule('/logs', 'receive_logs', self.receive_logs, methods=['POST'])
-        self.blueprint.add_url_rule('/logs', 'get_logs', self.get_logs, methods=['GET'])
-        self.blueprint.add_url_rule('/logs', 'clear_all_logs', self.clear_all_logs, methods=['DELETE'])
-        self.blueprint.add_url_rule('/logs/summary', 'get_logs_summary', self.get_logs_summary, methods=['GET'])
-        self.blueprint.add_url_rule('/logs/<log_id>', 'delete_log', self.delete_log, methods=['DELETE'])
-        # ✅ FIX: Change to DELETE method for clear logs
-        self.blueprint.add_url_rule('/logs/clear', 'clear_logs', self.clear_logs, methods=['DELETE'])
-        self.blueprint.add_url_rule('/logs/receive', 'receive_logs_agent', self.receive_logs_agent, methods=['POST'])
-        self.blueprint.add_url_rule('/logs/timezone-info', 'get_timezone_info', self.get_timezone_info, methods=['GET'])
-        self.blueprint.add_url_rule('/logs/stats', 'get_full_statistics', self.get_full_statistics, methods=['GET'])
-
-    def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
-        """Helper method for success responses"""
-        response = {"success": True, "message": message}
-        if data is not None:
-            response.update(data)
-        return jsonify(response), status_code
-    
-    def _error_response(self, message: str, status_code=400) -> Tuple:
-        """Helper method for error responses"""
-        return jsonify({"success": False, "error": message}), status_code
-    
-    def _validate_json_request(self, required_fields=None) -> Dict:
-        """Validate JSON request"""
-        if not request.is_json:
-            raise ValueError("Request must be JSON")
+        """Register all log routes"""
         
-        data = request.get_json()
-        if not data:
-            raise ValueError("Invalid JSON data")
+        # ✅ IMPORTANT: Stats route MUST be before generic /logs route
+        self.blueprint.add_url_rule('/logs/stats', 
+                                   methods=['GET'], 
+                                   view_func=self.get_statistics)
         
-        if required_fields:
-            missing_fields = [field for field in required_fields if field not in data]
-            if missing_fields:
-                raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+        # POST /api/logs - Receive logs from agents
+        self.blueprint.add_url_rule('/logs', 
+                                   methods=['POST'], 
+                                   view_func=self.receive_logs)
         
-        return data
+        # GET /api/logs - Get all logs
+        self.blueprint.add_url_rule('/logs', 
+                                   methods=['GET'], 
+                                   view_func=self.list_logs)
+        
+        # ✅ ADD: DELETE /api/logs/clear - Clear logs
+        self.blueprint.add_url_rule('/logs/clear', 
+                                   methods=['DELETE'], 
+                                   view_func=self.clear_logs)
+        
+        # DELETE /api/logs - Clear all logs (legacy)
+        self.blueprint.add_url_rule('/logs', 
+                                   methods=['DELETE'], 
+                                   view_func=self.clear_logs)
+        
+        # GET /api/logs/export - Export logs
+        self.blueprint.add_url_rule('/logs/export', 
+                                   methods=['GET'], 
+                                   view_func=self.export_logs)
     
-    def _get_pagination_params(self) -> Dict:
-        """Get pagination parameters - Convert to page/per_page format"""
+    def receive_logs(self):
+        """Receive logs from agent"""
         try:
-            # ✅ FIX: Convert limit/skip to page/per_page
-            limit = min(int(request.args.get('limit', 50)), 1000)
-            skip = int(request.args.get('skip', 0))
+            if not request.is_json:
+                return self._error_response("Request must be JSON", 400)
             
-            # Calculate page from skip and limit
-            page = (skip // limit) + 1 if limit > 0 else 1
-            per_page = limit
+            data = request.get_json()
+            if not data:
+                return self._error_response("Invalid JSON data", 400)
             
-            # Also support direct page/per_page parameters
-            if request.args.get('page'):
-                page = int(request.args.get('page', 1))
-            if request.args.get('per_page'):
-                per_page = min(int(request.args.get('per_page', 50)), 1000)
+            # Get agent info from request
+            agent_id = request.headers.get('X-Agent-ID') or data.get('agent_id')
+            client_ip = request.remote_addr
             
-            return {
-                "page": page,
-                "per_page": per_page
-            }
-        except ValueError:
-            return {
-                "page": 1,
-                "per_page": 50
-            }
+            self.logger.info(f"Receiving logs from agent {agent_id} at {client_ip}")
+            
+            # Process logs using service
+            result = self.service.receive_logs(data, agent_id)
+            
+            if result.get("success"):
+                return jsonify(result), 201
+            else:
+                return self._error_response(result.get("error", "Failed to process logs"), 400)
+                
+        except Exception as e:
+            self.logger.error(f"Error receiving logs: {e}")
+            return self._error_response("Failed to receive logs", 500)
+    
+    def list_logs(self):
+        """Get all logs with filtering and pagination"""
+        try:
+            # Get query parameters
+            filters = self._get_filter_params()
+            limit = int(request.args.get('limit', 100))
+            offset = int(request.args.get('offset', 0))
+            
+            # Call service method
+            result = self.service.get_all_logs(filters, limit, offset)
+            
+            return jsonify(result), 200
+            
+        except Exception as e:
+            self.logger.error(f"Error listing logs: {e}")
+            return self._error_response("Failed to list logs", 500)
+    
+    def clear_logs(self):
+        """Clear logs with optional filters - Enhanced version"""
+        try:
+            # Get request data
+            if request.is_json:
+                data = request.get_json() or {}
+            else:
+                data = {}
+            
+            # Get filters from query parameters OR request body
+            filters = {}
+            
+            # Check query parameters first
+            query_filters = self._get_filter_params()
+            if query_filters:
+                filters.update(query_filters)
+            
+            # Check request body for additional filters
+            if data.get('filters'):
+                filters.update(data['filters'])
+            
+            # Handle specific clear actions
+            clear_action = data.get('action', 'all')
+            
+            if clear_action == 'selected' and data.get('log_ids'):
+                # Clear specific logs by IDs
+                from bson import ObjectId
+                log_ids = data['log_ids']
+                object_ids = []
+                
+                for log_id in log_ids:
+                    try:
+                        object_ids.append(ObjectId(log_id))
+                    except Exception:
+                        # If not ObjectId, treat as string ID
+                        pass
+                
+                if object_ids:
+                    filters['_id'] = {'$in': object_ids}
+            
+            elif clear_action == 'old':
+                # Clear logs older than 30 days
+                from datetime import datetime, timedelta
+                thirty_days_ago = datetime.now() - timedelta(days=30)
+                filters['timestamp'] = {'$lt': thirty_days_ago}
+            
+            elif clear_action == 'filtered':
+                # Use provided filters (already set above)
+                pass
+            
+            # Default: clear all (no additional filters)
+            
+            self.logger.info(f"Clearing logs with action: {clear_action}, filters: {filters}")
+            
+            # Call service method
+            result = self.service.clear_logs(filters)
+            
+            if result.get("success"):
+                # Emit real-time update
+                if self.socketio:
+                    self.socketio.emit('logs_cleared', {
+                        'action': clear_action,
+                        'deleted_count': result.get('deleted_count', 0),
+                        'timestamp': self.service._now_local().isoformat()
+                    })
+                
+                return jsonify(result), 200
+            else:
+                return self._error_response(result.get("error", "Failed to clear logs"), 500)
+                
+        except Exception as e:
+            self.logger.error(f"Error clearing logs: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._error_response("Failed to clear logs", 500)
+    
+    def export_logs(self):
+        """Export logs"""
+        try:
+            filters = self._get_filter_params()
+            format = request.args.get('format', 'json')
+            
+            # Call service method
+            result = self.service.export_logs(filters, format)
+            
+            if result.get("success"):
+                if format == 'csv':
+                    from flask import Response
+                    return Response(
+                        result["data"],
+                        mimetype="text/csv",
+                        headers={"Content-disposition": "attachment; filename=logs.csv"}
+                    )
+                else:
+                    return jsonify(result), 200
+            else:
+                return self._error_response(result.get("error", "Failed to export logs"), 500)
+                
+        except Exception as e:
+            self.logger.error(f"Error exporting logs: {e}")
+            return self._error_response("Failed to export logs", 500)
+    
+    def get_log_statistics(self):
+        """Get comprehensive log statistics for frontend"""
+        try:
+            filters = self._get_filter_params()
+            
+            self.logger.info(f"Getting log statistics with filters: {filters}")
+            
+            # Get statistics from service
+            stats = self.service.get_comprehensive_statistics(filters)
+            
+            self.logger.info(f"Statistics calculated: {stats}")
+            
+            return jsonify({
+                "success": True,
+                "total": stats.get("total", 0),
+                "allowed": stats.get("allowed", 0),
+                "blocked": stats.get("blocked", 0),
+                "warnings": stats.get("warnings", 0),
+                "filtered_total": stats.get("filtered_total", 0),
+                "filtered_allowed": stats.get("filtered_allowed", 0),
+                "filtered_blocked": stats.get("filtered_blocked", 0),
+                "filtered_warnings": stats.get("filtered_warnings", 0),
+                "has_filters": stats.get("has_filters", False),
+                "timestamp": self.service._now_local().isoformat()
+            }), 200
+            
+        except Exception as e:
+            self.logger.error(f"Error getting log statistics: {e}")
+            return jsonify({
+                "success": False,
+                "error": str(e),
+                "total": 0,
+                "allowed": 0,
+                "blocked": 0,
+                "warnings": 0
+            }), 500
+    
+    def get_statistics(self):
+        """Get basic log statistics (legacy endpoint)"""
+        try:
+            # Call the comprehensive method
+            return self.get_log_statistics()
+            
+        except Exception as e:
+            self.logger.error(f"Error getting basic statistics: {e}")
+            return self._error_response("Failed to get statistics", 500)
     
     def _get_filter_params(self) -> Dict:
-        """Get filter parameters from request"""
+        """Extract filter parameters from request"""
         filters = {}
         
-        # Get filter parameters
-        if request.args.get('agent_id'):
-            filters['agent_id'] = request.args.get('agent_id')
-        
-        if request.args.get('domain'):
-            filters['domain'] = request.args.get('domain')
+        # Basic filters
+        if request.args.get('level'):
+            filters['level'] = request.args.get('level')
         
         if request.args.get('action'):
             filters['action'] = request.args.get('action')
         
-        if request.args.get('level'):
-            filters['level'] = request.args.get('level')
+        if request.args.get('agent_id'):
+            filters['agent_id'] = request.args.get('agent_id')
         
-        if request.args.get('since'):
-            filters['since'] = request.args.get('since')
+        if request.args.get('search'):
+            filters['search'] = request.args.get('search')
         
-        if request.args.get('until'):
-            filters['until'] = request.args.get('until')
-        
-        # Date range filters
+        # Date filters
         if request.args.get('start_date'):
             filters['start_date'] = request.args.get('start_date')
         
@@ -118,254 +274,10 @@ class LogController:
         
         return filters
     
-    def receive_logs(self):
-        """Receive logs from agents"""
-        try:
-            data = self._validate_json_request(['logs'])
-            
-            # Get agent info from headers or request
-            agent_id = request.headers.get('X-Agent-ID') or data.get('agent_id')
-            
-            # Call service method
-            result = self.service.receive_logs(data, agent_id)
-            
-            if result["success"]:
-                return jsonify(result), 200
-            else:
-                return jsonify(result), 400
-            
-        except ValueError as e:
-            return self._error_response(str(e), 400)
-        except Exception as e:
-            self.logger.error(f"Error receiving logs: {e}")
-            return self._error_response("Failed to store logs", 500)
-    
-    def receive_logs_agent(self):
-        """Receive logs from agent - duplicate endpoint for compatibility"""
-        return self.receive_logs()
-    
-    def get_logs(self):
-        """Retrieve logs with filtering"""
-        try:
-            # ✅ FIX: Get correct pagination and filter parameters
-            pagination = self._get_pagination_params()
-            filters = self._get_filter_params()
-            
-            self.logger.debug(f"Get logs request - page: {pagination['page']}, per_page: {pagination['per_page']}, filters: {filters}")
-            
-            # ✅ FIX: Call service method with correct parameters
-            result = self.service.get_logs(
-                filters=filters,
-                page=pagination['page'],
-                per_page=pagination['per_page']
-            )
-            
-            # ✅ ADD: Ensure success field for frontend
-            if 'success' not in result:
-                result['success'] = True
-            
-            return jsonify(result), 200
-            
-        except Exception as e:
-            self.logger.error(f"Error retrieving logs: {e}")
-            return jsonify({
-                "success": False,
-                "error": "Failed to retrieve logs",
-                "logs": [],
-                "total": 0,
-                "page": 1,
-                "per_page": 50,
-                "pages": 0,
-                "timezone": "UTC+7"
-            }), 500
-    
-    def get_logs_summary(self):
-        """Get logs summary statistics"""
-        try:
-            period = request.args.get('period', 'day').lower()
-            
-            # Call service method
-            summary = self.service.get_logs_summary(period)
-            
-            # ✅ ADD: Ensure success field
-            summary['success'] = True
-            
-            return jsonify(summary), 200
-            
-        except Exception as e:
-            self.logger.error(f"Error generating logs summary: {e}")
-            return jsonify({
-                "success": False,
-                "error": "Failed to generate logs summary",
-                "timezone": "UTC+7"
-            }), 500
-    
-    def delete_log(self, log_id: str):
-        """Delete specific log"""
-        try:
-            # Call service method
-            success = self.service.delete_log(log_id)
-            
-            if success:
-                return self._success_response(message="Log deleted successfully")
-            else:
-                return self._error_response("Log not found", 404)
-            
-        except Exception as e:
-            self.logger.error(f"Error deleting log {log_id}: {e}")
-            return self._error_response("Failed to delete log", 500)
-    
-    def clear_logs(self):
-        """Clear logs by criteria - REAL implementation"""
-        try:
-            data = self._validate_json_request()
-            
-            # ✅ FIX: Parse log_ids for selective clear
-            log_ids = data.get('log_ids', [])
-            action = data.get('action', 'selected')
-            
-            deleted_count = 0
-            
-            if action == 'all':
-                # ✅ Clear ALL logs
-                deleted_count = self.service.clear_logs({})
-                
-            elif action == 'selected' and log_ids:
-                # ✅ Clear specific logs by IDs
-                deleted_count = self.service.clear_logs_by_ids(log_ids)
-                
-            elif action == 'old':
-                # ✅ Clear logs older than 30 days
-                from datetime import datetime, timedelta
-                thirty_days_ago = datetime.now() - timedelta(days=30)
-                filters = {
-                    'until': thirty_days_ago.isoformat()
-                }
-                deleted_count = self.service.clear_logs(filters)
-                
-            else:
-                return self._error_response("Invalid clear action or no log IDs provided", 400)
-            
-            # ✅ Broadcast via Socket.IO
-            if self.socketio and deleted_count > 0:
-                self.socketio.emit('logs_cleared', {
-                    'action': action,
-                    'count': deleted_count,
-                    'timestamp': self.service._now_local().isoformat()
-                })
-            
-            return jsonify({
-                "success": True,
-                "message": f"Successfully cleared {deleted_count} logs",
-                "deleted_count": deleted_count,
-                "action": action,
-                "timezone": "UTC+7",
-                "timestamp": self.service._now_local().isoformat()
-            }), 200
-            
-        except ValueError as e:
-            return self._error_response(str(e), 400)
-        except Exception as e:
-            self.logger.error(f"Error clearing logs: {e}")
-            return self._error_response("Failed to clear logs", 500)
-    
-    def clear_all_logs(self):
-        """Clear all logs (DELETE /api/logs) - REAL implementation"""
-        try:
-            # ✅ REAL database clear
-            deleted_count = self.service.clear_logs({})
-            
-            # ✅ Broadcast via Socket.IO
-            if self.socketio and deleted_count > 0:
-                self.socketio.emit('logs_cleared', {
-                    'action': 'all',
-                    'count': deleted_count,
-                    'timestamp': self.service._now_local().isoformat()
-                })
-            
-            return jsonify({
-                "success": True,
-                "message": f"Successfully cleared all {deleted_count} logs",
-                "deleted_count": deleted_count,
-                "action": "all",
-                "timezone": "UTC+7",
-                "timestamp": self.service._now_local().isoformat()
-            }), 200
-            
-        except Exception as e:
-            self.logger.error(f"Error clearing all logs: {e}")
-            return self._error_response("Failed to clear all logs", 500)
-    
-    def get_timezone_info(self):
-        """Get server timezone information"""
-        try:
-            current_time = self.service._now_local()
-            
-            return jsonify({
-                "success": True,
-                "timezone": "UTC+7",
-                "timezone_name": "Asia/Ho_Chi_Minh", 
-                "current_time": current_time.isoformat(),
-                "display_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
-                "utc_offset": "+07:00"
-            }), 200
-            
-        except Exception as e:
-            self.logger.error(f"Error getting timezone info: {e}")
-            return jsonify({
-                "success": False,
-                "error": "Failed to get timezone info",
-                "timezone": "UTC+7"
-            }), 500
-    
-    def get_full_statistics(self):
-        """Get full statistics without pagination limits"""
-        try:
-            # ✅ Đếm TOÀN BỘ logs trong database
-            total_logs = self.model.count_logs({})
-            allowed_logs = self.model.count_logs({'action': 'allow'})
-            blocked_logs = self.model.count_logs({'action': 'block'})
-            warning_logs = self.model.count_logs({'level': 'WARNING'})
-            error_logs = self.model.count_logs({'level': 'ERROR'})
-            info_logs = self.model.count_logs({'level': 'INFO'})
-            
-            # ✅ Thống kê theo time range nếu có filter
-            filters = self._get_filter_params()
-            filtered_stats = {}
-            
-            if filters:
-                query = self.model.build_query_from_filters(filters)
-                filtered_stats = {
-                    'filtered_total': self.model.count_logs(query),
-                    'filtered_allowed': self.model.count_logs({**query, 'action': 'allow'}),
-                    'filtered_blocked': self.model.count_logs({**query, 'action': 'block'}),
-                    'filtered_warnings': self.model.count_logs({**query, 'level': 'WARNING'}),
-                    'has_filters': True
-                }
-            else:
-                filtered_stats = {'has_filters': False}
-            
-            return jsonify({
-                'success': True,
-                'total': total_logs,
-                'allowed': allowed_logs,
-                'blocked': blocked_logs,
-                'warnings': warning_logs,
-                'errors': error_logs,
-                'info': info_logs,
-                'timezone': 'UTC+7',
-                'timestamp': self.service._now_local().isoformat(),
-                **filtered_stats
-            }), 200
-            
-        except Exception as e:
-            self.logger.error(f"Error getting full statistics: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e),
-                'total': 0,
-                'allowed': 0,
-                'blocked': 0,
-                'warnings': 0,
-                'timezone': 'UTC+7'
-            }), 500
+    def _error_response(self, message: str, status_code: int) -> Tuple:
+        """Create error response"""
+        return jsonify({
+            "success": False,
+            "error": message,
+            "timestamp": self.service._now_local().isoformat()
+        }), status_code

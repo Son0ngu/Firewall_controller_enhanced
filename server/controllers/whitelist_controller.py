@@ -22,14 +22,38 @@ class WhitelistController:
     
     def _register_routes(self):
         """Register routes for this controller"""
-        self.blueprint.add_url_rule('', 'list_whitelist', self.list_whitelist, methods=['GET'])
-        self.blueprint.add_url_rule('', 'add_entry', self.add_entry, methods=['POST'])
-        self.blueprint.add_url_rule('/test', 'test_entry', self.test_entry, methods=['POST'])
-        self.blueprint.add_url_rule('/dns-test', 'dns_test', self.dns_test, methods=['POST'])
-        self.blueprint.add_url_rule('/agent-sync', 'agent_sync', self.agent_sync, methods=['GET'])
-        self.blueprint.add_url_rule('/bulk', 'bulk_add', self.bulk_add, methods=['POST'])
-        self.blueprint.add_url_rule('/<entry_id>', 'delete_entry', self.delete_entry, methods=['DELETE'])
-        self.blueprint.add_url_rule('/statistics', 'get_statistics', self.get_statistics, methods=['GET'])
+        # ✅ FIX: Add the missing '/whitelist' route
+        self.blueprint.add_url_rule('/whitelist', 
+                                   methods=['GET'], 
+                                   view_func=self.list_whitelist)
+        
+        self.blueprint.add_url_rule('/whitelist', 
+                                   methods=['POST'], 
+                                   view_func=self.add_entry)
+        
+        self.blueprint.add_url_rule('/whitelist/test', 
+                                   methods=['POST'], 
+                                   view_func=self.test_entry)
+        
+        self.blueprint.add_url_rule('/whitelist/dns-test', 
+                                   methods=['POST'], 
+                                   view_func=self.dns_test)
+        
+        self.blueprint.add_url_rule('/whitelist/agent-sync', 
+                                   methods=['GET'], 
+                                   view_func=self.agent_sync)
+        
+        self.blueprint.add_url_rule('/whitelist/bulk', 
+                                   methods=['POST'], 
+                                   view_func=self.bulk_add)
+        
+        self.blueprint.add_url_rule('/whitelist/<entry_id>', 
+                                   methods=['DELETE'], 
+                                   view_func=self.delete_entry)
+        
+        self.blueprint.add_url_rule('/whitelist/statistics', 
+                                   methods=['GET'], 
+                                   view_func=self.get_statistics)
     
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
@@ -87,13 +111,17 @@ class WhitelistController:
             # Get filter parameters
             filters = self._get_filter_params()
             
+            self.logger.debug(f"List whitelist request with filters: {filters}")
+            
             # Call service method
             result = self.service.get_all_entries(filters)
+            
+            self.logger.debug(f"Returning {len(result.get('domains', []))} entries")
             
             return jsonify(result), 200
             
         except Exception as e:
-            self.logger.error(f"Error listing whitelist: {str(e)}")
+            self.logger.error(f"Error listing whitelist: {str(e)}", exc_info=True)
             return self._error_response("Failed to list whitelist", 500)
     
     def add_entry(self):
@@ -102,16 +130,21 @@ class WhitelistController:
             data = self._validate_json_request(['value'])
             client_ip = request.remote_addr
             
+            self.logger.info(f"Adding entry request: {data} from {client_ip}")
+            
             # Call service method
             result = self.service.add_entry(data, client_ip)
+            
+            self.logger.info(f"Entry added successfully: {result}")
             
             return self._success_response(result, result["message"], 201)
             
         except ValueError as e:
+            self.logger.warning(f"Validation error: {e}")
             status_code = 409 if "already exists" in str(e) else 400
             return self._error_response(str(e), status_code)
         except Exception as e:
-            self.logger.error(f"Error adding entry: {str(e)}")
+            self.logger.error(f"Error adding entry: {str(e)}", exc_info=True)
             return self._error_response("Failed to add entry", 500)
     
     def test_entry(self):

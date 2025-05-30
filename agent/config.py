@@ -71,6 +71,9 @@ DEFAULT_CONFIG = {
         "max_retries": 3,            # ✅ Số lần retry tối đa
         "timeout": 30,               # ✅ Timeout khi gọi API
         "auto_sync_firewall": True,  # ✅ Tự động sync với firewall
+        "resolve_ips_on_startup": True,  # ✅ NEW: resolve all IPs at startup
+        "ip_cache_ttl": 300,             # ✅ NEW: IP cache TTL (5 minutes)
+        "ip_refresh_interval": 600,      # ✅ NEW: periodic IP refresh (10 minutes)
     },
     
     # Cấu hình bắt gói tin mạng
@@ -105,10 +108,14 @@ DEFAULT_CONFIG = {
     # Cấu hình tường lửa
     "firewall": {
         "enabled": True,  # Có sử dụng tường lửa để chặn không
-        "mode": "block",  # Chế độ: block (chặn), warn (cảnh báo), monitor (chỉ giám sát)
+        "mode": "whitelist_only",        # ✅ NEW: whitelist-only mode
         "rule_prefix": "FirewallController",  # Tiền tố cho tên các quy tắc tường lửa
         "cleanup_on_exit": True,  # Có xóa các quy tắc khi thoát không
-        "create_allow_rules": False,  # ✅ THÊM: Có tạo allow rules hay không
+        "create_allow_rules": True,      # ✅ NEW: auto-create allow rules
+        "create_default_block": True,    # ✅ NEW: create default block rule
+        "allow_essential_ips": True,     # ✅ NEW: allow localhost, DNS
+        "allow_private_networks": False, # ✅ NEW: allow RFC1918 ranges
+        "rule_priority_offset": 100,     # ✅ NEW: priority offset for rules
     },
     
     # Cấu hình heartbeat
@@ -327,9 +334,12 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
 
 def get_default_config() -> Dict[str, Any]:
     """
-    Cung cấp cấu hình mặc định cho agent.
-    Tất cả các tham số đều có giá trị hợp lý để agent có thể hoạt động ngay.
+    Cung cấp cấu hình mặc định cho agent với auto-detection mode.
     """
+    # ✅ NEW: Auto-detect firewall mode based on admin privileges
+    firewall_mode = _detect_optimal_firewall_mode()
+    firewall_enabled = _has_admin_privileges()
+    
     return {
         # Cấu hình kết nối đến server
         "server": {
@@ -361,7 +371,10 @@ def get_default_config() -> Dict[str, Any]:
             "retry_interval": 60,        # ✅ Thời gian retry khi lỗi
             "max_retries": 3,            # ✅ Số lần retry tối đa
             "timeout": 30,               # ✅ Timeout khi gọi API
-            "auto_sync_firewall": True,  # ✅ Tự động sync với firewall
+            "auto_sync_firewall": firewall_enabled,  # ✅ Only sync if firewall enabled
+            "resolve_ips_on_startup": firewall_enabled,  # ✅ Only resolve if needed
+            "ip_cache_ttl": 300,             # ✅ NEW: IP cache TTL (5 minutes)
+            "ip_refresh_interval": 600,      # ✅ NEW: periodic IP refresh (10 minutes)
         },
         
         # Cấu hình bắt gói tin mạng
@@ -393,13 +406,17 @@ def get_default_config() -> Dict[str, Any]:
             }
         },
         
-        # Cấu hình tường lửa
+        # ✅ ENHANCED: Auto-detected firewall configuration
         "firewall": {
-            "enabled": True,  # Có sử dụng tường lửa để chặn không
-            "mode": "block",  # Chế độ: block (chặn), warn (cảnh báo), monitor (chỉ giám sát)
-            "rule_prefix": "FirewallController",  # Tiền tố cho tên các quy tắc tường lửa
-            "cleanup_on_exit": True,  # Có xóa các quy tắc khi thoát không
-            "create_allow_rules": False,  # ✅ THÊM: Có tạo allow rules hay không
+            "enabled": firewall_enabled,         # ✅ Auto: True if admin, False if not
+            "mode": firewall_mode,               # ✅ Auto: "whitelist_only" if admin, "monitor" if not
+            "rule_prefix": "FirewallController",
+            "cleanup_on_exit": firewall_enabled,
+            "create_allow_rules": firewall_enabled,
+            "create_default_block": firewall_enabled,
+            "allow_essential_ips": True,
+            "allow_private_networks": False,
+            "rule_priority_offset": 100,
         },
         
         # ✅ THÊM: Heartbeat configuration
@@ -415,9 +432,45 @@ def get_default_config() -> Dict[str, Any]:
         "general": {
             "agent_name": "",  # Tên của agent, tự động tạo nếu để trống
             "startup_delay": 0,  # Thời gian chờ trước khi khởi động (giây)
-            "check_admin": True,  # Có kiểm tra quyền admin khi khởi động không
+            "check_admin": False,  # ✅ Disable since we auto-detect
         }
     }
+
+def _detect_optimal_firewall_mode() -> str:
+    """
+    Tự động phát hiện firewall mode tối ưu dựa trên quyền admin.
+    
+    Returns:
+        str: "whitelist_only" nếu có admin, "monitor" nếu không
+    """
+    if _has_admin_privileges():
+        return "whitelist_only"
+    else:
+        return "monitor"
+
+def _has_admin_privileges() -> bool:
+    """
+    Kiểm tra quyền administrator trên Windows.
+    
+    Returns:
+        bool: True nếu có quyền admin, False nếu không
+    """
+    try:
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except Exception:
+        # Fallback: thử command netsh để test
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["netsh", "advfirewall", "show", "currentprofile"],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
 # Khởi tạo biến cấu hình toàn cục
 _config = None

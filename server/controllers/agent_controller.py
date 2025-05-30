@@ -25,28 +25,29 @@ class AgentController:
     
     def _register_routes(self):
         """Register routes for this controller"""
-        # ✅ CORE API endpoints - KEEP THESE
-        self.blueprint.add_url_rule('/register', 'register_agent', self.register_agent, methods=['POST'])
-        self.blueprint.add_url_rule('/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])
-        self.blueprint.add_url_rule('', 'list_agents', self.list_agents, methods=['GET'])
-        self.blueprint.add_url_rule('/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
-        self.blueprint.add_url_rule('/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
+        # ✅ FIX: Add missing '/agents' prefix to routes
         
-        # ✅ STATISTICS endpoint - KEEP THIS
-        self.blueprint.add_url_rule('/statistics', 'get_statistics', self.get_statistics, methods=['GET'])
+        # Core agent management routes
+        self.blueprint.add_url_rule('/agents/register', 'register_agent', self.register_agent, methods=['POST'])
+        self.blueprint.add_url_rule('/agents/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])
+        self.blueprint.add_url_rule('/agents', 'list_agents', self.list_agents, methods=['GET'])  # ✅ FIX: Add this route
+        self.blueprint.add_url_rule('/agents/statistics', 'get_statistics', self.get_statistics, methods=['GET'])  # ✅ FIX: Add agents prefix
         
-        # ✅ COMMANDS endpoints - KEEP THESE (for future use)
-        self.blueprint.add_url_rule('/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
-        self.blueprint.add_url_rule('/commands', 'get_commands', self.get_commands, methods=['GET'])
-        self.blueprint.add_url_rule('/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
+        # Individual agent routes
+        self.blueprint.add_url_rule('/agents/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
         
-        # ✅ REMOVE: Debug endpoints (comment out for production)
-        # self.blueprint.add_url_rule('/debug/direct', 'debug_direct_call', self.debug_direct_call, methods=['GET'])
-        # self.blueprint.add_url_rule('/debug/status', 'debug_status', self.debug_status, methods=['GET'])
-        # self.blueprint.add_url_rule('/debug/timezone', 'debug_timezone_issue', self.debug_timezone_issue, methods=['GET'])
-
-        # ✅ ADD: Ping agent endpoint
-        self.blueprint.add_url_rule('/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
+        # Agent command routes
+        self.blueprint.add_url_rule('/agents/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
+        self.blueprint.add_url_rule('/agents/commands', 'get_commands', self.get_commands, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
+        
+        # Utility routes
+        self.blueprint.add_url_rule('/agents/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
+        
+        # ✅ DEBUG: Add debug routes (optional - remove in production)
+        self.blueprint.add_url_rule('/agents/debug/status', 'debug_status', self.debug_status, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/debug/direct', 'debug_direct_call', self.debug_direct_call, methods=['GET'])
 
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""

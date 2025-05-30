@@ -70,32 +70,30 @@ class Config:
     HOST = get_env('HOST', '0.0.0.0')
     PORT = int(get_env('PORT', 5000))
 
-def get_mongo_client(mongo_uri: str = None, config: Config = None) -> MongoClient:
-    """Get or create MongoDB client"""
+def get_mongo_client(config):
+    """Get MongoDB client with optimized settings"""
     global _mongo_client
     
     if _mongo_client is None:
         try:
-            # Use provided URI or get from config
-            if mongo_uri is None:
-                if config is None:
-                    config = get_config()
-                mongo_uri = config.MONGO_URI
+            logger.info(f"🔗 Connecting to MongoDB: {config.MONGO_URI}")
             
-            # Get MongoDB settings from config
-            if config is None:
-                config = get_config()
-            
-            logger.info(f"🔗 Connecting to MongoDB: {mongo_uri}")
-            
+            # ✅ FIX: Optimized connection settings để reduce Win32 exceptions
             _mongo_client = MongoClient(
-                mongo_uri,
-                maxPoolSize=config.MONGO_MAX_POOL_SIZE,
-                minPoolSize=config.MONGO_MIN_POOL_SIZE,
-                maxIdleTimeMS=config.MONGO_MAX_IDLE_TIME_MS,
-                serverSelectionTimeoutMS=config.MONGO_SERVER_SELECTION_TIMEOUT_MS,
-                connectTimeoutMS=config.MONGO_CONNECT_TIMEOUT_MS,
-                socketTimeoutMS=config.MONGO_SOCKET_TIMEOUT_MS
+                config.MONGO_URI,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000,
+                maxPoolSize=10,        # ✅ Reduce pool size
+                minPoolSize=1,         # ✅ Minimum connections
+                maxIdleTimeMS=30000,   # ✅ Close idle connections faster
+                heartbeatFrequencyMS=10000,  # ✅ Less frequent heartbeats
+                retryWrites=True,
+                w='majority',
+                # ✅ ADD: Windows-specific optimizations
+                appName="FirewallController",
+                compressors="snappy,zlib",
+                zlibCompressionLevel=6
             )
             
             # Test connection
@@ -103,7 +101,8 @@ def get_mongo_client(mongo_uri: str = None, config: Config = None) -> MongoClien
             logger.info("✅ MongoDB client created successfully")
             
         except Exception as e:
-            logger.error(f"❌ Failed to create MongoDB client: {e}")
+            logger.error(f"❌ MongoDB connection failed: {e}")
+            _mongo_client = None
             raise
     
     return _mongo_client
@@ -125,7 +124,8 @@ def get_database(config: Config = None):
     if config is None:
         config = get_config()
     
-    client = get_mongo_client(config.MONGO_URI, config)
+    # ✅ FIX: Call get_mongo_client with only config parameter
+    client = get_mongo_client(config)
     return client[config.MONGO_DBNAME]
 
 # Environment-specific configurations
@@ -187,7 +187,8 @@ def validate_config(config: Config = None) -> bool:
     
     # Test MongoDB connection
     try:
-        client = get_mongo_client(config.MONGO_URI, config)
+        # ✅ FIX: Call get_mongo_client with only config parameter
+        client = get_mongo_client(config)
         client.admin.command('ping')
         logger.info("✅ Configuration validation successful")
         return True
