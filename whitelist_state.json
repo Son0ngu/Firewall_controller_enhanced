@@ -1,37 +1,37 @@
 {
   "domains": [
     "127.0.0.1",
-    "127.0.0.0",
-    "project2-bpvw.onrender.com",
-    "0.0.0.0",
-    "youtube.com",
+    "google.com",
     "192.168.1.26",
     "http://localhost:5000",
-    "google.com"
+    "project2-bpvw.onrender.com",
+    "0.0.0.0",
+    "127.0.0.0",
+    "youtube.com"
   ],
-  "last_updated": "2025-05-30T22:36:43.389764",
+  "last_updated": "2025-05-31T02:31:40.431685",
   "domain_count": 8,
   "current_resolved_ips": [
-    "127.0.0.1",
-    "127.0.0.0",
-    "0.0.0.0",
-    "142.250.71.142",
-    "192.168.1.26",
     "216.24.57.252",
-    "142.250.199.238",
-    "216.24.57.4"
+    "216.24.57.4",
+    "127.0.0.1",
+    "192.168.1.26",
+    "0.0.0.0",
+    "142.250.196.238",
+    "142.250.71.142",
+    "127.0.0.0"
   ],
-  "saved_at": "2025-05-30T22:38:52.188765",
+  "saved_at": "2025-05-31T02:31:55.037550",
   "version": "2.0",
   "stats": {
-    "sync_count": 22,
-    "last_sync_time": "2025-05-30T22:36:43.389764",
-    "last_sync_duration": 1.0148329734802246,
-    "sync_errors": 0,
-    "ip_resolution_count": 92,
+    "sync_count": 37,
+    "last_sync_time": "2025-05-31T02:31:40.431685",
+    "last_sync_duration": 0.5880897045135498,
+    "sync_errors": 3,
+    "ip_resolution_count": 348,
     "ip_resolution_errors": 0,
-    "firewall_sync_count": 6,
-    "cache_hit_count": 16,
-    "cache_miss_count": 76
+    "firewall_sync_count": 10,
+    "cache_hit_count": 37,
+    "cache_miss_count": 311
   }
 }

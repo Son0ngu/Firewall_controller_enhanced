@@ -33,7 +33,7 @@ class WhitelistManager:
         server_urls = server_config.get("urls", [])
         if not server_urls:
             # Fallback to single URL for backward compatibility
-            single_url = server_config.get("url", "https://project2-bpvw.onrender.com")
+            single_url = server_config.get("url", "https://firewall-controller.onrender.com")
             server_urls = [single_url]
         
         # Chọn server URL đầu tiên làm primary
@@ -985,7 +985,7 @@ if __name__ == "__main__":
     # Test configuration
     test_config = {
         "server": {
-            "url": "https://project2-bpvw.onrender.com",
+            "url": "https://firewall-controller.onrender.com",
             "connect_timeout": 10,
             "read_timeout": 30
         },
