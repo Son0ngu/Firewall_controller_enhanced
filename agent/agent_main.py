@@ -631,68 +631,30 @@ def _setup_whitelist_firewall() -> bool:
             logger.error("Firewall or whitelist not available for setup")
             return False
         
-        # ✅ ENHANCED: Wait for whitelist to be ready với extended timeout
-        max_wait = 30
-        wait_time = 0
-        sync_check_interval = 2
+        # ✅ FIX: Always force a fresh sync before setup
+        logger.info("🔄 Forcing fresh whitelist sync before firewall setup...")
+        sync_success = whitelist.update_whitelist_from_server(force_full_sync=True)
         
-        logger.info("⏳ Waiting for whitelist sync to complete...")
-        
-        while not whitelist.startup_sync_completed and wait_time < max_wait:
-            logger.info(f"   Waiting for whitelist sync... ({wait_time}s/{max_wait}s)")
-            time.sleep(sync_check_interval)
-            wait_time += sync_check_interval
-            
-            # ✅ ADD: Show progress
-            if wait_time % 10 == 0:
-                domain_count = len(whitelist.domains)
-                ip_count = len(whitelist.current_resolved_ips)
-                logger.info(f"   Current: {domain_count} domains → {ip_count} IPs")
-                
-                # ✅ FIX: If we have domains but sync not marked complete, force complete
-                if domain_count > 0 and not whitelist.startup_sync_completed:
-                    logger.info("🔧 Force marking sync as completed - we have domains")
-                    whitelist.startup_sync_completed = True
-                    break
-        
-        if not whitelist.startup_sync_completed:
-            logger.warning("⚠️ Whitelist sync not completed within timeout")
-            
-            # ✅ FIX: Check if we have domains anyway
-            if len(whitelist.domains) > 0:
-                logger.info(f"   But we have {len(whitelist.domains)} domains, proceeding anyway")
-                whitelist.startup_sync_completed = True
-            else:
-                # ✅ REMOVED: No emergency domains - fail if no server sync
-                logger.error("❌ No domains available from server sync - cannot proceed")
-                logger.error("   Please ensure server is accessible and has configured domains")
-                return False
-        else:
-            logger.info(f"✅ Whitelist sync completed with {len(whitelist.domains)} domains")
-        
-        # ✅ ENHANCED: Ensure we have some domains before proceeding
-        if len(whitelist.domains) == 0:
-            # ✅ REMOVED: No emergency domains - strict server-only approach
-            logger.error("❌ CRITICAL: No domains received from server!")
-            logger.error("   Whitelist-only firewall requires domains from server")
-            logger.error("   Please add domains via web interface or check server connectivity")
+        if not sync_success:
+            logger.error("❌ Failed to sync whitelist from server")
             return False
+        
+        # ✅ FIX: Check domains after forced sync
+        if len(whitelist.domains) == 0:
+            logger.error("❌ No domains received from server after forced sync")
+            return False
+        
+        logger.info(f"✅ Fresh sync completed with {len(whitelist.domains)} domains")
+        
+        # ✅ FIX: Force mark sync as completed after successful server sync
+        whitelist.startup_sync_completed = True
         
         # ✅ ENHANCED: Force comprehensive IP resolution with multiple attempts
         logger.info("🔍 Performing comprehensive IP resolution...")
-        max_resolution_attempts = 5  # Increased attempts
-        resolution_attempt = 0
-        best_ip_count = 0
+        max_resolution_attempts = 3  # Reduced attempts since we have fresh data
         
-        while resolution_attempt < max_resolution_attempts:
-            resolution_attempt += 1
-            logger.info(f"   Resolution attempt {resolution_attempt}/{max_resolution_attempts}")
-            
-            # ✅ ENHANCED: Clear cache on subsequent attempts
-            if resolution_attempt > 1:
-                logger.info("   Clearing IP cache for fresh resolution...")
-                whitelist.ip_cache.clear()
-                whitelist.ip_cache_timestamps.clear()
+        for attempt in range(max_resolution_attempts):
+            logger.info(f"   Resolution attempt {attempt + 1}/{max_resolution_attempts}")
             
             # Force refresh all domain IPs
             success = whitelist._resolve_all_domain_ips(force_refresh=True)
@@ -700,67 +662,38 @@ def _setup_whitelist_firewall() -> bool:
             resolved_ips = whitelist.get_all_whitelisted_ips(force_refresh=True)
             current_count = len(resolved_ips)
             
-            logger.info(f"   Attempt {resolution_attempt}: {current_count} IPs from {len(whitelist.domains)} domains")
+            logger.info(f"   Attempt {attempt + 1}: {current_count} IPs from {len(whitelist.domains)} domains")
             
-            # ✅ ENHANCED: Track best result
-            if current_count > best_ip_count:
-                best_ip_count = current_count
-            
-            # ✅ ENHANCED: Success criteria - we need reasonable number of IPs
-            min_expected_ips = len(whitelist.domains) * 1  # At least 1 IP per domain
+            # Success criteria - we need reasonable number of IPs
+            min_expected_ips = len(whitelist.domains) * 1
             if current_count >= min_expected_ips:
                 logger.info(f"✅ Sufficient IPs resolved: {current_count} >= {min_expected_ips}")
                 break
             
-            if resolution_attempt < max_resolution_attempts:
-                logger.warning(f"   Only {current_count} IPs resolved, retrying in 10 seconds...")
-                time.sleep(10)
+            if attempt < max_resolution_attempts - 1:
+                logger.warning(f"   Only {current_count} IPs resolved, retrying in 5 seconds...")
+                time.sleep(5)
         
         # ✅ ENHANCED: Get final whitelisted IPs
         whitelisted_ips = whitelist.get_all_whitelisted_ips(force_refresh=True)
         
         if not whitelisted_ips:
             logger.error("❌ No whitelisted IPs found after all resolution attempts!")
-            # ✅ ENHANCED: Add emergency allowlist
             emergency_ips = _get_emergency_allowlist()
             whitelisted_ips = emergency_ips
             logger.info(f"🆘 Using emergency allowlist: {len(emergency_ips)} IPs")
         
         logger.info(f"📍 Final IPs to whitelist: {len(whitelisted_ips)}")
         
-        # ✅ DEBUG: Log detailed IP breakdown
-        sample_ips = list(whitelisted_ips)[:8]
-        logger.info(f"   Sample IPs: {sample_ips}")
-        
-        # ✅ ENHANCED: Get essential IPs
+        # Continue with existing firewall setup...
         essential_ips = _get_essential_ips()
-        logger.info(f"🔧 Essential IPs: {len(essential_ips)}")
-        logger.info(f"   Essential sample: {list(essential_ips)[:5]}")
-        
-        # ✅ ENHANCED: Final verification
         total_allowed = len(whitelisted_ips) + len(essential_ips)
         logger.info(f"📊 Total IPs to be allowed: {total_allowed}")
-        
-        if total_allowed < 10:
-            logger.warning(f"⚠️ Very few IPs to allow ({total_allowed}) - this may block too much traffic")
-        
-        # ✅ ENHANCED: Setup whitelist firewall with comprehensive logging
-        logger.info("🔥 Creating firewall rules...")
-        logger.info(f"   Creating allow rules for {len(whitelisted_ips)} whitelisted IPs")
-        logger.info(f"   Creating allow rules for {len(essential_ips)} essential IPs")
-        logger.info("⚠️ WARNING: This will block ALL other outbound traffic!")
         
         success = firewall.setup_whitelist_firewall(whitelisted_ips, essential_ips)
         
         if success:
             logger.info("✅ Whitelist-only firewall setup completed successfully")
-            logger.info("🔒 Default policy: BLOCK all non-whitelisted traffic")
-            logger.info(f"✅ Total allowed IPs: {total_allowed}")
-            
-            # ✅ ENHANCED: Verify firewall status
-            status = firewall.get_whitelist_status()
-            logger.info(f"🔍 Firewall status: {status}")
-            
             return True
         else:
             logger.error("❌ Failed to setup whitelist-only firewall")
@@ -768,7 +701,6 @@ def _setup_whitelist_firewall() -> bool:
             
     except Exception as e:
         logger.error(f"Error setting up whitelist firewall: {e}")
-        import traceback
         traceback.print_exc()
         return False
 

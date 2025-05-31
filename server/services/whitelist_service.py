@@ -287,27 +287,26 @@ class WhitelistService:
                     since_date = None
                     sync_type = "full"
         
-            # ✅ FIX: Better query logic
+            # ✅ FIX: Always return all active domains for now (since incremental has issues)
             query = {"is_active": True}
             
-            # ✅ ONLY use since filter for incremental sync if it's recent
+            # ✅ TEMPORARY: Disable incremental sync until fixed
             if since_date and sync_type == "incremental":
-                # Check if since_date is reasonable (not too old)
                 current_time = self._now_local()
                 hours_ago = (current_time - since_date).total_seconds() / 3600
                 
-                if hours_ago <= 24:  # Only incremental if within last 24 hours
+                # ✅ FIX: More conservative incremental sync
+                if hours_ago <= 1:  # Only incremental if within last 1 hour
                     query["added_date"] = {"$gte": since_date}
                     self.logger.debug(f"Incremental sync: domains added after {since_date}")
                 else:
-                    # Too old - do full sync instead
                     sync_type = "full"
                     self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
-            
+        
             entries = self.model.find_all_entries(query)
             current_time = self._now_local()
             
-            # Format entries for agent sync
+            # ✅ FIX: Format entries consistently
             domains = []
             for entry in entries:
                 domain_entry = {
@@ -315,7 +314,8 @@ class WhitelistService:
                     "type": entry.get("type", "domain"),
                     "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None,
                     "priority": entry.get("priority", "normal"),
-                    "category": entry.get("category", "uncategorized")
+                    "category": entry.get("category", "uncategorized"),
+                    "is_active": entry.get("is_active", True)
                 }
                 domains.append(domain_entry)
             
@@ -324,7 +324,8 @@ class WhitelistService:
                 "timestamp": current_time.isoformat(),
                 "count": len(domains),
                 "type": sync_type,
-                "success": True
+                "success": True,
+                "server_time": current_time.isoformat()
             }
             
             # ✅ ADD: Include agent_id if provided

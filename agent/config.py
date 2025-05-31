@@ -66,14 +66,14 @@ DEFAULT_CONFIG = {
     "whitelist": {
         "auto_sync": True,           # ✅ Bật auto-sync
         "sync_on_startup": True,     # ✅ Sync khi khởi động
-        "update_interval": 300,      # ✅ 5 phút cập nhật 1 lần
-        "retry_interval": 60,        # ✅ Thời gian retry khi lỗi
-        "max_retries": 3,            # ✅ Số lần retry tối đa
+        "update_interval": 60,       # ✅ FIX: 1 minute thay vì 5 minutes cho test
+        "retry_interval": 30,        # ✅ FIX: 30 seconds retry
+        "max_retries": 5,            # ✅ FIX: Tăng retry attempts
         "timeout": 30,               # ✅ Timeout khi gọi API
         "auto_sync_firewall": True,  # ✅ Tự động sync với firewall
-        "resolve_ips_on_startup": True,  # ✅ NEW: resolve all IPs at startup
-        "ip_cache_ttl": 300,             # ✅ NEW: IP cache TTL (5 minutes)
-        "ip_refresh_interval": 600,      # ✅ NEW: periodic IP refresh (10 minutes)
+        "resolve_ips_on_startup": True,  # ✅ resolve all IPs at startup
+        "ip_cache_ttl": 300,             # ✅ IP cache TTL (5 minutes)
+        "ip_refresh_interval": 300,      # ✅ FIX: 5 minutes thay vì 10
     },
     
     # Cấu hình bắt gói tin mạng

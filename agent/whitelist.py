@@ -554,13 +554,20 @@ class WhitelistManager:
         start_time = time.time()
         
         try:
-            # ✅ FIX: Only add 'since' parameter if NOT forcing full sync AND we have successful previous sync
+            # ✅ FIX: Always do full sync if forced OR if we have no domains yet
+            should_do_full_sync = (
+                force_full_sync or 
+                not self.startup_sync_completed or 
+                len(self.domains) == 0 or
+                self.last_updated is None
+            )
+            
             params = {}
-            if not force_full_sync and self.startup_sync_completed and self.last_updated:
+            if not should_do_full_sync and self.last_updated:
                 params['since'] = self.last_updated.isoformat()
                 logger.info(f"📡 Incremental sync from server since {self.last_updated.isoformat()}")
             else:
-                logger.info(f"📡 Full sync from server (no since parameter)")
+                logger.info(f"📡 Full sync from server (force: {force_full_sync}, no domains: {len(self.domains) == 0})")
 
             logger.info(f"📡 Syncing whitelist from server: {self.server_url}")
             
@@ -575,64 +582,76 @@ class WhitelistManager:
                 data = response.json()
                 
                 if data.get('success', True):
-                    domains = data.get('domains', [])
+                    domains_data = data.get('domains', [])
+                    
+                    # ✅ FIX: Always validate response format
+                    if not isinstance(domains_data, list):
+                        logger.error(f"Invalid domains format: {type(domains_data)}")
+                        return False
+                    
+                    logger.info(f"📥 Received {len(domains_data)} domains from server")
+                    
+                    # ✅ FIX: Handle both full and incremental sync properly
                     old_domains = self.domains.copy()
                     
-                    # ✅ FIX: Handle different domain data formats
-                    if isinstance(domains, list):
-                        new_domains = set()
-                        for item in domains:
-                            if isinstance(item, str):
-                                new_domains.add(item.lower().strip())
-                            elif isinstance(item, dict):
-                                domain_value = item.get('value') or item.get('domain')
-                                if domain_value:
-                                    new_domains.add(domain_value.lower().strip())
+                    if should_do_full_sync:
+                        # Full sync - replace all domains
+                        logger.info("🔄 Full sync: replacing all domains")
+                        self.domains.clear()
                     
-                    # ✅ FIX: Handle incremental vs full sync properly
-                    if force_full_sync or not self.startup_sync_completed:
-                        # Full sync: replace all domains
-                        self.domains = new_domains
-                        logger.info(f"📦 Full sync: {len(new_domains)} domains")
-                    else:
-                        # Incremental sync: merge with existing
-                        self.domains.update(new_domains)
-                        logger.info(f"📦 Incremental sync: +{len(new_domains)} domains, total: {len(self.domains)}")
-                    
-                    # ✅ ENHANCED: Log sample domains for verification
-                    if self.domains:
-                        sample_domains = list(self.domains)[:3]
-                        logger.info(f"   Sample domains: {sample_domains}")
+                    # ✅ FIX: Process each domain properly
+                    new_domains_added = 0
+                    for domain_data in domains_data:
+                        try:
+                            if isinstance(domain_data, dict):
+                                domain_value = domain_data.get('value', '').strip().lower()
+                            elif isinstance(domain_data, str):
+                                domain_value = domain_data.strip().lower()
+                            else:
+                                logger.warning(f"Invalid domain data format: {domain_data}")
+                                continue
                         
-                    # ✅ FIX: Update timestamp and stats ONLY on successful sync
-                    self.last_updated = self._now_local()
-                    self.stats["sync_count"] += 1
-                    self.stats["last_sync_time"] = self.last_updated
-                    self.stats["last_sync_duration"] = time.time() - start_time
-                    
-                    # ✅ FIX: Save state
-                    self._save_whitelist_state()
-                    
-                    # ✅ ENHANCED: Resolve IPs immediately if domains changed
-                    if old_domains != self.domains and len(self.domains) > 0:
-                        logger.info(f"🔄 Domain changes detected: {len(old_domains)} -> {len(self.domains)}")
-                        self._resolve_all_domain_ips(force_refresh=True)
-                        self._sync_with_firewall(old_domains, self.domains)
-                    
-                    # ✅ ENHANCED: Mark startup sync as completed
-                    if not self.startup_sync_completed:
-                        self.startup_sync_completed = True
-                        logger.info("✅ Startup whitelist sync completed")
-                    
-                    logger.info(f"✅ Whitelist sync completed successfully in {time.time() - start_time:.2f}s")
-                    return True  # ✅ FIX: MISSING RETURN TRUE
+                            if domain_value and domain_value not in self.domains:
+                                self.domains.add(domain_value)
+                                new_domains_added += 1
+                                logger.debug(f"➕ Added domain: {domain_value}")
+                        
+                        except Exception as e:
+                            logger.warning(f"Error processing domain: {domain_data}, error: {e}")
+                
+                # ✅ FIX: Update timestamps and state
+                self.last_updated = self._now_local()
+                self.stats["sync_count"] += 1
+                self.stats["last_sync_time"] = self.last_updated
+                self.stats["last_sync_duration"] = time.time() - start_time
+                
+                # ✅ FIX: Mark startup sync as completed on any successful sync
+                if not self.startup_sync_completed:
+                    self.startup_sync_completed = True
+                    logger.info("✅ Startup sync marked as completed")
+                
+                # ✅ FIX: Log comprehensive results
+                logger.info(f"✅ Sync completed: {len(self.domains)} total domains")
+                logger.info(f"   - New domains added: {new_domains_added}")
+                logger.info(f"   - Sync type: {'full' if should_do_full_sync else 'incremental'}")
+                logger.info(f"   - Duration: {time.time() - start_time:.2f}s")
+                
+                # ✅ FIX: Save state immediately after successful sync
+                self._save_whitelist_state()
+                
+                # ✅ FIX: Sync with firewall if domains changed
+                if old_domains != self.domains:
+                    logger.info(f"🔄 Domain changes detected: {len(old_domains)} -> {len(self.domains)}")
+                    self._sync_with_firewall(old_domains, self.domains)
                 else:
-                    logger.warning("No domains received from server")
-                    return False
+                    logger.debug("No domain changes detected")
+                
+                return True
+                
             else:
-                logger.error(f"HTTP error {response.status_code}: {response.text}")
+                error_msg = data.get('error', 'Unknown server error')
+                logger.error(f"Server returned error: {error_msg}")
                 return False
-            
         except Exception as e:
             logger.error(f"Error updating whitelist: {e}")
             self.stats["sync_errors"] += 1
@@ -888,28 +907,38 @@ class WhitelistManager:
         
         while not self._stop_event.is_set():
             try:
-                if self.update_whitelist_from_server():
+                # ✅ FIX: Force full sync periodically để ensure fresh data
+                force_full = consecutive_failures > 2  # Force full sync after multiple failures
+                
+                if self.update_whitelist_from_server(force_full_sync=force_full):
+                    if consecutive_failures > 0:
+                        logger.info(f"✅ Sync recovered after {consecutive_failures} failures")
                     consecutive_failures = 0
-                    logger.debug(f"✅ Periodic whitelist sync completed")
+                    
+                    # ✅ FIX: Force IP resolution after successful sync
+                    if len(self.domains) > 0:
+                        logger.debug("🔄 Refreshing IP resolution after sync")
+                        self._resolve_all_domain_ips(force_refresh=True)
+                        
                 else:
                     consecutive_failures += 1
-                    logger.warning(f"❌ Periodic whitelist sync failed (attempt {consecutive_failures})")
-                
-                # ✅ ENHANCED: Adaptive retry interval
+                    logger.warning(f"❌ Sync failed (attempt {consecutive_failures}/{self.max_retries})")
+            
+                # ✅ FIX: Adaptive retry interval
                 sleep_interval = self.update_interval
                 if consecutive_failures > 0:
-                    # Exponential backoff for failures
-                    sleep_interval = min(self.update_interval * (2 ** min(consecutive_failures - 1, 3)), 1800)  # Max 30 minutes
-                
+                    sleep_interval = min(self.retry_interval * consecutive_failures, 300)  # Max 5 minutes
+                    logger.info(f"⏳ Will retry in {sleep_interval}s due to failures")
+            
                 if self._stop_event.wait(sleep_interval):
                     break
-                    
+                
             except Exception as e:
                 consecutive_failures += 1
                 logger.error(f"Error in update loop: {e}")
                 if self._stop_event.wait(self.retry_interval):
                     break
-        
+    
         logger.debug("Update loop stopped")
 
     def _ip_refresh_loop(self):
