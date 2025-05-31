@@ -264,9 +264,11 @@ class WhitelistService:
             return {"valid": False, "message": f"DNS test failed: {str(e)}"}
     
     def get_agent_sync_data(self, since: str = None, agent_id: str = None) -> Dict:
-        """Get whitelist data for agent synchronization"""
+        """Get whitelist data for agent synchronization với better logic"""
         try:
             since_date = None
+            sync_type = "full"  # Default to full sync
+            
             if since:
                 try:
                     if isinstance(since, str):
@@ -278,16 +280,29 @@ class WhitelistService:
                         since_date = since
                         
                     since_date = self._ensure_timezone_aware(since_date)
+                    sync_type = "incremental"
                         
                 except (ValueError, AttributeError) as e:
-                    # ✅ FIX: Use self.logger instead of self.logger.warning
                     self.logger.warning(f"Invalid since date format '{since}': {e}")
                     since_date = None
+                    sync_type = "full"
         
-            # Get entries from model for sync
+            # ✅ FIX: Better query logic
             query = {"is_active": True}
-            if since_date:
-                query["added_date"] = {"$gte": since_date}
+            
+            # ✅ ONLY use since filter for incremental sync if it's recent
+            if since_date and sync_type == "incremental":
+                # Check if since_date is reasonable (not too old)
+                current_time = self._now_local()
+                hours_ago = (current_time - since_date).total_seconds() / 3600
+                
+                if hours_ago <= 24:  # Only incremental if within last 24 hours
+                    query["added_date"] = {"$gte": since_date}
+                    self.logger.debug(f"Incremental sync: domains added after {since_date}")
+                else:
+                    # Too old - do full sync instead
+                    sync_type = "full"
+                    self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
             
             entries = self.model.find_all_entries(query)
             current_time = self._now_local()
@@ -308,16 +323,18 @@ class WhitelistService:
                 "domains": domains,
                 "timestamp": current_time.isoformat(),
                 "count": len(domains),
-                "type": "incremental" if since_date else "full",
+                "type": sync_type,
                 "success": True
             }
             
-            # ✅ FIX: Use self.logger instead of self.logger.info
-            self.logger.info(f"Agent sync response: {response['type']} sync with {len(domains)} domains")
+            # ✅ ADD: Include agent_id if provided
+            if agent_id:
+                response["agent_id"] = agent_id
+            
+            self.logger.info(f"Agent sync response: {sync_type} sync with {len(domains)} domains for agent {agent_id or 'unknown'}")
             return response
             
         except Exception as e:
-            # ✅ FIX: Use self.logger instead of self.logger.error
             self.logger.error(f"Error in agent sync: {e}")
             return {
                 "domains": [],
