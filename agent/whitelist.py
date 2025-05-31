@@ -156,7 +156,24 @@ class WhitelistManager:
                 return True
             
             # ✅ ENHANCED: Check if IP belongs to any whitelisted domain
-            return ip in self.current_resolved_ips
+            if ip in self.current_resolved_ips:
+                return True
+            
+            # ✅ NEW: Check if IP is in essential_ips (DNS servers, localhost, etc.)
+            if self.firewall_manager and hasattr(self.firewall_manager, 'essential_ips'):
+                if ip in self.firewall_manager.essential_ips:
+                    return True
+            
+            # ✅ FALLBACK: Check against common essential IPs directly
+            essential_fallback = {
+                "127.0.0.1", "::1", "0.0.0.0",
+                "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1",
+                "208.67.222.222", "208.67.220.220"
+            }
+            if ip in essential_fallback:
+                return True
+                
+            return False
             
         except Exception as e:
             logger.warning(f"Error checking IP {ip}: {e}")
@@ -165,6 +182,67 @@ class WhitelistManager:
     # ========================================
     # IP RESOLUTION METHODS
     # ========================================
+
+    def _resolve_all_domain_ips(self, force_refresh: bool = False) -> bool:
+        """Resolve IPs for all domains with DNS safety checks"""
+        try:
+            if not self.domains:
+                logger.warning("❌ No domains to resolve!")
+                return False
+            
+            logger.info(f"🔍 Resolving IPs for {len(self.domains)} domains...")
+            
+            # ✅ THÊM: Test DNS connectivity first
+            if not self._test_dns_connectivity():
+                logger.warning("⚠️ DNS connectivity issues detected - proceeding anyway")
+            
+            total_ips = set()
+            success_count = 0
+            
+            for domain in self.domains:
+                try:
+                    ip_data = self._resolve_domain_ips_cached(domain, force_refresh)
+                    if ip_data and (ip_data.get("ipv4") or ip_data.get("ipv6")):
+                        ipv4_ips = ip_data.get("ipv4", [])
+                        ipv6_ips = ip_data.get("ipv6", [])
+                        
+                        total_ips.update(ipv4_ips)
+                        total_ips.update(ipv6_ips)  # ✅ THÊM IPv6 support
+                        
+                        success_count += 1
+                        logger.debug(f"   ✅ {domain}: {len(ipv4_ips)} IPv4, {len(ipv6_ips)} IPv6")
+                    else:
+                        logger.warning(f"   ❌ No IPs resolved for {domain}")
+                except Exception as e:
+                    logger.error(f"   ❌ Error resolving {domain}: {e}")
+            
+            # ✅ UPDATE tracking
+            self.previous_resolved_ips = self.current_resolved_ips.copy()
+            self.current_resolved_ips = total_ips
+            
+            logger.info(f"🔍 Resolution completed: {success_count}/{len(self.domains)} domains, {len(total_ips)} total IPs")
+            
+            if len(total_ips) == 0:
+                logger.error("❌ CRITICAL: No IPs resolved for any domain!")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in IP resolution: {e}")
+            return False
+
+    def _test_dns_connectivity(self) -> bool:
+        """Test DNS connectivity before domain resolution"""
+        try:
+            # Test với Google DNS
+            socket.getaddrinfo("8.8.8.8", None, socket.AF_INET)
+            # Test với một domain đơn giản
+            socket.getaddrinfo("google.com", None, socket.AF_INET)
+            return True
+        except Exception as e:
+            logger.warning(f"DNS connectivity test failed: {e}")
+            return False
 
     def _resolve_all_domain_ips(self, force_refresh: bool = False) -> bool:
         """Resolve IPs for all domains in whitelist"""
@@ -460,7 +538,7 @@ class WhitelistManager:
     # SERVER COMMUNICATION
     # ========================================
 
-    def update_whitelist_from_server(self) -> bool:
+    def update_whitelist_from_server(self, force_full_sync: bool = False) -> bool:
         """Enhanced whitelist update from server với better completion tracking"""
         if self.sync_in_progress:
             logger.debug("Sync already in progress, skipping")
@@ -470,13 +548,13 @@ class WhitelistManager:
         start_time = time.time()
         
         try:
-            # ✅ FIX: Build request with since parameter
+            # ✅ FIX: Only add 'since' parameter if NOT forcing full sync AND we have successful previous sync
             params = {}
-            if self.last_updated:
-                if hasattr(self.last_updated, 'isoformat'):
-                    params['since'] = self.last_updated.isoformat()
-                else:
-                    params['since'] = str(self.last_updated)
+            if not force_full_sync and self.startup_sync_completed and self.last_updated:
+                params['since'] = self.last_updated.isoformat()
+                logger.info(f"📡 Incremental sync from server since {self.last_updated.isoformat()}")
+            else:
+                logger.info(f"📡 Full sync from server (no since parameter)")
 
             logger.info(f"📡 Syncing whitelist from server: {self.server_url}")
             
@@ -504,45 +582,35 @@ class WhitelistManager:
                                 domain_value = item.get('value') or item.get('domain')
                                 if domain_value:
                                     new_domains.add(domain_value.lower().strip())
-                        
-                        self.domains = new_domains
-                        logger.info(f"📦 Updated whitelist: {len(self.domains)} domains")
-                        
-                        # ✅ ENHANCED: Log sample domains for verification
-                        if self.domains:
-                            sample_domains = list(self.domains)[:3]
-                            logger.info(f"   Sample domains: {sample_domains}")
-                    else:
-                        logger.warning("Invalid domains format in response")
-                        return False
                     
-                    # ✅ FIX: Update timestamp and stats
-                    self.last_updated = datetime.now()
+                    # ✅ FIX: Handle incremental vs full sync properly
+                    if force_full_sync or not self.startup_sync_completed:
+                        # Full sync: replace all domains
+                        self.domains = new_domains
+                        logger.info(f"📦 Full sync: {len(new_domains)} domains")
+                    else:
+                        # Incremental sync: merge with existing
+                        self.domains.update(new_domains)
+                        logger.info(f"📦 Incremental sync: +{len(new_domains)} domains, total: {len(self.domains)}")
+                    
+                    # ✅ ENHANCED: Log sample domains for verification
+                    if self.domains:
+                        sample_domains = list(self.domains)[:3]
+                        logger.info(f"   Sample domains: {sample_domains}")
+                        
+                    # ✅ FIX: Update timestamp and stats ONLY on successful sync
+                    self.last_updated = self._now_local()
                     self.stats["sync_count"] += 1
                     self.stats["last_sync_time"] = self.last_updated
                     self.stats["last_sync_duration"] = time.time() - start_time
                     
                     # ✅ FIX: Save state
-                    try:
-                        self._save_whitelist_state()
-                    except Exception as save_error:
-                        logger.error(f"Failed to save whitelist state: {save_error}")
+                    self._save_whitelist_state()
                     
                     # ✅ ENHANCED: Resolve IPs immediately if domains changed
                     if old_domains != self.domains and len(self.domains) > 0:
                         logger.info(f"🔄 Domain changes detected: {len(old_domains)} -> {len(self.domains)}")
-                        logger.info("🔍 Immediately resolving IPs for new domains...")
-                        
-                        # Force IP resolution
-                        ip_resolution_success = self._resolve_all_domain_ips(force_refresh=True)
-                        
-                        if ip_resolution_success:
-                            resolved_count = len(self.current_resolved_ips)
-                            logger.info(f"✅ IP resolution completed: {resolved_count} total IPs")
-                        else:
-                            logger.warning("⚠️ IP resolution had some errors")
-                        
-                        # Sync with firewall if available
+                        self._resolve_all_domain_ips(force_refresh=True)
                         self._sync_with_firewall(old_domains, self.domains)
                     
                     # ✅ ENHANCED: Mark startup sync as completed
@@ -551,22 +619,14 @@ class WhitelistManager:
                         logger.info("✅ Startup whitelist sync completed")
                     
                     logger.info(f"✅ Whitelist sync completed successfully in {time.time() - start_time:.2f}s")
-                    return True
+                    return True  # ✅ FIX: MISSING RETURN TRUE
                 else:
-                    logger.error(f"Server error: {data.get('error', 'Unknown error')}")
+                    logger.warning("No domains received from server")
                     return False
             else:
                 logger.error(f"HTTP error {response.status_code}: {response.text}")
                 return False
-                
-        except requests.exceptions.Timeout:
-            logger.warning("Request timeout - server may be slow")
-            self.stats["sync_errors"] += 1
-            return False
-        except requests.exceptions.ConnectionError:
-            logger.warning("Connection error - server may be unreachable")
-            self.stats["sync_errors"] += 1
-            return False
+            
         except Exception as e:
             logger.error(f"Error updating whitelist: {e}")
             self.stats["sync_errors"] += 1
@@ -954,23 +1014,28 @@ class WhitelistManager:
             }
 
     def force_refresh(self) -> bool:
-        """Force refresh of whitelist and IP resolution"""
+        """Force complete refresh from server"""
+        logger.info("🔄 Forcing complete refresh...")
+        
         try:
-            logger.info("🔄 Forcing complete refresh...")
+            # ✅ FIX: Force full sync without 'since' parameter
+            sync_success = self.update_whitelist_from_server(force_full_sync=True)
             
-            # ✅ ENHANCED: Force whitelist update
-            whitelist_success = self.update_whitelist_from_server()
-            
-            # ✅ ENHANCED: Force IP resolution
-            ip_success = self._resolve_all_domain_ips(force_refresh=True)
-            
-            success = whitelist_success and ip_success
-            logger.info(f"✅ Force refresh completed: {'success' if success else 'partial'}")
-            
-            return success
-            
+            if sync_success and len(self.domains) > 0:
+                ip_success = self._resolve_all_domain_ips(force_refresh=True)
+                
+                if ip_success:
+                    logger.info("✅ Force refresh completed: full")
+                    return True
+                else:
+                    logger.warning("⚠️ Force refresh completed: partial (domains only)")
+                    return False
+            else:
+                logger.error("❌ Force refresh failed")
+                return False
+                
         except Exception as e:
-            logger.error(f"Error in force refresh: {e}")
+            logger.error(f"❌ Error in force refresh: {e}")
             return False
 
 

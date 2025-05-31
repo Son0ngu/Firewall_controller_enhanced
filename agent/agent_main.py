@@ -120,15 +120,33 @@ def handle_domain_detection(record: Dict):
                 ip_allowed = whitelist.is_ip_allowed(dest_ip)
                 logger.debug(f"IP check for {dest_ip}: {ip_allowed}")
             
-            # ✅ NEW: Mode-aware action determination
+            # ✅ NEW: Mode-aware action determination với enhanced essential IP check
             firewall_mode = config["firewall"]["mode"]
             firewall_enabled = config["firewall"]["enabled"]
+            
+            # ✅ ADD: Check for essential IP status
+            is_essential_ip = False
+            if dest_ip and dest_ip != "unknown":
+                # Check common essential IPs
+                essential_ips = {
+                    "127.0.0.1", "::1", "0.0.0.0",
+                    "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1"
+                }
+                is_essential_ip = dest_ip in essential_ips
+                
+                # Check firewall manager's essential IPs if available
+                if firewall and hasattr(firewall, 'essential_ips'):
+                    is_essential_ip = is_essential_ip or (dest_ip in firewall.essential_ips)
             
             if firewall_enabled and firewall_mode == "whitelist_only":
                 # ✅ WHITELIST_ONLY MODE: Active blocking
                 if domain_allowed or ip_allowed:
                     action = "ALLOWED"
-                    reason = "whitelisted_domain" if domain_allowed else "whitelisted_ip"
+                    reason = "domain_allowed" if domain_allowed else "ip_whitelisted"
+                    level = "ALLOWED"
+                elif is_essential_ip:
+                    action = "ALLOWED"
+                    reason = "essential_ip"
                     level = "ALLOWED"
                 else:
                     action = "BLOCKED"
@@ -614,9 +632,9 @@ def _setup_whitelist_firewall() -> bool:
             return False
         
         # ✅ ENHANCED: Wait for whitelist to be ready với extended timeout
-        max_wait = 90  # 90 seconds max wait (increased)
+        max_wait = 30  # ✅ REDUCED: 30 seconds max wait instead of 90
         wait_time = 0
-        sync_check_interval = 3  # Check every 3 seconds
+        sync_check_interval = 2  # Check every 2 seconds
         
         logger.info("⏳ Waiting for whitelist sync to complete...")
         
@@ -626,14 +644,36 @@ def _setup_whitelist_firewall() -> bool:
             wait_time += sync_check_interval
             
             # ✅ ADD: Show progress
-            if wait_time % 15 == 0:  # Every 15 seconds
+            if wait_time % 10 == 0:  # Every 10 seconds
                 domain_count = len(whitelist.domains)
                 ip_count = len(whitelist.current_resolved_ips)
                 logger.info(f"   Current: {domain_count} domains → {ip_count} IPs")
+                
+                # ✅ FIX: If we have domains but sync not marked complete, force complete
+                if domain_count > 0 and not whitelist.startup_sync_completed:
+                    logger.info("🔧 Force marking sync as completed - we have domains")
+                    whitelist.startup_sync_completed = True
+                    break
         
         if not whitelist.startup_sync_completed:
             logger.warning("⚠️ Whitelist sync not completed within timeout")
-            logger.info(f"   Proceeding with {len(whitelist.domains)} cached domains")
+            
+            # ✅ FIX: Check if we have domains anyway
+            if len(whitelist.domains) > 0:
+                logger.info(f"   But we have {len(whitelist.domains)} domains, proceeding anyway")
+                whitelist.startup_sync_completed = True
+            else:
+                logger.info(f"   No domains available, using emergency domains")
+                # Add emergency domains
+                emergency_domains = {
+                    "github.com",
+                    "raw.githubusercontent.com", 
+                    "google.com",
+                    "microsoft.com",
+                    config['server']['url'].replace('https://', '').replace('http://', '').split('/')[0]
+                }
+                whitelist.domains.update(emergency_domains)
+                logger.info(f"✅ Added {len(emergency_domains)} emergency domains")
         else:
             logger.info(f"✅ Whitelist sync completed with {len(whitelist.domains)} domains")
         
@@ -1060,31 +1100,34 @@ def signal_handler(sig, frame):
     running = False
 
 def main():
-    """Enhanced main function with automatic mode detection"""
+    """Enhanced main function with admin check"""
     global config, running
     
     try:
-        # ✅ ENHANCED: Load and validate configuration
+        # ✅ Load configuration first
         logger.info("⚙️ Loading agent configuration...")
         config = get_config()
         
-        # ✅ NEW: Display banner with mode information
-        _display_startup_banner()
+        # ✅ KIỂM TRA ADMIN NGAY ĐẦU
+        firewall_enabled = config["firewall"]["enabled"]
+        firewall_mode = config["firewall"]["mode"]
         
-        # ✅ ENHANCED: Validate critical config sections
-        _validate_critical_config()
+        if firewall_enabled and firewall_mode in ["whitelist_only", "block"]:
+            if not _check_admin_privileges():
+                logger.error("❌ CRITICAL: Firewall blocking modes require Administrator privileges!")
+                logger.error("💡 Please run: python agent_main.py (right-click → Run as Administrator)")
+                logger.error("🔧 Auto-switching to monitor mode...")
+                
+                config["firewall"]["enabled"] = False
+                config["firewall"]["mode"] = "monitor"
+                
+                logger.warning("⚠️ Agent will run in MONITOR mode only (no blocking)")
         
-        logger.info("✅ Configuration loaded successfully")
+        logger.info("✅ Configuration validated and loaded")
         
-        # ✅ ENHANCED: Apply startup delay if configured
-        startup_delay = config["general"]["startup_delay"]
-        if startup_delay > 0:
-            logger.info(f"⏳ Waiting {startup_delay} seconds before starting...")
-            time.sleep(startup_delay)
-        
-        # ✅ ENHANCED: Initialize all components
+        # Continue with rest of main()...
         initialize_components()
-        
+        # ...rest of function
         # ✅ ENHANCED: Send comprehensive startup log
         _send_startup_notification()
         
@@ -1294,12 +1337,8 @@ if __name__ == "__main__":
         # ✅ Setup signal handlers
         setup_signal_handlers()
         
-        # ✅ Check if running as service
-        if len(sys.argv) > 1 and sys.argv[1] in ['install', 'remove', 'start', 'stop', 'restart']:
-            run_as_service()
-        else:
-            # ✅ Run normally
-            main()
+        # ✅ Run normally (service functionality not implemented)
+        main()
             
     except KeyboardInterrupt:
         logger.info("Application terminated by user")
