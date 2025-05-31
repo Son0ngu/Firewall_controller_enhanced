@@ -16,7 +16,7 @@ class WhitelistManager:
     """Enhanced Whitelist manager for whitelist-only firewall mode"""
     
     def __init__(self, config: Dict):
-        """Initialize the whitelist manager với enhanced features"""
+        """Initialize the whitelist manager - SERVER SYNC ONLY"""
         # ✅ FIX: Lấy config từ whitelist section
         whitelist_config = config.get("whitelist", {})
         
@@ -67,7 +67,7 @@ class WhitelistManager:
         self.previous_resolved_ips: Set[str] = set()
         
         # ✅ ENHANCED: State management
-        self.domains: Set[str] = set()
+        self.domains: Set[str] = set()  # Start with empty set - only server domains
         self.last_updated: Optional[datetime] = None
         self.firewall_manager = None
         self.sync_in_progress = False
@@ -92,25 +92,31 @@ class WhitelistManager:
             "cache_miss_count": 0
         }
         
-        # ✅ ENHANCED: Load cached data
+        # ✅ ENHANCED: Load cached data (may be empty)
         self._load_whitelist_state()
         self._load_ip_cache()
         
-        # ✅ ENHANCED: Initial sync if enabled
+        # ✅ CRITICAL: ONLY sync from server - no fallback domains
         if self.sync_on_startup:
-            logger.info("🔄 Performing initial whitelist sync...")
+            logger.info("🔄 Performing initial whitelist sync from server...")
             if self.update_whitelist_from_server():
                 logger.info("✅ Initial whitelist sync completed")
                 
-                # ✅ ENHANCED: Resolve IPs on startup for whitelist-only mode
-                if self.resolve_ips_on_startup:
-                    logger.info("🔍 Resolving IPs for all domains on startup...")
+                if len(self.domains) == 0:
+                    logger.warning("⚠️ Server returned no domains - proceeding with empty whitelist")
+                
+                # ✅ ENHANCED: Resolve IPs only if we have domains
+                if self.resolve_ips_on_startup and len(self.domains) > 0:
+                    logger.info("🔍 Resolving IPs for server domains...")
                     self._resolve_all_domain_ips()
                     logger.info("✅ Initial IP resolution completed")
                 
                 self.startup_sync_completed = True
             else:
-                logger.warning("❌ Initial whitelist sync failed")
+                logger.error("❌ Initial whitelist sync failed - no domains available")
+                logger.error("   Agent will have empty whitelist until server sync succeeds")
+        else:
+            logger.info("📋 Startup sync disabled - domains will be loaded on first periodic sync")
         
         # ✅ ENHANCED: Start background update thread
         if self.auto_sync_enabled:
@@ -1037,53 +1043,3 @@ class WhitelistManager:
         except Exception as e:
             logger.error(f"❌ Error in force refresh: {e}")
             return False
-
-
-# ✅ NEW: Example usage and testing
-if __name__ == "__main__":
-    # Test whitelist manager
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Test configuration
-    test_config = {
-        "server": {
-            "url": "https://firewall-controller.onrender.com",
-            "connect_timeout": 10,
-            "read_timeout": 30
-        },
-        "whitelist": {
-            "auto_sync": True,
-            "sync_on_startup": True,
-            "update_interval": 60,
-            "ip_cache_ttl": 300,
-            "resolve_ips_on_startup": True
-        }
-    }
-    
-    print("\n=== Testing Enhanced WhitelistManager ===")
-    
-    # Initialize whitelist manager
-    whitelist = WhitelistManager(test_config)
-    
-    # Test status
-    status = whitelist.get_status()
-    print(f"\nStatus: {status}")
-    
-    # Test domain details
-    if whitelist.domains:
-        sample_domain = next(iter(whitelist.domains))
-        details = whitelist.get_domain_details(sample_domain)
-        print(f"\nSample domain details: {details}")
-    
-    # Test IP checking
-    test_ips = ["8.8.8.8", "1.1.1.1", "127.0.0.1"]
-    for ip in test_ips:
-        allowed = whitelist.is_ip_allowed(ip)
-        print(f"IP {ip} allowed: {allowed}")
-    
-    # Stop manager
-    whitelist.stop_periodic_updates()
-    print("\nTesting completed")

@@ -632,9 +632,9 @@ def _setup_whitelist_firewall() -> bool:
             return False
         
         # ✅ ENHANCED: Wait for whitelist to be ready với extended timeout
-        max_wait = 30  # ✅ REDUCED: 30 seconds max wait instead of 90
+        max_wait = 30
         wait_time = 0
-        sync_check_interval = 2  # Check every 2 seconds
+        sync_check_interval = 2
         
         logger.info("⏳ Waiting for whitelist sync to complete...")
         
@@ -644,7 +644,7 @@ def _setup_whitelist_firewall() -> bool:
             wait_time += sync_check_interval
             
             # ✅ ADD: Show progress
-            if wait_time % 10 == 0:  # Every 10 seconds
+            if wait_time % 10 == 0:
                 domain_count = len(whitelist.domains)
                 ip_count = len(whitelist.current_resolved_ips)
                 logger.info(f"   Current: {domain_count} domains → {ip_count} IPs")
@@ -663,32 +663,20 @@ def _setup_whitelist_firewall() -> bool:
                 logger.info(f"   But we have {len(whitelist.domains)} domains, proceeding anyway")
                 whitelist.startup_sync_completed = True
             else:
-                logger.info(f"   No domains available, using emergency domains")
-                # Add emergency domains
-                emergency_domains = {
-                    "github.com",
-                    "raw.githubusercontent.com", 
-                    "google.com",
-                    "microsoft.com",
-                    config['server']['url'].replace('https://', '').replace('http://', '').split('/')[0]
-                }
-                whitelist.domains.update(emergency_domains)
-                logger.info(f"✅ Added {len(emergency_domains)} emergency domains")
+                # ✅ REMOVED: No emergency domains - fail if no server sync
+                logger.error("❌ No domains available from server sync - cannot proceed")
+                logger.error("   Please ensure server is accessible and has configured domains")
+                return False
         else:
             logger.info(f"✅ Whitelist sync completed with {len(whitelist.domains)} domains")
         
         # ✅ ENHANCED: Ensure we have some domains before proceeding
         if len(whitelist.domains) == 0:
-            logger.warning("⚠️ No domains in whitelist - adding emergency domains")
-            emergency_domains = {
-                "github.com",
-                "raw.githubusercontent.com", 
-                "google.com",
-                "microsoft.com",
-                config['server']['url'].replace('https://', '').replace('http://', '').split('/')[0]
-            }
-            whitelist.domains.update(emergency_domains)
-            logger.info(f"✅ Added {len(emergency_domains)} emergency domains")
+            # ✅ REMOVED: No emergency domains - strict server-only approach
+            logger.error("❌ CRITICAL: No domains received from server!")
+            logger.error("   Whitelist-only firewall requires domains from server")
+            logger.error("   Please add domains via web interface or check server connectivity")
+            return False
         
         # ✅ ENHANCED: Force comprehensive IP resolution with multiple attempts
         logger.info("🔍 Performing comprehensive IP resolution...")
@@ -788,11 +776,10 @@ def _get_emergency_allowlist() -> set:
     """Get emergency IPs that should always be allowed"""
     emergency_ips = set()
     
-    # ✅ ENHANCED: Server IPs - resolve all configured servers
+    # ✅ ENHANCED: Server IPs ONLY - resolve configured servers
     try:
         server_urls = config['server'].get('urls', [config['server']['url']])
         for url in server_urls:
-            # Extract hostname from URL
             hostname = url.replace('https://', '').replace('http://', '').split('/')[0]
             try:
                 server_ips = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
@@ -804,25 +791,10 @@ def _get_emergency_allowlist() -> set:
     except Exception as e:
         logger.warning(f"Error resolving emergency server IPs: {e}")
     
-    # ✅ ENHANCED: Essential services domains
-    essential_domains = [
-        "github.com", "raw.githubusercontent.com",        # Git/GitHub
-        "pypi.org", "files.pythonhosted.org",           # Python packages
-        "microsoft.com", "windows.com", "live.com",     # Microsoft services
-        "google.com", "googleapis.com",                 # Google services
-        "cloudflare.com", "1.1.1.1"                    # DNS/CDN
-    ]
+    # ✅ REMOVED: All hardcoded essential domains
+    # Only keep server IPs for emergency connectivity
     
-    for domain in essential_domains:
-        try:
-            domain_ips = socket.getaddrinfo(domain, None, socket.AF_INET, socket.SOCK_STREAM)
-            for ip_info in domain_ips:
-                emergency_ips.add(ip_info[4][0])
-            logger.debug(f"🆘 Added emergency IPs for {domain}")
-        except Exception as e:
-            logger.debug(f"Could not resolve emergency domain {domain}: {e}")
-    
-    logger.info(f"🆘 Emergency allowlist compiled: {len(emergency_ips)} IPs")
+    logger.info(f"🆘 Emergency allowlist (server IPs only): {len(emergency_ips)} IPs")
     return emergency_ips
 
 def _get_essential_ips() -> set:

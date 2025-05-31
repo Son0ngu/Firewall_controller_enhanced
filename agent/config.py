@@ -346,9 +346,9 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
 
 def get_default_config() -> Dict[str, Any]:
     """
-    Cung cấp cấu hình mặc định cho agent với auto-detection mode.
+    Default configuration with NO sample domains - pure server sync
     """
-    # ✅ NEW: Auto-detect firewall mode based on admin privileges
+    # Auto-detect firewall mode based on admin privileges
     firewall_mode = _detect_optimal_firewall_mode()
     firewall_enabled = _has_admin_privileges()
     
@@ -377,16 +377,19 @@ def get_default_config() -> Dict[str, Any]:
         
         # Cấu hình whitelist đơn giản hóa - chỉ từ server
         "whitelist": {
-            "auto_sync": True,           # ✅ Bật auto-sync
-            "sync_on_startup": True,     # ✅ Sync khi khởi động
-            "update_interval": 300,      # ✅ 5 phút cập nhật 1 lần
-            "retry_interval": 60,        # ✅ Thời gian retry khi lỗi
-            "max_retries": 3,            # ✅ Số lần retry tối đa
-            "timeout": 30,               # ✅ Timeout khi gọi API
-            "auto_sync_firewall": firewall_enabled,  # ✅ Only sync if firewall enabled
-            "resolve_ips_on_startup": firewall_enabled,  # ✅ Only resolve if needed
-            "ip_cache_ttl": 300,             # ✅ NEW: IP cache TTL (5 minutes)
-            "ip_refresh_interval": 600,      # ✅ NEW: periodic IP refresh (10 minutes)
+            "auto_sync": True,
+            "sync_on_startup": True,
+            "update_interval": 300,
+            "retry_interval": 60,
+            "max_retries": 3,
+            "timeout": 30,
+            "auto_sync_firewall": firewall_enabled,
+            "resolve_ips_on_startup": firewall_enabled,
+            "ip_cache_ttl": 300,
+            "ip_refresh_interval": 600,
+            # ✅ STRICT: No local domains, no samples, no fallbacks
+            "require_server_domains": True,  # New flag
+            "allow_empty_whitelist": False   # New flag
         },
         
         # Cấu hình bắt gói tin mạng
