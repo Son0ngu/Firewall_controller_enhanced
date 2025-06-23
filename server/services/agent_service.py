@@ -1,15 +1,21 @@
 """
 Agent Service - Business logic for agent operations
 """
+from datetime import datetime, timedelta, timezone  # 🔄 FIX: Add datetime import
 import logging
 import time
 import secrets
 import uuid
 import traceback
-from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from bson import ObjectId
 from models.agent_model import AgentModel
+
+# Import time utilities
+from time_utils import (
+    now_vietnam, now_vietnam_naive, now_vietnam_iso,
+    to_vietnam_timezone, parse_agent_timestamp_direct, VIETNAM_TIMEZONE
+)
 
 class AgentService:
     """Service class for agent business logic"""
@@ -20,42 +26,17 @@ class AgentService:
         self.model = agent_model
         self.socketio = socketio
         
-        # ✅ FIX: Get database from model, not from parameter
+        #  FIX: Get database from model, not from parameter
         self.db = self.model.db
         self.commands_collection = self.db.agent_commands
         
-        # ✅ SYNC với client thresholds - FIXED values
+        #  SYNC với client thresholds - FIXED values
         self.active_threshold = 2      # minutes - Agent is ACTIVE if heartbeat within 2 minutes
         self.inactive_threshold = 5    # minutes - Agent is INACTIVE if heartbeat 2-5 minutes ago
         # Agent is OFFLINE if heartbeat > 5 minutes ago or never
         
-        # ✅ FIXED: Use timezone offset instead of ZoneInfo (Windows compatible)
-        self.vietnam_offset = timezone(timedelta(hours=7))  # UTC+7 for Vietnam
-        self.server_timezone = self._get_server_timezone()
-        
-        self.logger.info(f"✅ AgentService initialized")
-        self.logger.info(f"Server timezone: {self.server_timezone}")
+        self.logger.info(f" AgentService initialized")
         self.logger.info(f"Status thresholds: active≤{self.active_threshold}m, inactive≤{self.inactive_threshold}m")
-    
-    def _get_server_timezone(self) -> timezone:
-        """Get server timezone - Windows compatible"""
-        try:
-            # Get local timezone offset
-            local_offset = datetime.now().astimezone().utcoffset()
-            return timezone(local_offset)
-        except Exception:
-            # Fallback to UTC
-            self.logger.warning("Could not detect server timezone, using UTC")
-            return timezone.utc
-    
-    def _now_local(self) -> datetime:
-        """Get current local server time"""
-        return datetime.now(self.server_timezone)
-    
-    def _now_vietnam(self) -> datetime:
-        """Get current Vietnam time (UTC+7)"""
-        vietnam_tz = timezone(timedelta(hours=7))
-        return datetime.now(vietnam_tz)
 
     def register_agent(self, agent_data: Dict, client_ip: str) -> Dict:
         """Register a new agent using hostname+IP as identifier"""
@@ -82,9 +63,8 @@ class AgentService:
             agents = self.model.get_all_agents(query, limit=1)
             existing_agent = agents[0] if agents else None
             
-            # ✅ FORCE UTC+7 for all timestamps
-            vietnam_tz = timezone(timedelta(hours=7))
-            current_time = datetime.now(vietnam_tz)
+            # Use Vietnam time for all timestamps
+            current_time = now_vietnam_naive()
             
             if existing_agent:
                 # Update existing agent
@@ -95,8 +75,8 @@ class AgentService:
                     "platform": agent_data.get("platform"),
                     "os_info": agent_data.get("os_info"),
                     "agent_version": agent_data.get("agent_version"),
-                    "last_heartbeat": current_time,  # ✅ UTC+7
-                    "updated_date": current_time,    # ✅ UTC+7
+                    "last_heartbeat": current_time,
+                    "updated_date": current_time,
                     "status": "active"
                 }
                 
@@ -106,7 +86,7 @@ class AgentService:
                     agent_token = secrets.token_hex(32)
                     self.model.update_agent(agent_id, {"agent_token": agent_token})
                 
-                self.logger.info(f"✅ Updated existing agent: {agent_id}")
+                self.logger.info(f" Updated existing agent: {agent_id}")
             else:
                 # Create new agent
                 agent_id = str(uuid.uuid4())
@@ -120,13 +100,13 @@ class AgentService:
                     "os_info": agent_data.get("os_info"),
                     "agent_version": agent_data.get("agent_version"),
                     "agent_token": agent_token,
-                    "registered_date": current_time,   # ✅ UTC+7
-                    "last_heartbeat": current_time,    # ✅ UTC+7
+                    "registered_date": current_time,
+                    "last_heartbeat": current_time,
                     "status": "active"
                 }
                 
                 self.model.register_agent(agent_registration_data)
-                self.logger.info(f"✅ Created new agent: {agent_id}")
+                self.logger.info(f" Created new agent: {agent_id}")
 
             # Emit SocketIO event
             if self.socketio:
@@ -135,7 +115,7 @@ class AgentService:
                     "hostname": hostname,
                     "ip_address": agent_ip,
                     "status": "active",
-                    "timestamp": current_time.isoformat()
+                    "timestamp": now_vietnam_iso()
                 })
         
             return {
@@ -144,7 +124,7 @@ class AgentService:
                 "token": agent_token,
                 "status": "active",
                 "message": f"Agent {'updated' if existing_agent else 'registered'} successfully",
-                "server_time": current_time.isoformat()
+                "server_time": now_vietnam_iso()
             }
         
         except Exception as e:
@@ -152,18 +132,17 @@ class AgentService:
             raise
 
     def get_agents_with_status(self) -> List[Dict]:
-        """Get all agents with FIXED status calculation - UTC+7 for ALL"""
+        """Get all agents with status calculation - FIXED timezone handling"""
         try:
-            self.logger.info("🔧 get_agents_with_status() called - UTC+7 ONLY VERSION")
+            self.logger.info("🔧 get_agents_with_status() called - FIXED VERSION")
             
             agents = self.model.get_all_agents()
             self.logger.info(f"🔧 Found {len(agents)} agents from database")
             
-            # ✅ SIMPLE: Use UTC+7 for everything
-            vietnam_tz = timezone(timedelta(hours=7))
-            now_vietnam = datetime.now(vietnam_tz)
+            # Use Vietnam time for status calculation
+            now_vn = now_vietnam()
             
-            self.logger.info(f"🔧 Current Vietnam time (UTC+7): {now_vietnam}")
+            self.logger.info(f"🔧 Current Vietnam time: {now_vn}")
             
             for agent in agents:
                 hostname = agent.get('hostname', 'Unknown')
@@ -173,16 +152,13 @@ class AgentService:
                     self.logger.info(f"🔧 {hostname}: Processing heartbeat {heartbeat} (type: {type(heartbeat)})")
                     
                     try:
-                        # ✅ CRITICAL FIX: Proper timezone handling
+                        # 🔄 FIX: Handle different heartbeat formats
                         if isinstance(heartbeat, str):
-                            # Parse string heartbeat
+                            # Parse string heartbeat using parse_agent_timestamp_direct
                             try:
-                                if '+07:00' in heartbeat or '+00:00' in heartbeat or 'Z' in heartbeat:
-                                    heartbeat_vietnam = datetime.fromisoformat(heartbeat.replace('Z', '+00:00')).astimezone(vietnam_tz)
-                                else:
-                                    # No timezone info - assume UTC+7
-                                    heartbeat_vietnam = datetime.fromisoformat(heartbeat).replace(tzinfo=vietnam_tz)
-                                    
+                                heartbeat_vietnam = parse_agent_timestamp_direct(heartbeat)
+                                # Convert to timezone-aware for comparison
+                                heartbeat_vietnam = heartbeat_vietnam.replace(tzinfo=VIETNAM_TIMEZONE)
                             except Exception as parse_error:
                                 self.logger.error(f"🔧 {hostname}: String parse error: {parse_error}")
                                 agent['status'] = 'offline'
@@ -190,31 +166,33 @@ class AgentService:
                                 continue
                                 
                         elif isinstance(heartbeat, datetime):
-                            # Handle datetime object
                             if heartbeat.tzinfo is None:
-                                # No timezone - assume it's UTC and convert to Vietnam
+                                # 🔄 CRITICAL FIX: Naive datetime from MongoDB is UTC, not Vietnam!
+                                # Old data was stored as UTC naive, convert to Vietnam
                                 heartbeat_utc = heartbeat.replace(tzinfo=timezone.utc)
-                                heartbeat_vietnam = heartbeat_utc.astimezone(vietnam_tz)
+                                heartbeat_vietnam = heartbeat_utc.astimezone(VIETNAM_TIMEZONE)
+                                self.logger.info(f"🔧 {hostname}: Naive datetime converted UTC→Vietnam: {heartbeat} → {heartbeat_vietnam}")
                             else:
                                 # Has timezone - convert to Vietnam
-                                heartbeat_vietnam = heartbeat.astimezone(vietnam_tz)
+                                heartbeat_vietnam = to_vietnam_timezone(heartbeat)
+                                self.logger.info(f"🔧 {hostname}: Timezone-aware datetime converted: {heartbeat_vietnam}")
                         else:
                             self.logger.warning(f"🔧 {hostname}: Unknown heartbeat type: {type(heartbeat)}")
                             agent['status'] = 'offline'
                             agent['time_since_heartbeat'] = 999
                             continue
                         
-                        # ✅ SIMPLE: Calculate difference (both in UTC+7 now)
-                        time_diff = now_vietnam - heartbeat_vietnam
+                        # Calculate difference
+                        time_diff = now_vn - heartbeat_vietnam
                         minutes_diff = time_diff.total_seconds() / 60
                         
-                        self.logger.info(f"🔧 {hostname}: Time calculation (UTC+7 only):")
-                        self.logger.info(f"🔧   Now Vietnam: {now_vietnam}")
+                        self.logger.info(f"🔧 {hostname}: Time calculation:")
+                        self.logger.info(f"🔧   Now Vietnam: {now_vn}")
                         self.logger.info(f"🔧   Heartbeat Vietnam: {heartbeat_vietnam}")
                         self.logger.info(f"🔧   Difference: {time_diff}")
                         self.logger.info(f"🔧   Minutes: {minutes_diff:.2f}")
                         
-                        # ✅ Status calculation
+                        # Status calculation
                         if minutes_diff <= self.active_threshold:      # 2 minutes = active
                             status = 'active'
                             self.logger.info(f"🔧 {hostname}: {minutes_diff:.2f} ≤ {self.active_threshold} → ACTIVE")
@@ -239,7 +217,7 @@ class AgentService:
                     self.logger.info(f"🔧 {hostname}: No heartbeat found")
                     agent['status'] = 'offline'
                     agent['time_since_heartbeat'] = None
-        
+
             self.logger.info(f"🔧 Returning {len(agents)} agents with status")
             return agents
             
@@ -273,7 +251,7 @@ class AgentService:
             return {'total': 0, 'active': 0, 'inactive': 0, 'offline': 0}
 
     def process_heartbeat(self, agent_id: str, token: str, heartbeat_data: Dict, client_ip: str) -> Dict:
-        """Process agent heartbeat - FORCE UTC+7 for all timestamps"""
+        """Process agent heartbeat - FIXED to use parse_agent_timestamp_direct"""
         try:
             # Validate agent and token
             agent = self.model.find_by_agent_id(agent_id)
@@ -283,11 +261,21 @@ class AgentService:
             if agent.get("agent_token") != token:
                 raise ValueError("Invalid token")
             
-            # ✅ CRITICAL FIX: Force UTC+7 timezone for heartbeat
-            vietnam_tz = timezone(timedelta(hours=7))
-            current_vietnam_time = datetime.now(vietnam_tz)
-            
-            # Update heartbeat with comprehensive data
+            # 🔄 FIX: Parse agent timestamp using NEW method
+            agent_timestamp = heartbeat_data.get("timestamp")
+            if agent_timestamp:
+                try:
+                    # Use parse_agent_timestamp_direct instead of parse_iso_to_vietnam
+                    current_time = parse_agent_timestamp_direct(agent_timestamp)
+                    self.logger.info(f"🔧 Agent {agent_id} sent: '{agent_timestamp}' → parsed: {current_time}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse agent timestamp '{agent_timestamp}': {e}")
+                    current_time = now_vietnam_naive()
+            else:
+                current_time = now_vietnam_naive()
+        
+            # Update heartbeat with parsed timestamp
             update_data = {
                 "client_ip": client_ip,
                 "metrics": heartbeat_data.get("metrics", {}),
@@ -296,11 +284,10 @@ class AgentService:
                 "last_heartbeat_data": heartbeat_data,
                 "platform": heartbeat_data.get("platform"),
                 "os_info": heartbeat_data.get("os_info"),
-                # ✅ FORCE: Set proper timestamp with UTC+7 timezone
-                "last_heartbeat": current_vietnam_time
+                "last_heartbeat": current_time  # Use parsed timestamp
             }
             
-            self.logger.info(f"🔧 Setting heartbeat for {agent_id}: {current_vietnam_time}")
+            self.logger.info(f"🔧 Setting heartbeat for {agent_id}: {current_time}")
             
             success = self.model.update_heartbeat(agent_id, update_data)
             
@@ -313,22 +300,23 @@ class AgentService:
                     "agent_id": agent_id,
                     "hostname": agent.get("hostname"),
                     "status": "active",
-                    "last_heartbeat": current_vietnam_time.isoformat(),
+                    "last_heartbeat": now_vietnam_iso(),
                     "metrics": heartbeat_data.get("metrics", {}),
                     "client_ip": client_ip
                 })
             
-            self.logger.info(f"✅ Heartbeat processed for agent: {agent_id}")
+            self.logger.info(f" Heartbeat processed for agent: {agent_id}")
             
             # Calculate next heartbeat time
-            next_heartbeat_time = current_vietnam_time + timedelta(seconds=60)
+            from datetime import timedelta
+            next_heartbeat_time = now_vietnam() + timedelta(seconds=60)
             
             return {
                 "agent_id": agent_id,
                 "status": "active",
                 "next_heartbeat": int(next_heartbeat_time.timestamp() * 1000),
                 "server_commands": [],
-                "server_time": current_vietnam_time.isoformat()
+                "server_time": now_vietnam_iso()
             }
             
         except Exception as e:
@@ -406,7 +394,6 @@ class AgentService:
             self.logger.error(f"Error getting all agents: {e}")
             return []
 
-    # Add other methods as needed...
     def get_agent_details(self, agent_id: str) -> Dict:
         """Get detailed agent information"""
         try:
@@ -477,7 +464,7 @@ class AgentService:
                 self.socketio.emit("agent_deleted", {
                     "agent_id": agent_id,
                     "hostname": agent.get("hostname"),
-                    "timestamp": self._now_vietnam().isoformat()
+                    "timestamp": now_vietnam_iso()
                 })
             
             return success
@@ -503,13 +490,12 @@ class AgentService:
             hostname = agent.get("hostname", "Unknown")
             ip_address = agent.get("ip_address", "unknown")
             
-            # ✅ METHOD 1: Try to ping agent's IP address
+            # Try to ping agent's IP address
             ping_result = self._ping_ip_address(ip_address)
             
             if ping_result["success"]:
-                # ✅ Success - update agent status to active
-                vietnam_tz = timezone(timedelta(hours=7))
-                current_time = datetime.now(vietnam_tz)
+                # Success - update agent status to active
+                current_time = now_vietnam_naive()
                 
                 self.model.update_agent(agent_id, {
                     "status": "active",
@@ -527,10 +513,10 @@ class AgentService:
                     "message": f"Agent {hostname} is reachable"
                 }
             else:
-                # ✅ Failed - mark as inactive but don't fail completely
+                # Failed - mark as inactive but don't fail completely
                 self.model.update_agent(agent_id, {
                     "status": "inactive",
-                    "last_ping_attempt": datetime.now(timezone(timedelta(hours=7))),
+                    "last_ping_attempt": now_vietnam_naive(),
                     "last_ping_error": ping_result["error"]
                 })
                 
@@ -566,7 +552,7 @@ class AgentService:
                     "error": "Invalid IP address"
                 }
             
-            # ✅ Cross-platform ping command
+            # Cross-platform ping command
             system = platform.system().lower()
             
             if system == "windows":
@@ -641,8 +627,7 @@ class AgentService:
             command_id = str(uuid.uuid4())
             
             # Create command document
-            vietnam_tz = timezone(timedelta(hours=7))
-            current_time = datetime.now(vietnam_tz)
+            current_time = now_vietnam_naive()
             
             command_doc = {
                 "_id": ObjectId(),
@@ -682,8 +667,7 @@ class AgentService:
                 raise ValueError("Invalid token")
             
             # Get pending commands
-            vietnam_tz = timezone(timedelta(hours=7))
-            current_time = datetime.now(vietnam_tz)
+            current_time = now_vietnam_naive()
             
             commands = list(self.commands_collection.find({
                 "agent_id": agent_id,
@@ -721,8 +705,7 @@ class AgentService:
                 raise ValueError("Invalid token")
             
             # Update command
-            vietnam_tz = timezone(timedelta(hours=7))
-            current_time = datetime.now(vietnam_tz)
+            current_time = now_vietnam_naive()
             
             update_data = {
                 "status": status,

@@ -4,13 +4,14 @@ Heartbeat Sender - Gửi tín hiệu sống định kỳ lên server
 
 import json
 import logging
-import time
 import threading
 import requests
-from datetime import datetime, timedelta
 from typing import Dict, Optional
-import psutil  # For system metrics
-import platform  # ✅ THÊM import
+import psutil  # For system metrics  
+import platform
+
+# Import time utilities
+from time_utils import now, now_server_compatible, sleep
 
 logger = logging.getLogger("heartbeat_sender")
 
@@ -24,13 +25,13 @@ class HeartbeatSender:
         
         # Heartbeat settings
         self.enabled = self.heartbeat_config.get("enabled", True)
-        # ✅ OPTIMIZED: Faster heartbeat frequency:
+        #  OPTIMIZED: Faster heartbeat frequency:
         self.interval = self.heartbeat_config.get("interval", 20)  # 20 seconds
         self.timeout = self.heartbeat_config.get("timeout", 10)
         self.retry_interval = self.heartbeat_config.get("retry_interval", 5)  # 5 seconds
         self.max_failures = self.heartbeat_config.get("max_failures", 3)  # 3 failures
         
-        # ✅ THÊM: Retry logic cho failed heartbeats
+        #  THÊM: Retry logic cho failed heartbeats
         self.max_retries = 3
         self.retry_delay = 2  # 2 seconds between retries
         
@@ -100,7 +101,7 @@ class HeartbeatSender:
                 
                 if success:
                     self._consecutive_failures = 0
-                    self._last_successful_heartbeat = datetime.now()
+                    self._last_successful_heartbeat = now()
                     sleep_time = self.interval
                 else:
                     self._consecutive_failures += 1
@@ -113,26 +114,26 @@ class HeartbeatSender:
                 for _ in range(int(sleep_time)):
                     if not self._running:
                         break
-                    time.sleep(1)
+                    sleep(1)
                     
             except Exception as e:
                 logger.error(f"Error in heartbeat loop: {e}")
-                time.sleep(self.retry_interval)
+                sleep(self.retry_interval)
     
     def _send_heartbeat(self) -> bool:
         """Send heartbeat to server"""
-        # ✅ THÊM: Collect system metrics
+        #  THÊM: Collect system metrics
         metrics = self._collect_metrics()
         
-        # ✅ SỬA: Better platform detection và timezone-aware timestamp
+        #  SỬA: Better platform detection và timezone-aware timestamp
         heartbeat_data = {
             "agent_id": self.agent_id,
             "token": self.agent_token,
-            "timestamp": datetime.now().astimezone().isoformat(),  # ✅ Có timezone
+            "timestamp": now_server_compatible(),
             "metrics": metrics,
             "status": "active",
-            "platform": platform.system(),  # ✅ SỬA: Proper platform detection
-            "os_info": f"{platform.system()} {platform.release()}",  # ✅ THÊM OS info
+            "platform": platform.system(),
+            "os_info": f"{platform.system()} {platform.release()}",
             "agent_version": "1.0.0"  # TODO: Get from version file
         }
         
@@ -151,9 +152,9 @@ class HeartbeatSender:
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
-                        logger.debug(f"✅ Heartbeat sent successfully to {server_url}")
+                        logger.debug(f" Heartbeat sent successfully to {server_url}")
                         
-                        # ✅ THÊM: Update next heartbeat time from server
+                        #  THÊM: Update next heartbeat time from server
                         if "next_heartbeat" in data.get("data", {}):
                             next_heartbeat_ms = data["data"]["next_heartbeat"]
                             # Calculate when to send next heartbeat
@@ -176,7 +177,7 @@ class HeartbeatSender:
         return False
     
     def _collect_metrics(self) -> Dict:
-        """✅ IMPROVED: Better metrics collection với error handling"""
+        """ IMPROVED: Better metrics collection với error handling"""
         try:
             # Get disk usage for root drive (cross-platform)
             if platform.system() == "Windows":
@@ -188,10 +189,10 @@ class HeartbeatSender:
                 "cpu_percent": round(psutil.cpu_percent(interval=0.1), 2),  # Faster interval
                 "memory_percent": round(psutil.virtual_memory().percent, 2),
                 "disk_percent": round(psutil.disk_usage(disk_path).percent, 2),
-                "uptime_seconds": int(time.time() - psutil.boot_time()),
+                "uptime_seconds": int(now() - psutil.boot_time()),
                 "network_connections": len(psutil.net_connections()),
                 "load_average": psutil.getloadavg() if hasattr(psutil, 'getloadavg') else None,
-                "timestamp": datetime.now().astimezone().isoformat()
+                "timestamp": now_server_compatible()
             }
         except Exception as e:
             logger.warning(f"Error collecting metrics: {e}")
@@ -201,16 +202,20 @@ class HeartbeatSender:
                 "disk_percent": 0,
                 "uptime_seconds": 0,
                 "network_connections": 0,
-                "timestamp": datetime.now().astimezone().isoformat()
+                "timestamp": now_server_compatible()
             }
     
     def get_status(self) -> Dict:
         """Get heartbeat sender status"""
+        last_heartbeat = None
+        if self._last_successful_heartbeat:
+            last_heartbeat = now_server_compatible()  # Convert timestamp to readable format
+        
         return {
             "enabled": self.enabled,
             "running": self._running,
             "agent_id": self.agent_id,
             "consecutive_failures": self._consecutive_failures,
-            "last_successful_heartbeat": self._last_successful_heartbeat.isoformat() if self._last_successful_heartbeat else None,
+            "last_successful_heartbeat": last_heartbeat,
             "interval": self.interval
         }

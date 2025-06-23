@@ -2,11 +2,12 @@ import json
 import logging
 import queue
 import threading
-import time
-from datetime import datetime
 from typing import Dict, List
 
 import requests
+
+# Import time utilities
+from time_utils import now, now_server_compatible, sleep
 
 # Cấu hình logger
 logger = logging.getLogger("log_sender")
@@ -16,7 +17,7 @@ class LogSender:
     
     def __init__(self, config: Dict):
         """Khởi tạo log sender với cấu hình cơ bản"""
-        # ✅ SỬA: Đọc từ config với fallback
+        #  SỬA: Đọc từ config với fallback
         server_config = config.get("server", {})
         
         # Ưu tiên urls array, fallback về single url
@@ -46,8 +47,8 @@ class LogSender:
         # Khởi tạo định danh agent
         self.agent_id = config.get("agent_id", self._generate_agent_id())
         
-        # ✅ Thêm tracking thời gian
-        self.last_send_time = time.time()
+        #  Thêm tracking thời gian - using time_utils
+        self.last_send_time = now()
         
         logger.info(f"LogSender initialized with agent_id: {self.agent_id}")
         logger.info(f"Will send logs to: {', '.join(self.server_urls)}")
@@ -83,7 +84,7 @@ class LogSender:
     def queue_log(self, log_data: Dict) -> bool:
         """Thêm log vào hàng đợi để gửi"""
         try:
-            # ✅ FIX: Serialize datetime objects trước khi queue
+            #  FIX: Serialize datetime objects trước khi queue
             serialized_log = self._serialize_log_data(log_data.copy())
             
             # Thêm ID agent và timestamp
@@ -91,7 +92,7 @@ class LogSender:
                 serialized_log["agent_id"] = self.agent_id
                 
             if "timestamp" not in serialized_log:
-                serialized_log["timestamp"] = datetime.now().astimezone().isoformat()
+                serialized_log["timestamp"] = now_server_compatible()
         
             # Thêm log vào hàng đợi
             self.log_queue.put_nowait(serialized_log)
@@ -109,8 +110,8 @@ class LogSender:
             serialized = {}
             
             for key, value in log_data.items():
-                if isinstance(value, datetime):
-                    # ✅ FIX: Convert datetime to ISO string
+                if hasattr(value, 'isoformat'):  # datetime object
+                    #  FIX: Convert datetime to ISO string
                     serialized[key] = value.isoformat()
                 elif isinstance(value, dict):
                     # Recursively serialize nested dicts
@@ -118,19 +119,19 @@ class LogSender:
                 elif isinstance(value, list):
                     # Handle lists that might contain datetime objects
                     serialized[key] = [
-                        item.isoformat() if isinstance(item, datetime) 
+                        item.isoformat() if hasattr(item, 'isoformat') 
                         else (self._serialize_log_data(item) if isinstance(item, dict) else item)
                         for item in value
                     ]
                 elif value is None:
-                    # ✅ FIX: Convert None to "unknown"
+                    #  FIX: Convert None to "unknown"
                     serialized[key] = "unknown"
                 else:
                     serialized[key] = value
             
-            # ✅ FIX: Ensure essential fields exist
+            #  FIX: Ensure essential fields exist
             essential_fields = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": now_server_compatible(),
                 "agent_id": self.agent_id,
                 "level": "INFO",
                 "action": "UNKNOWN",
@@ -151,9 +152,9 @@ class LogSender:
             
         except Exception as e:
             logger.error(f"Error serializing log data: {e}")
-            # ✅ Fallback: return complete basic log data
+            #  Fallback: return complete basic log data
             return {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": now_server_compatible(),
                 "agent_id": self.agent_id,
                 "level": "ERROR",
                 "action": "ERROR",
@@ -173,8 +174,8 @@ class LogSender:
         """Vòng lặp gửi log theo định kỳ với tối ưu hóa"""
         while self.running:
             try:
-                # ✅ Thêm logic gửi định kỳ
-                current_time = time.time()
+                #  Thêm logic gửi định kỳ - using time_utils
+                current_time = now()
                 queue_size = self.log_queue.qsize()
                 
                 # Gửi nếu đủ batch_size HOẶC đã qua send_interval
@@ -187,12 +188,12 @@ class LogSender:
                     self._send_logs()
                     self.last_send_time = current_time
                     
-                # Ngủ ngắn để không tốn CPU
-                time.sleep(1)
+                # Ngủ ngắn để không tốn CPU - using time_utils
+                sleep(1)
                     
             except Exception as e:
                 logger.error(f"Error in sender loop: {str(e)}")
-                time.sleep(5)
+                sleep(5)
     
     def _flush_queue(self):
         """Gửi tất cả log còn lại trong hàng đợi"""
@@ -229,28 +230,28 @@ class LogSender:
             logger.error("Server URL not configured")
             return False
         
-        # ✅ FIX: Additional serialization check before sending
+        #  FIX: Additional serialization check before sending
         try:
-            # ✅ Test JSON serialization trước khi gửi
+            #  Test JSON serialization trước khi gửi
             serialized_logs = []
             for log in logs:
                 try:
-                    # ✅ Ensure all datetime objects are converted
+                    #  Ensure all datetime objects are converted
                     clean_log = self._ensure_json_serializable(log)
                     serialized_logs.append(clean_log)
                 except Exception as e:
                     logger.error(f"Failed to serialize log: {e}")
-                    # ✅ Create fallback log entry
+                    #  Create fallback log entry
                     fallback_log = {
                         "message": f"Log serialization failed: {str(e)}",
                         "level": "error",
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": now_server_compatible(),
                         "agent_id": self.agent_id,
                         "original_log_preview": str(log)[:200] + "..." if len(str(log)) > 200 else str(log)
                     }
                     serialized_logs.append(fallback_log)
             
-            # ✅ Test JSON serialization
+            #  Test JSON serialization
             test_json = json.dumps({"logs": serialized_logs})
             
         except Exception as e:
@@ -261,14 +262,14 @@ class LogSender:
             # Gửi request đơn giản không cần xác thực
             url = f"{self.server_urls[0].rstrip('/')}/api/logs"
             
-            # ✅ FIX: Use serialized logs
+            #  FIX: Use serialized logs
             payload = {"logs": serialized_logs}
             
             response = requests.post(
                 url=url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=15  # ✅ Increase timeout for Render
+                timeout=15  #  Increase timeout for Render
             )
             
             # Kiểm tra kết quả
@@ -291,7 +292,7 @@ class LogSender:
     
     def _ensure_json_serializable(self, obj):
         """Ensure object is JSON serializable"""
-        if isinstance(obj, datetime):
+        if hasattr(obj, 'isoformat'):  # datetime object
             return obj.isoformat()
         elif isinstance(obj, dict):
             return {k: self._ensure_json_serializable(v) for k, v in obj.items()}
@@ -300,7 +301,7 @@ class LogSender:
         elif isinstance(obj, (str, int, float, bool)) or obj is None:
             return obj
         else:
-            # ✅ Convert unknown types to string
+            #  Convert unknown types to string
             return str(obj)
     
     def _generate_agent_id(self) -> str:

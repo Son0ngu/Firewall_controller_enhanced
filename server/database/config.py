@@ -8,10 +8,10 @@ import logging
 from typing import Any, Optional
 from pymongo import MongoClient
 
-# ✅ Import dotenv để load .env file
+#  Import dotenv để load .env file
 from dotenv import load_dotenv
 
-# ✅ Load .env file
+#  Load .env file
 load_dotenv()
 
 # Setup logging
@@ -42,7 +42,7 @@ class Config:
     DEBUG = get_env('DEBUG', True)
     TESTING = get_env('TESTING', False)
     
-    # ✅ MongoDB Settings - Sẽ đọc từ .env file
+    #  MongoDB Settings - Sẽ đọc từ .env file
     MONGO_URI = get_env('MONGO_URI', 'mongodb://localhost:27017/')
     MONGO_DBNAME = get_env('MONGO_DBNAME', 'Monitoring')
     
@@ -78,19 +78,19 @@ def get_mongo_client(config):
         try:
             logger.info(f"🔗 Connecting to MongoDB: {config.MONGO_URI}")
             
-            # ✅ FIX: Optimized connection settings để reduce Win32 exceptions
+            #  FIX: Optimized connection settings để reduce Win32 exceptions
             _mongo_client = MongoClient(
                 config.MONGO_URI,
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=5000,
                 socketTimeoutMS=5000,
-                maxPoolSize=10,        # ✅ Reduce pool size
-                minPoolSize=1,         # ✅ Minimum connections
-                maxIdleTimeMS=30000,   # ✅ Close idle connections faster
-                heartbeatFrequencyMS=10000,  # ✅ Less frequent heartbeats
+                maxPoolSize=10,        #  Reduce pool size
+                minPoolSize=1,         #  Minimum connections
+                maxIdleTimeMS=30000,   #  Close idle connections faster
+                heartbeatFrequencyMS=10000,  #  Less frequent heartbeats
                 retryWrites=True,
                 w='majority',
-                # ✅ ADD: Windows-specific optimizations
+                #  ADD: Windows-specific optimizations
                 appName="FirewallController",
                 compressors="snappy,zlib",
                 zlibCompressionLevel=6
@@ -98,7 +98,7 @@ def get_mongo_client(config):
             
             # Test connection
             _mongo_client.admin.command('ping')
-            logger.info("✅ MongoDB client created successfully")
+            logger.info(" MongoDB client created successfully")
             
         except Exception as e:
             logger.error(f"❌ MongoDB connection failed: {e}")
@@ -124,7 +124,7 @@ def get_database(config: Config = None):
     if config is None:
         config = get_config()
     
-    # ✅ FIX: Call get_mongo_client with only config parameter
+    #  FIX: Call get_mongo_client with only config parameter
     client = get_mongo_client(config)
     return client[config.MONGO_DBNAME]
 
@@ -187,10 +187,10 @@ def validate_config(config: Config = None) -> bool:
     
     # Test MongoDB connection
     try:
-        # ✅ FIX: Call get_mongo_client with only config parameter
+        #  FIX: Call get_mongo_client with only config parameter
         client = get_mongo_client(config)
         client.admin.command('ping')
-        logger.info("✅ Configuration validation successful")
+        logger.info(" Configuration validation successful")
         return True
     except Exception as e:
         logger.error(f"❌ MongoDB connection test failed: {e}")

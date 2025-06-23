@@ -1,10 +1,15 @@
 """
 Log Service - Business logic for log operations
 """
-from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from models.log_model import LogModel
 import logging
+
+# Import time utilities
+from time_utils import (
+    now_vietnam, now_vietnam_naive, now_vietnam_iso,
+    to_vietnam_timezone, parse_agent_timestamp_direct
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +20,6 @@ class LogService:
         self.model = log_model
         self.socketio = socketio
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Vietnam timezone (UTC+7)
-        self.server_timezone = timezone(timedelta(hours=7))
-    
-    def _now_local(self) -> datetime:
-        """Get current time in local timezone"""
-        return datetime.now(self.server_timezone)
     
     def receive_logs(self, logs_data: Dict, agent_id: str = None) -> Dict:
         """Process logs received from agent với enhanced validation"""
@@ -30,16 +28,16 @@ class LogService:
             if not logs:
                 return {"success": False, "error": "No logs provided"}
             
-            current_time = self._now_local()
+            current_time = now_vietnam_naive()
             
             valid_logs = []
             for log in logs:
                 try:
-                    # ✅ FIX: Enhanced protocol processing
+                    #  FIX: Enhanced protocol processing
                     protocol = log.get("protocol", "unknown")
                     port = log.get("port", "unknown")
                     
-                    # ✅ FIX: Smart protocol detection
+                    #  FIX: Smart protocol detection
                     if protocol == "unknown" and port != "unknown":
                         if str(port) == "443":
                             protocol = "HTTPS"
@@ -50,7 +48,7 @@ class LogService:
                         else:
                             protocol = f"TCP/{port}"
                     
-                    # ✅ FIX: Enhanced source IP processing
+                    #  FIX: Enhanced source IP processing
                     source_ip = log.get("source_ip") or log.get("src_ip") or log.get("local_ip")
                     if not source_ip or source_ip == "unknown":
                         # Try to extract from other fields
@@ -59,7 +57,7 @@ class LogService:
                             pass
                         source_ip = "unknown"
                     
-                    # ✅ FIX: Enhanced destination processing
+                    #  FIX: Enhanced destination processing
                     destination = (
                         log.get("destination") or 
                         log.get("domain") or 
@@ -69,7 +67,7 @@ class LogService:
                         "unknown"
                     )
                     
-                    # ✅ FIX: Create enhanced log entry
+                    #  FIX: Create enhanced log entry
                     processed_log = {
                         "timestamp": current_time,
                         "server_received_at": current_time,
@@ -85,14 +83,14 @@ class LogService:
                         "message": log.get("message", "Log entry"),
                         "source": log.get("source", "agent"),
                         
-                        # ✅ ADD: Enhanced fields
+                        #  ADD: Enhanced fields
                         "connection_type": log.get("connection_type", "outbound"),
                         "service_type": log.get("service_type", "unknown"),
                         "process_name": log.get("process_name"),
                         "process_pid": log.get("process_pid")
                     }
                     
-                    # ✅ FIX: Format display fields
+                    #  FIX: Format display fields
                     if protocol != "unknown" and port != "unknown":
                         processed_log["protocol_display"] = f"{protocol}:{port}"
                     else:
@@ -103,34 +101,34 @@ class LogService:
                     else:
                         processed_log["source_display"] = "Local"
                     
-                    # ✅ FIX: Timestamp processing
+                    #  FIX: Timestamp processing using time_utils
                     if 'timestamp' in log and log['timestamp']:
                         try:
-                            # Parse agent timestamp
+                            # Parse agent timestamp using time_utils
                             if isinstance(log['timestamp'], str):
-                                agent_time = datetime.fromisoformat(log['timestamp'].replace('Z', '+00:00'))
+                                agent_time = parse_agent_timestamp_direct(log['timestamp'])
                             else:
-                                agent_time = log['timestamp']
+                                agent_time = to_vietnam_timezone(log['timestamp'])
                         
-                            # Convert to Vietnam timezone
-                            processed_log['timestamp'] = self._ensure_vietnam_timezone(agent_time)
+                            # Convert to naive for MongoDB storage
+                            processed_log['timestamp'] = agent_time.replace(tzinfo=None)
                             processed_log['timestamp_source'] = 'agent'
                             
-                        except (ValueError, TypeError) as e:
+                        except Exception as e:
                             logger.warning(f"Invalid timestamp format '{log.get('timestamp')}': {e}")
                             processed_log['timestamp'] = current_time
                             processed_log['timestamp_source'] = 'server_fallback'
                     else:
                         processed_log['timestamp_source'] = 'server'
                     
-                    # ✅ FIX: Copy additional fields if they exist
+                    #  FIX: Copy additional fields if they exist
                     optional_fields = ['reason', 'firewall_mode', 'handled_by_firewall', 
                                      'domain_check', 'ip_check', 'url', 'ip']
                     for field in optional_fields:
                         if field in log and log[field] is not None:
                             processed_log[field] = log[field]
                     
-                    # ✅ FIX: Normalize action values
+                    #  FIX: Normalize action values
                     action = processed_log['action'].upper()
                     if action in ['ALLOW', 'ALLOWED']:
                         processed_log['action'] = 'ALLOWED'
@@ -167,20 +165,20 @@ class LogService:
                     valid_logs.append(fallback_log)
                     continue
         
-            # ✅ FIX: Check if we have valid logs
+            #  FIX: Check if we have valid logs
             if not valid_logs:
                 return {"success": False, "error": "No valid logs to process"}
             
             # Store in database
             inserted_ids = self.model.insert_logs(valid_logs)
             
-            # ✅ Real-time broadcast via Socket.IO với proper data
+            #  Real-time broadcast via Socket.IO với proper data
             if self.socketio:
                 for log in valid_logs[-5:]:  # Broadcast last 5 logs
                     # Format for frontend
                     broadcast_log = {
-                        'timestamp': log['timestamp'].isoformat() if isinstance(log['timestamp'], datetime) else log['timestamp'],
-                        'display_time': log['timestamp'].strftime('%H:%M:%S') if isinstance(log['timestamp'], datetime) else log['timestamp'],
+                        'timestamp': log['timestamp'].isoformat() if hasattr(log['timestamp'], 'isoformat') else str(log['timestamp']),
+                        'display_time': log['timestamp'].strftime('%H:%M:%S') if hasattr(log['timestamp'], 'strftime') else str(log['timestamp'])[:8],
                         'domain': log.get('domain', 'unknown'),
                         'destination': log.get('destination', 'unknown'),
                         'action': log.get('action', 'UNKNOWN'),
@@ -201,27 +199,13 @@ class LogService:
                 "message": f"Successfully processed {len(valid_logs)} logs",
                 "inserted_ids": inserted_ids,
                 "processed_count": len(valid_logs),
-                "timestamp": current_time.isoformat(),
+                "timestamp": now_vietnam_iso(),
                 "timezone": "UTC+7"
             }
             
         except Exception as e:
             logger.error(f"Error receiving logs: {e}")
             return {"success": False, "error": str(e)}
-    
-    def _ensure_vietnam_timezone(self, dt: datetime) -> datetime:
-        """Ensure datetime is in Vietnam timezone"""
-        try:
-            if dt.tzinfo is None:
-                # Assume UTC if no timezone info
-                dt = dt.replace(tzinfo=timezone.utc)
-            
-            # Convert to Vietnam timezone
-            return dt.astimezone(self.server_timezone)
-            
-        except Exception as e:
-            logger.warning(f"Error converting timezone: {e}")
-            return self._now_local()
     
     def get_all_logs(self, filters: Dict = None, limit: int = 100, offset: int = 0) -> Dict:
         """Get all logs with enhanced error handling"""
@@ -262,7 +246,7 @@ class LogService:
                     if log.get("timestamp"):
                         try:
                             timestamp = log["timestamp"]
-                            if isinstance(timestamp, datetime):
+                            if hasattr(timestamp, 'isoformat'):
                                 formatted_log["timestamp"] = timestamp.isoformat()
                             elif isinstance(timestamp, str):
                                 formatted_log["timestamp"] = timestamp
@@ -270,7 +254,7 @@ class LogService:
                                 formatted_log["timestamp"] = str(timestamp)
                         except Exception as e:
                             self.logger.warning(f"Error formatting timestamp: {e}")
-                            formatted_log["timestamp"] = datetime.now().isoformat()
+                            formatted_log["timestamp"] = now_vietnam_iso()
                     
                     # Add optional fields
                     for field in ["reason", "firewall_mode", "handled_by_firewall", "display_time"]:
@@ -290,7 +274,7 @@ class LogService:
                 "offset": offset,
                 "has_more": offset + limit < total_count,
                 "success": True,
-                "timestamp": self._now_local().isoformat()
+                "timestamp": now_vietnam_iso()
             }
             
             self.logger.info(f"Returning {len(formatted_logs)} formatted logs")
@@ -325,11 +309,12 @@ class LogService:
                 {"message": {"$regex": search_term, "$options": "i"}}
             ]
         
-        # ✅ ADD: Time range filter
+        #  ADD: Time range filter using time_utils
         if filters.get("time_range"):
             time_range = filters["time_range"]
-            current_time = self._now_local()
+            current_time = now_vietnam_naive()
             
+            from datetime import timedelta
             if time_range == "1h":
                 since_time = current_time - timedelta(hours=1)
             elif time_range == "24h":
@@ -344,21 +329,23 @@ class LogService:
             if since_time:
                 query["timestamp"] = {"$gte": since_time}
         
-        # Date range filter
+        # Date range filter using time_utils
         if filters.get("start_date") or filters.get("end_date"):
             date_query = {}
             if filters.get("start_date"):
                 try:
-                    start_dt = datetime.fromisoformat(filters["start_date"])
-                    date_query["$gte"] = start_dt
-                except ValueError:
+                    start_dt = parse_agent_timestamp_direct(filters["start_date"])
+                    # Convert to naive for MongoDB query
+                    date_query["$gte"] = start_dt.replace(tzinfo=None)
+                except Exception:
                     pass
             
             if filters.get("end_date"):
                 try:
-                    end_dt = datetime.fromisoformat(filters["end_date"])
-                    date_query["$lte"] = end_dt
-                except ValueError:
+                    end_dt = parse_agent_timestamp_direct(filters["end_date"])
+                    # Convert to naive for MongoDB query
+                    date_query["$lte"] = end_dt.replace(tzinfo=None)
+                except Exception:
                     pass
             
             if date_query:
@@ -403,7 +390,7 @@ class LogService:
                 # Format timestamp for display
                 if log.get("timestamp"):
                     try:
-                        if isinstance(log["timestamp"], datetime):
+                        if hasattr(log["timestamp"], 'strftime'):
                             formatted_log["display_time"] = log["timestamp"].strftime("%H:%M:%S")
                         else:
                             formatted_log["display_time"] = str(log["timestamp"])[:8]
@@ -462,7 +449,7 @@ class LogService:
                         # Convert datetime objects to strings
                         row = {}
                         for k, v in log.items():
-                            if isinstance(v, datetime):
+                            if hasattr(v, 'isoformat'):
                                 row[k] = v.isoformat()
                             else:
                                 row[k] = str(v) if v is not None else ""

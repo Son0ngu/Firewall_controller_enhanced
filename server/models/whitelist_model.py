@@ -1,8 +1,6 @@
 """
 Whitelist Model - handles whitelist data operations
 """
-from datetime import datetime, timedelta
-from datetime import timezone as dt_timezone  # ✅ FIX: Rename import to avoid conflict
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from bson import ObjectId
@@ -12,6 +10,9 @@ from pymongo.database import Database
 import logging
 import re
 
+# Import time utilities
+from time_utils import now_vietnam_naive, to_vietnam_timezone, parse_agent_timestamp_direct
+
 class WhitelistModel:
     """Model for whitelist data operations"""
     
@@ -20,74 +21,16 @@ class WhitelistModel:
         self.db = db
         self.collection: Collection = db.whitelist
         
-        # ✅ FIX: Use renamed import để avoid conflict
-        self.server_timezone = self._get_timezone()
-        
-        # ✅ ADD: Create alias for backward compatibility
-        self.timezone = self.server_timezone
-        
         # Create indexes for better performance
         self._create_indexes()
-    
-    def _get_timezone(self):
-        """Get Vietnam timezone safely"""
-        try:
-            # ✅ FIX: Use renamed import
-            return dt_timezone(timedelta(hours=7))
-        except Exception as e:
-            self.logger.warning(f"Timezone setup failed: {e}, using UTC")
-            return dt_timezone.utc
-    
-    def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone as naive datetime"""
-        try:
-            # Get current UTC time
-            utc_now = datetime.now(dt_timezone.utc)
-            
-            # Convert to Vietnam timezone
-            vn_time = utc_now.astimezone(self.server_timezone)
-            
-            # ✅ FIX: Return as naive datetime for MongoDB compatibility
-            naive_vn_time = vn_time.replace(tzinfo=None)
-            
-            self.logger.debug(f"UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            self.logger.debug(f"VN time (naive): {naive_vn_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            return naive_vn_time
-            
-        except Exception as e:
-            self.logger.error(f"Error getting local time: {e}")
-            # Fallback to naive UTC
-            return datetime.now()
-
-    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
-        """Ensure datetime is timezone-aware and convert to Vietnam timezone"""
-        if dt is None:
-            return None
-            
-        try:
-            if dt.tzinfo is None:
-                # Naive datetime - assume it's UTC
-                dt_utc = dt.replace(tzinfo=dt_timezone.utc)
-            else:
-                # Convert to UTC first
-                dt_utc = dt.astimezone(dt_timezone.utc)
-            
-            # Convert to Vietnam timezone
-            return dt_utc.astimezone(self.server_timezone)
-            
-        except Exception as e:
-            self.logger.warning(f"Timezone conversion error: {e}")
-            # Fallback: return original datetime
-            return dt
     
     def _create_indexes(self):
         """Create necessary indexes with enhanced conflict handling"""
         try:
-            # ✅ FIX: Get detailed existing indexes information
+            #  FIX: Get detailed existing indexes information
             existing_indexes = list(self.collection.list_indexes())
             
-            # ✅ FIX: Create mapping of field -> existing index info
+            #  FIX: Create mapping of field -> existing index info
             existing_fields = {}
             for idx in existing_indexes:
                 if 'key' in idx:
@@ -101,7 +44,7 @@ class WhitelistModel:
             
             self.logger.debug(f"Existing field indexes: {existing_fields}")
             
-            # ✅ FIX: Define desired indexes with all properties
+            #  FIX: Define desired indexes with all properties
             desired_indexes = [
                 {"field": "value", "direction": 1, "sparse": False},
                 {"field": "type", "direction": 1, "sparse": False},
@@ -110,7 +53,7 @@ class WhitelistModel:
                 {"field": "expiry_date", "direction": 1, "sparse": True}
             ]
             
-            # ✅ FIX: Check and create indexes only if needed
+            #  FIX: Check and create indexes only if needed
             for idx_spec in desired_indexes:
                 field = idx_spec["field"]
                 direction = idx_spec["direction"]
@@ -119,32 +62,32 @@ class WhitelistModel:
                 if field in existing_fields:
                     existing = existing_fields[field]
                     
-                    # ✅ FIX: Check if existing index matches our requirements
+                    #  FIX: Check if existing index matches our requirements
                     if (existing['direction'] == direction and 
                         existing.get('sparse', False) == sparse):
-                        self.logger.debug(f"✅ Index '{field}' already exists with correct properties (name: {existing['name']})")
+                        self.logger.debug(f"✓ Index '{field}' already exists with correct properties (name: {existing['name']})")
                         continue
                     else:
                         self.logger.info(f"🔄 Index '{field}' exists but with different properties - keeping existing")
                         continue
                 
-                # ✅ FIX: Create index only if it doesn't exist
+                #  FIX: Create index only if it doesn't exist
                 try:
                     if sparse:
                         self.collection.create_index([(field, direction)], sparse=True)
-                        self.logger.debug(f"✅ Created sparse index: {field}")
+                        self.logger.debug(f"✓ Created sparse index: {field}")
                     else:
                         self.collection.create_index([(field, direction)])
-                        self.logger.debug(f"✅ Created index: {field}")
+                        self.logger.debug(f"✓ Created index: {field}")
                         
                 except Exception as e:
-                    # ✅ FIX: More detailed error handling
+                    #  FIX: More detailed error handling
                     if "already exists" in str(e).lower():
                         self.logger.debug(f"⏭️ Index '{field}' already exists (concurrent creation)")
                     else:
                         self.logger.warning(f"Failed to create index '{field}': {e}")
             
-            # ✅ FIX: Handle compound index separately
+            #  FIX: Handle compound index separately
             try:
                 compound_index_name = "whitelist_compound_idx"
                 compound_exists = False
@@ -156,7 +99,7 @@ class WhitelistModel:
                         key = idx['key']
                         if ('value' in key and 'type' in key and 'is_active' in key):
                             compound_exists = True
-                            self.logger.debug(f"✅ Compound index already exists as '{idx['name']}'")
+                            self.logger.debug(f"✓ Compound index already exists as '{idx['name']}'")
                             break
                 
                 if not compound_exists:
@@ -165,7 +108,7 @@ class WhitelistModel:
                         ("type", 1), 
                         ("is_active", 1)
                     ], name=compound_index_name)
-                    self.logger.debug(f"✅ Created compound index: {compound_index_name}")
+                    self.logger.debug(f"✓ Created compound index: {compound_index_name}")
                 else:
                     self.logger.debug(f"⏭️ Compound index already exists")
                     
@@ -175,32 +118,32 @@ class WhitelistModel:
                 else:
                     self.logger.warning(f"Failed to create compound index: {e}")
             
-            self.logger.info("✅ Index setup completed (with enhanced conflict handling)")
+            self.logger.info("✓ Index setup completed (with enhanced conflict handling)")
             
         except Exception as e:
             self.logger.warning(f"Index creation process failed: {e}")
             # Continue anyway - indexes are not critical for basic functionality
     
     def insert_entry(self, entry_data: Dict) -> str:
-        """Insert a new whitelist entry với naive datetime storage"""
+        """Insert a new whitelist entry with Vietnam timezone"""
         try:
-            # ✅ FIX: Use naive datetime consistently for storage
-            current_time = self._now_local()  # This now returns naive datetime
+            # Use Vietnam time for all timestamps
+            current_time = now_vietnam_naive()
             
             # Store all timestamps as naive datetime in MongoDB
             entry_data["added_date"] = current_time
             entry_data["created_at"] = current_time
             entry_data["updated_at"] = current_time
             
-            # ✅ FIX: Set essential defaults BEFORE validation
+            #  FIX: Set essential defaults BEFORE validation
             entry_data.setdefault("is_active", True)
             entry_data.setdefault("type", "domain")
             
-            # ✅ FIX: Validate value field early
+            #  FIX: Validate value field early
             if not entry_data.get("value"):
                 raise ValueError("Value field is required")
             
-            # ✅ FIX: Ensure value is lowercase and trimmed
+            #  FIX: Ensure value is lowercase and trimmed
             entry_data["value"] = entry_data["value"].strip().lower()
             
             self.logger.info(f"Inserting entry: {entry_data['value']} at {current_time.isoformat()}")
@@ -208,7 +151,7 @@ class WhitelistModel:
             result = self.collection.insert_one(entry_data)
             
             if result.inserted_id:
-                self.logger.info(f"✅ Successfully inserted: {entry_data['value']} with ID: {result.inserted_id}")
+                self.logger.info(f"✓ Successfully inserted: {entry_data['value']} with ID: {result.inserted_id}")
                 return str(result.inserted_id)
             else:
                 raise Exception("Insert operation returned no ID")
@@ -222,7 +165,7 @@ class WhitelistModel:
         """Find all whitelist entries with proper sorting"""
         query = query or {}
         
-        # ✅ FIX: Add active filter by default
+        #  FIX: Add active filter by default
         if "is_active" not in query:
             query["is_active"] = True
         
@@ -237,10 +180,10 @@ class WhitelistModel:
         for entry in cursor:
             entry["_id"] = str(entry["_id"])
             
-            # ✅ FIX: Convert entry timezones properly
+            # Convert entry timezones for display
             entry = self._convert_entry_timezones(entry)
             
-            # ✅ FIX: Ensure all required fields exist
+            #  FIX: Ensure all required fields exist
             entry.setdefault("type", "domain")
             entry.setdefault("category", "uncategorized")
             entry.setdefault("is_active", True)
@@ -252,29 +195,20 @@ class WhitelistModel:
         return entries
     
     def _convert_entry_timezones(self, entry: Dict) -> Dict:
-        """Convert entry datetime fields for display với safe conversion"""
+        """Convert entry datetime fields for display"""
         if not entry:
             return entry
             
         for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
             if date_field in entry and entry[date_field]:
                 try:
-                    naive_time = entry[date_field]
-                    
-                    # ✅ FIX: Handle both naive and timezone-aware datetimes
-                    if isinstance(naive_time, datetime):
-                        # Store original naive datetime for display
-                        entry[date_field] = naive_time
-                        
-                        # ✅ FIX: Add formatted strings for debugging
-                        entry[f"{date_field}_formatted"] = naive_time.strftime('%Y-%m-%d %H:%M:%S VN')
-                        entry[f"{date_field}_iso"] = naive_time.isoformat()
+                    # Since we store as naive datetime (Vietnam time), just add formatting
+                    if hasattr(entry[date_field], 'strftime'):
+                        entry[f"{date_field}_formatted"] = entry[date_field].strftime('%Y-%m-%d %H:%M:%S VN')
+                        entry[f"{date_field}_iso"] = entry[date_field].isoformat()
                         
                 except Exception as e:
                     self.logger.warning(f"Timezone conversion error for {date_field}: {e}")
-                    # ✅ FIX: Fallback to original value
-                    if hasattr(entry[date_field], 'replace'):
-                        entry[date_field] = entry[date_field].replace(tzinfo=None)
                     
         return entry
     
@@ -297,12 +231,11 @@ class WhitelistModel:
             return None
     
     def cleanup_expired_entries(self) -> int:
-        """Remove expired entries với naive datetime comparison"""
+        """Remove expired entries"""
         try:
-            # ✅ FIX: Use naive datetime for comparison
-            current_time = self._now_local()  # Returns naive datetime
+            current_time = now_vietnam_naive()
             
-            # ✅ ADD: Debug log before cleanup
+            #  ADD: Debug log before cleanup
             expired_query = {"expiry_date": {"$lt": current_time}}
             expired_count = self.collection.count_documents(expired_query)
             
@@ -384,10 +317,10 @@ class WhitelistModel:
             return False
     
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
-        """Update entry by ID với naive datetime"""
+        """Update entry by ID"""
         try:
-            # Add updated timestamp as naive datetime
-            update_data["updated_at"] = self._now_local()
+            # Add updated timestamp
+            update_data["updated_at"] = now_vietnam_naive()
             
             result = self.collection.update_one(
                 {"_id": ObjectId(entry_id)},
@@ -446,19 +379,21 @@ class WhitelistModel:
             self.logger.error(f"Error finding entry by ID: {e}")
             return None
 
-    def get_entries_for_sync(self, since_date: datetime = None) -> List[Dict]:
+    def get_entries_for_sync(self, since_date=None) -> List[Dict]:
         """Get entries for agent synchronization"""
         try:
             query = {"is_active": True}
             
             if since_date:
-                # Convert to UTC for database query
-                if since_date.tzinfo is None:
-                    since_utc = since_date.replace(tzinfo=dt_timezone.utc)
+                # Convert to Vietnam naive for database query
+                if isinstance(since_date, str):
+                    since_vn = parse_agent_timestamp_direct(since_date)
+                    since_naive = since_vn.replace(tzinfo=None)
                 else:
-                    since_utc = since_date.astimezone(dt_timezone.utc)
+                    since_vn = to_vietnam_timezone(since_date)
+                    since_naive = since_vn.replace(tzinfo=None)
                 
-                query["added_date"] = {"$gte": since_utc}
+                query["added_date"] = {"$gte": since_naive}
             
             entries = list(self.collection.find(query).sort("added_date", ASCENDING))
             
@@ -472,7 +407,7 @@ class WhitelistModel:
                     "category": entry.get("category", "uncategorized")
                 }
                 
-                # Add timestamp in UTC for sync
+                # Add timestamp for sync
                 if entry.get("added_date"):
                     sync_entry["added_date"] = entry["added_date"].isoformat()
                 
@@ -485,13 +420,13 @@ class WhitelistModel:
             return []
 
     def bulk_insert_entries(self, entries: List[Dict]) -> List[str]:
-        """Bulk insert multiple entries với naive datetime"""
+        """Bulk insert multiple entries"""
         if not entries:
             return []
         
         try:
-            # Set timestamps for all entries as naive datetime
-            current_time = self._now_local()
+            # Set timestamps for all entries
+            current_time = now_vietnam_naive()
             
             for entry in entries:
                 entry["added_date"] = current_time

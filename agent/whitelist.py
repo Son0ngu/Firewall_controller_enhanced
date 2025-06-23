@@ -3,10 +3,11 @@ import json
 import os
 import socket
 import threading
-import time
 import requests
-from datetime import datetime, timedelta
 from typing import Dict, Set, Optional, List
+
+# Import time utilities
+from time_utils import now, now_server_compatible, sleep
 
 # Cấu hình logger cho module này
 import logging
@@ -17,7 +18,7 @@ class WhitelistManager:
     
     def __init__(self, config: Dict):
         """Initialize the whitelist manager - SERVER SYNC ONLY"""
-        # ✅ FIX: Lấy config từ whitelist section
+        #  FIX: Lấy config từ whitelist section
         whitelist_config = config.get("whitelist", {})
         
         # Basic settings từ config
@@ -26,10 +27,10 @@ class WhitelistManager:
         self.max_retries = whitelist_config.get("max_retries", 3)
         self.timeout = whitelist_config.get("timeout", 30)
         
-        # ✅ FIX: Server connection từ config
+        #  FIX: Server connection từ config
         server_config = config.get("server", {})
         
-        # ✅ THAY ĐỔI: Hỗ trợ nhiều server URLs với fallback
+        #  THAY ĐỔI: Hỗ trợ nhiều server URLs với fallback
         server_urls = server_config.get("urls", [])
         if not server_urls:
             # Fallback to single URL for backward compatibility
@@ -46,40 +47,40 @@ class WhitelistManager:
         else:
             self.server_url = f"{self.primary_server_url}/api/whitelist/agent-sync"
         
-        # ✅ FIX: Auto-sync settings từ config
+        #  FIX: Auto-sync settings từ config
         self.auto_sync_enabled = whitelist_config.get("auto_sync", True)
         self.sync_on_startup = whitelist_config.get("sync_on_startup", True)
         self.auto_sync_firewall = whitelist_config.get("auto_sync_firewall", True)
         
-        # ✅ THÊM: Connection settings từ server config
+        #  THÊM: Connection settings từ server config
         self.connect_timeout = server_config.get("connect_timeout", 10)
         self.read_timeout = server_config.get("read_timeout", 30)
         
-        # ✅ ENHANCED: IP resolution and caching system
+        #  ENHANCED: IP resolution and caching system
         self.ip_cache: Dict[str, Dict] = {}
-        self.ip_cache_timestamps: Dict[str, datetime] = {}
+        self.ip_cache_timestamps: Dict[str, float] = {}  # Using timestamp instead of datetime
         self.ip_cache_ttl = whitelist_config.get("ip_cache_ttl", 300)  # 5 minutes
         self.ip_refresh_interval = whitelist_config.get("ip_refresh_interval", 600)  # 10 minutes
         self.resolve_ips_on_startup = whitelist_config.get("resolve_ips_on_startup", True)
         
-        # ✅ ENHANCED: Track current resolved IPs for firewall sync
+        #  ENHANCED: Track current resolved IPs for firewall sync
         self.current_resolved_ips: Set[str] = set()
         self.previous_resolved_ips: Set[str] = set()
         
-        # ✅ ENHANCED: State management
+        #  ENHANCED: State management
         self.domains: Set[str] = set()  # Start with empty set - only server domains
-        self.last_updated: Optional[datetime] = None
+        self.last_updated: Optional[float] = None  # Using timestamp instead of datetime
         self.firewall_manager = None
         self.sync_in_progress = False
         self.startup_sync_completed = False
         
-        # ✅ ENHANCED: Threading control
+        #  ENHANCED: Threading control
         self._stop_event = threading.Event()
         self._update_thread: Optional[threading.Thread] = None
         self._ip_refresh_thread: Optional[threading.Thread] = None
         self._running = False
         
-        # ✅ ENHANCED: Statistics and monitoring
+        #  ENHANCED: Statistics and monitoring
         self.stats = {
             "sync_count": 0,
             "last_sync_time": None,
@@ -92,24 +93,24 @@ class WhitelistManager:
             "cache_miss_count": 0
         }
         
-        # ✅ ENHANCED: Load cached data (may be empty)
+        #  ENHANCED: Load cached data (may be empty)
         self._load_whitelist_state()
         self._load_ip_cache()
         
-        # ✅ CRITICAL: ONLY sync from server - no fallback domains
+        #  CRITICAL: ONLY sync from server - no fallback domains
         if self.sync_on_startup:
             logger.info("🔄 Performing initial whitelist sync from server...")
             if self.update_whitelist_from_server():
-                logger.info("✅ Initial whitelist sync completed")
+                logger.info(" Initial whitelist sync completed")
                 
                 if len(self.domains) == 0:
                     logger.warning("⚠️ Server returned no domains - proceeding with empty whitelist")
                 
-                # ✅ ENHANCED: Resolve IPs only if we have domains
+                #  ENHANCED: Resolve IPs only if we have domains
                 if self.resolve_ips_on_startup and len(self.domains) > 0:
                     logger.info("🔍 Resolving IPs for server domains...")
                     self._resolve_all_domain_ips()
-                    logger.info("✅ Initial IP resolution completed")
+                    logger.info(" Initial IP resolution completed")
                 
                 self.startup_sync_completed = True
             else:
@@ -118,13 +119,9 @@ class WhitelistManager:
         else:
             logger.info("📋 Startup sync disabled - domains will be loaded on first periodic sync")
         
-        # ✅ ENHANCED: Start background update thread
+        #  ENHANCED: Start background update thread
         if self.auto_sync_enabled:
             self.start_periodic_updates()
-
-    def _now_local(self) -> datetime:
-        """Get current local time as naive datetime"""
-        return datetime.now()
 
     # ========================================
     # CORE WHITELIST METHODS
@@ -137,11 +134,11 @@ class WhitelistManager:
         
         domain = domain.lower().strip()
         
-        # ✅ ENHANCED: Direct domain match
+        #  ENHANCED: Direct domain match
         if domain in self.domains:
             return True
         
-        # ✅ ENHANCED: Wildcard domain check
+        #  ENHANCED: Wildcard domain check
         for whitelist_domain in self.domains:
             if whitelist_domain.startswith("*."):
                 # Wildcard domain (e.g., *.google.com)
@@ -157,20 +154,20 @@ class WhitelistManager:
             return False
         
         try:
-            # ✅ ENHANCED: Check if IP is directly in whitelist as domain
+            #  ENHANCED: Check if IP is directly in whitelist as domain
             if ip in self.domains:
                 return True
             
-            # ✅ ENHANCED: Check if IP belongs to any whitelisted domain
+            #  ENHANCED: Check if IP belongs to any whitelisted domain
             if ip in self.current_resolved_ips:
                 return True
             
-            # ✅ NEW: Check if IP is in essential_ips (DNS servers, localhost, etc.)
+            #  NEW: Check if IP is in essential_ips (DNS servers, localhost, etc.)
             if self.firewall_manager and hasattr(self.firewall_manager, 'essential_ips'):
                 if ip in self.firewall_manager.essential_ips:
                     return True
             
-            # ✅ FALLBACK: Check against common essential IPs directly
+            #  FALLBACK: Check against common essential IPs directly
             essential_fallback = {
                 "127.0.0.1", "::1", "0.0.0.0",
                 "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1",
@@ -198,7 +195,7 @@ class WhitelistManager:
             
             logger.info(f"🔍 Resolving IPs for {len(self.domains)} domains...")
             
-            # ✅ THÊM: Test DNS connectivity first
+            #  THÊM: Test DNS connectivity first
             if not self._test_dns_connectivity():
                 logger.warning("⚠️ DNS connectivity issues detected - proceeding anyway")
             
@@ -213,16 +210,16 @@ class WhitelistManager:
                         ipv6_ips = ip_data.get("ipv6", [])
                         
                         total_ips.update(ipv4_ips)
-                        total_ips.update(ipv6_ips)  # ✅ THÊM IPv6 support
+                        total_ips.update(ipv6_ips)  #  THÊM IPv6 support
                         
                         success_count += 1
-                        logger.debug(f"   ✅ {domain}: {len(ipv4_ips)} IPv4, {len(ipv6_ips)} IPv6")
+                        logger.debug(f"    {domain}: {len(ipv4_ips)} IPv4, {len(ipv6_ips)} IPv6")
                     else:
                         logger.warning(f"   ❌ No IPs resolved for {domain}")
                 except Exception as e:
                     logger.error(f"   ❌ Error resolving {domain}: {e}")
             
-            # ✅ UPDATE tracking
+            #  UPDATE tracking
             self.previous_resolved_ips = self.current_resolved_ips.copy()
             self.current_resolved_ips = total_ips
             
@@ -250,78 +247,31 @@ class WhitelistManager:
             logger.warning(f"DNS connectivity test failed: {e}")
             return False
 
-    def _resolve_all_domain_ips(self, force_refresh: bool = False) -> bool:
-        """Resolve IPs for all domains in whitelist"""
-        try:
-            if not self.domains:
-                logger.debug("No domains to resolve")
-                return True
-            
-            logger.info(f"🔍 Resolving IPs for {len(self.domains)} domains...")
-            success_count = 0
-            error_count = 0
-            total_ips = set()
-            
-            for domain in self.domains:
-                try:
-                    ips = self._resolve_domain_ips_cached(domain, force_refresh)
-                    if ips:
-                        all_domain_ips = ips.get("ipv4", []) + ips.get("ipv6", [])
-                        total_ips.update(all_domain_ips)
-                        success_count += 1
-                        logger.debug(f"✅ {domain} -> {len(all_domain_ips)} IPs")
-                    else:
-                        error_count += 1
-                        logger.warning(f"❌ Failed to resolve {domain}")
-                        
-                except Exception as e:
-                    error_count += 1
-                    logger.warning(f"❌ Error resolving {domain}: {e}")
-            
-            # ✅ ENHANCED: Update tracking
-            self.previous_resolved_ips = self.current_resolved_ips.copy()
-            self.current_resolved_ips = total_ips
-            
-            # ✅ ENHANCED: Update stats
-            self.stats["ip_resolution_count"] += success_count
-            self.stats["ip_resolution_errors"] += error_count
-            
-            logger.info(f"🔍 IP resolution completed: {success_count} success, {error_count} errors, {len(total_ips)} total IPs")
-            
-            # ✅ ENHANCED: Save updated cache
-            self._save_ip_cache()
-            
-            return error_count == 0
-            
-        except Exception as e:
-            logger.error(f"Error in _resolve_all_domain_ips: {e}")
-            return False
-
     def _resolve_domain_ips_cached(self, domain: str, force_refresh: bool = False) -> Dict[str, List[str]]:
         """Resolve domain IPs with caching"""
         try:
             clean_domain = domain.replace("*.", "")
-            current_time = self._now_local()
+            current_time = now()
             
-            # ✅ ENHANCED: Check cache first (unless force refresh)
+            #  ENHANCED: Check cache first (unless force refresh)
             cache_key = clean_domain
             if not force_refresh and cache_key in self.ip_cache:
                 cache_entry = self.ip_cache[cache_key]
                 cache_time = self.ip_cache_timestamps.get(cache_key)
                 
                 # Check if cache is still valid
-                if cache_time and (current_time - cache_time).total_seconds() < self.ip_cache_ttl:
+                if cache_time and (current_time - cache_time) < self.ip_cache_ttl:
                     self.stats["cache_hit_count"] += 1
                     logger.debug(f"📋 Cache hit for {domain}")
                     return cache_entry
             
-            # ✅ ENHANCED: Cache miss - resolve from DNS
+            #  ENHANCED: Cache miss - resolve from DNS
             self.stats["cache_miss_count"] += 1
             logger.debug(f"🔍 Resolving {domain} (cache miss/expired/forced)")
             
             ip_data = self._resolve_domain_to_ips(domain)
             
-            # ✅ ENHANCED: Cache the result if successful
+            #  ENHANCED: Cache the result if successful
             if ip_data and (ip_data.get("ipv4") or ip_data.get("ipv6")):
                 self.ip_cache[cache_key] = ip_data
                 self.ip_cache_timestamps[cache_key] = current_time
@@ -344,7 +294,7 @@ class WhitelistManager:
             
             result = {"ipv4": [], "ipv6": []}
             
-            # ✅ ENHANCED: Multiple resolution methods for better coverage
+            #  ENHANCED: Multiple resolution methods for better coverage
             
             # Method 1: Standard getaddrinfo (IPv4)
             try:
@@ -388,7 +338,7 @@ class WhitelistManager:
             except socket.gaierror as e:
                 logger.debug(f"Method 4 failed for {domain}: {e}")
         
-            # ✅ ENHANCED: Remove duplicates and sort
+            #  ENHANCED: Remove duplicates and sort
             result["ipv4"] = sorted(list(set(result["ipv4"])))
             
             # Method 5: IPv6 resolution (optional but comprehensive)
@@ -406,7 +356,7 @@ class WhitelistManager:
             
             total_ips = len(result["ipv4"]) + len(result["ipv6"])
             if total_ips > 0:
-                logger.debug(f"✅ Resolved {domain} to {total_ips} IPs (IPv4: {len(result['ipv4'])}, IPv6: {len(result['ipv6'])})")
+                logger.debug(f" Resolved {domain} to {total_ips} IPs (IPv4: {len(result['ipv4'])}, IPv6: {len(result['ipv6'])})")
             else:
                 logger.warning(f"❌ No IPs resolved for {domain}")
             
@@ -439,11 +389,11 @@ class WhitelistManager:
     def _clean_expired_cache(self):
         """Clean expired cache entries"""
         try:
-            current_time = self._now_local()
+            current_time = now()
             expired_domains = []
             
             for domain, timestamp in self.ip_cache_timestamps.items():
-                if (current_time - timestamp).total_seconds() > self.ip_cache_ttl:
+                if (current_time - timestamp) > self.ip_cache_ttl:
                     expired_domains.append(domain)
             
             for domain in expired_domains:
@@ -476,7 +426,7 @@ class WhitelistManager:
         self.firewall_manager = firewall_manager
         logger.info("🔗 Firewall manager linked for auto-sync")
         
-        # ✅ ENHANCED: Perform initial firewall sync if startup completed
+        #  ENHANCED: Perform initial firewall sync if startup completed
         if self.startup_sync_completed and self.auto_sync_firewall:
             self._sync_with_firewall_initial()
 
@@ -489,19 +439,19 @@ class WhitelistManager:
             
             logger.info("🔄 Performing initial firewall sync...")
             
-            # ✅ ENHANCED: Get all current whitelisted IPs
+            #  ENHANCED: Get all current whitelisted IPs
             whitelisted_ips = self.get_all_whitelisted_ips()
             
             if not whitelisted_ips:
                 logger.warning("No whitelisted IPs found for firewall sync")
                 return
             
-            # ✅ ENHANCED: Setup whitelist-only firewall
+            #  ENHANCED: Setup whitelist-only firewall
             success = self.firewall_manager.setup_whitelist_firewall(whitelisted_ips)
             
             if success:
                 self.stats["firewall_sync_count"] += 1
-                logger.info(f"✅ Initial firewall sync completed: {len(whitelisted_ips)} IPs")
+                logger.info(f" Initial firewall sync completed: {len(whitelisted_ips)} IPs")
             else:
                 logger.error("❌ Initial firewall sync failed")
                 
@@ -514,24 +464,24 @@ class WhitelistManager:
             if not self.firewall_manager or not self.auto_sync_firewall:
                 return
             
-            # ✅ ENHANCED: Calculate IP changes instead of domain changes
+            #  ENHANCED: Calculate IP changes instead of domain changes
             old_ips = self.previous_resolved_ips
             
-            # ✅ ENHANCED: Resolve new domains to get current IPs
+            #  ENHANCED: Resolve new domains to get current IPs
             if old_domains != new_domains:
                 logger.info("🔄 Domain changes detected, resolving IPs...")
                 self._resolve_all_domain_ips(force_refresh=True)
             
             new_ips = self.current_resolved_ips
             
-            # ✅ ENHANCED: Sync IP changes with firewall
+            #  ENHANCED: Sync IP changes with firewall
             if old_ips != new_ips:
                 logger.info(f"🔄 IP changes detected: {len(old_ips)} -> {len(new_ips)}")
                 success = self.firewall_manager.sync_whitelist_changes(old_ips, new_ips)
                 
                 if success:
                     self.stats["firewall_sync_count"] += 1
-                    logger.info("✅ Runtime firewall sync completed")
+                    logger.info(" Runtime firewall sync completed")
                 else:
                     logger.warning("❌ Runtime firewall sync had errors")
             else:
@@ -551,10 +501,10 @@ class WhitelistManager:
             return False
         
         self.sync_in_progress = True
-        start_time = time.time()
+        start_time = now()
         
         try:
-            # ✅ FIX: Always do full sync if forced OR if we have no domains yet
+            #  FIX: Always do full sync if forced OR if we have no domains yet
             should_do_full_sync = (
                 force_full_sync or 
                 not self.startup_sync_completed or 
@@ -564,8 +514,8 @@ class WhitelistManager:
             
             params = {}
             if not should_do_full_sync and self.last_updated:
-                params['since'] = self.last_updated.isoformat()
-                logger.info(f"📡 Incremental sync from server since {self.last_updated.isoformat()}")
+                params['since'] = now_server_compatible(self.last_updated)
+                logger.info(f"📡 Incremental sync from server since {now_server_compatible(self.last_updated)}")
             else:
                 logger.info(f"📡 Full sync from server (force: {force_full_sync}, no domains: {len(self.domains) == 0})")
 
@@ -584,14 +534,14 @@ class WhitelistManager:
                 if data.get('success', True):
                     domains_data = data.get('domains', [])
                     
-                    # ✅ FIX: Always validate response format
+                    #  FIX: Always validate response format
                     if not isinstance(domains_data, list):
                         logger.error(f"Invalid domains format: {type(domains_data)}")
                         return False
                     
                     logger.info(f"📥 Received {len(domains_data)} domains from server")
                     
-                    # ✅ FIX: Handle both full and incremental sync properly
+                    #  FIX: Handle both full and incremental sync properly
                     old_domains = self.domains.copy()
                     
                     if should_do_full_sync:
@@ -599,7 +549,7 @@ class WhitelistManager:
                         logger.info("🔄 Full sync: replacing all domains")
                         self.domains.clear()
                     
-                    # ✅ FIX: Process each domain properly
+                    #  FIX: Process each domain properly
                     new_domains_added = 0
                     for domain_data in domains_data:
                         try:
@@ -619,27 +569,27 @@ class WhitelistManager:
                         except Exception as e:
                             logger.warning(f"Error processing domain: {domain_data}, error: {e}")
                 
-                # ✅ FIX: Update timestamps and state
-                self.last_updated = self._now_local()
+                #  FIX: Update timestamps and state
+                self.last_updated = now()
                 self.stats["sync_count"] += 1
                 self.stats["last_sync_time"] = self.last_updated
-                self.stats["last_sync_duration"] = time.time() - start_time
+                self.stats["last_sync_duration"] = now() - start_time
                 
-                # ✅ FIX: Mark startup sync as completed on any successful sync
+                #  FIX: Mark startup sync as completed on any successful sync
                 if not self.startup_sync_completed:
                     self.startup_sync_completed = True
-                    logger.info("✅ Startup sync marked as completed")
+                    logger.info(" Startup sync marked as completed")
                 
-                # ✅ FIX: Log comprehensive results
-                logger.info(f"✅ Sync completed: {len(self.domains)} total domains")
+                #  FIX: Log comprehensive results
+                logger.info(f" Sync completed: {len(self.domains)} total domains")
                 logger.info(f"   - New domains added: {new_domains_added}")
                 logger.info(f"   - Sync type: {'full' if should_do_full_sync else 'incremental'}")
-                logger.info(f"   - Duration: {time.time() - start_time:.2f}s")
+                logger.info(f"   - Duration: {now() - start_time:.2f}s")
                 
-                # ✅ FIX: Save state immediately after successful sync
+                #  FIX: Save state immediately after successful sync
                 self._save_whitelist_state()
                 
-                # ✅ FIX: Sync with firewall if domains changed
+                #  FIX: Sync with firewall if domains changed
                 if old_domains != self.domains:
                     logger.info(f"🔄 Domain changes detected: {len(old_domains)} -> {len(self.domains)}")
                     self._sync_with_firewall(old_domains, self.domains)
@@ -667,43 +617,33 @@ class WhitelistManager:
         """Enhanced save whitelist state to file với proper JSON serialization"""
         state_file = "whitelist_state.json"
         try:
-            # ✅ FIX: Convert datetime objects to ISO strings for JSON
+            #  FIX: Convert timestamp to readable string for JSON
             state = {
                 "domains": list(self.domains),
-                "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+                "last_updated": now_server_compatible(self.last_updated) if self.last_updated else None,
                 "domain_count": len(self.domains),
                 "current_resolved_ips": list(self.current_resolved_ips),
-                "saved_at": self._now_local().isoformat(),
+                "saved_at": now_server_compatible(),
                 "version": "2.0"
             }
             
-            # ✅ FIX: Convert stats with datetime objects to strings
+            #  FIX: Convert stats with timestamp objects to strings
             serializable_stats = {}
             for key, value in self.stats.items():
-                if isinstance(value, datetime):
-                    serializable_stats[key] = value.isoformat()
+                if key == "last_sync_time" and value:
+                    serializable_stats[key] = now_server_compatible(value)
                 else:
                     serializable_stats[key] = value
             
             state["stats"] = serializable_stats
             
-            # ✅ FIX: Use custom JSON encoder
             with open(state_file, 'w', encoding='utf-8') as f:
-                json.dump(state, f, indent=2, ensure_ascii=False, default=self._json_serializer)
+                json.dump(state, f, indent=2, ensure_ascii=False)
             
             logger.debug(f"💾 Saved whitelist state: {len(self.domains)} domains")
             
         except Exception as e:
             logger.error(f"Error saving whitelist state: {e}")
-
-    def _json_serializer(self, obj):
-        """Custom JSON serializer for datetime objects"""
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        elif hasattr(obj, '__dict__'):
-            return obj.__dict__
-        else:
-            return str(obj)
 
     def _load_whitelist_state(self):
         """Enhanced load whitelist state from file với better error handling"""
@@ -722,7 +662,7 @@ class WhitelistManager:
                     except json.JSONDecodeError as e:
                         logger.warning(f"Invalid JSON in whitelist state file: {e}")
                         import shutil
-                        backup_file = f"{state_file}.backup.{int(time.time())}"
+                        backup_file = f"{state_file}.backup.{int(now())}"
                         shutil.move(state_file, backup_file)
                         logger.info(f"Corrupted state file backed up to {backup_file}")
                         return
@@ -738,13 +678,17 @@ class WhitelistManager:
                 logger.warning("Invalid domains format in state file")
                 self.domains = set()
             
-            # Load last_updated
+            # Load last_updated - try to parse as readable string first
             if state.get("last_updated"):
                 try:
+                    # For backward compatibility, try to parse as timestamp
                     last_updated_str = state["last_updated"]
-                    if last_updated_str.endswith('Z'):
-                        last_updated_str = last_updated_str[:-1] + '+00:00'
-                    self.last_updated = datetime.fromisoformat(last_updated_str)
+                    if isinstance(last_updated_str, str):
+                        # This is a readable string, we can't easily convert back to timestamp
+                        # So we'll use current time minus a reasonable interval
+                        self.last_updated = now() - 300  # 5 minutes ago
+                    else:
+                        self.last_updated = float(last_updated_str)
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Invalid last_updated format: {e}")
                     self.last_updated = None
@@ -759,10 +703,8 @@ class WhitelistManager:
             if "stats" in state and isinstance(state["stats"], dict):
                 for key, value in state["stats"].items():
                     if key == "last_sync_time" and isinstance(value, str):
-                        try:
-                            self.stats[key] = datetime.fromisoformat(value)
-                        except:
-                            self.stats[key] = None
+                        # Skip parsing readable time strings
+                        self.stats[key] = None
                     else:
                         self.stats[key] = value
             
@@ -778,15 +720,12 @@ class WhitelistManager:
         """Enhanced save IP cache to file với JSON serialization fix"""
         cache_file = "ip_cache.json"
         try:
-            # ✅ FIX: Convert all datetime objects to ISO strings
+            #  FIX: Convert all timestamps to readable strings
             timestamp_data = {}
             for domain, timestamp in self.ip_cache_timestamps.items():
-                if isinstance(timestamp, datetime):
-                    timestamp_data[domain] = timestamp.isoformat()
-                else:
-                    timestamp_data[domain] = str(timestamp)
+                timestamp_data[domain] = now_server_compatible(timestamp)
             
-            # ✅ FIX: Ensure cache data is JSON serializable
+            #  FIX: Ensure cache data is JSON serializable
             serializable_cache = {}
             for domain, ip_data in self.ip_cache.items():
                 if isinstance(ip_data, dict):
@@ -803,12 +742,12 @@ class WhitelistManager:
                     "cache_hits": self.stats.get("cache_hit_count", 0),
                     "cache_misses": self.stats.get("cache_miss_count", 0)
                 },
-                "saved_at": self._now_local().isoformat(),
+                "saved_at": now_server_compatible(),
                 "version": "2.0"
             }
             
             with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, indent=2, ensure_ascii=False, default=self._json_serializer)
+                json.dump(cache_data, f, indent=2, ensure_ascii=False)
             
             logger.debug(f"💾 Saved IP cache: {len(self.ip_cache)} entries")
             
@@ -823,7 +762,7 @@ class WhitelistManager:
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     content = f.read().strip()
                     
-                    # ✅ FIX: Check for empty file
+                    #  FIX: Check for empty file
                     if not content:
                         logger.debug("IP cache file is empty, starting fresh")
                         return
@@ -832,9 +771,9 @@ class WhitelistManager:
                         cache_data = json.loads(content)
                     except json.JSONDecodeError as e:
                         logger.warning(f"Invalid JSON in IP cache file: {e}")
-                        # ✅ FIX: Backup corrupted file
+                        #  FIX: Backup corrupted file
                         import shutil
-                        backup_file = f"{cache_file}.backup.{int(time.time())}"
+                        backup_file = f"{cache_file}.backup.{int(now())}"
                         shutil.move(cache_file, backup_file)
                         logger.info(f"Corrupted cache file backed up to {backup_file}")
                         return
@@ -842,7 +781,7 @@ class WhitelistManager:
                 logger.debug("IP cache file not found, starting fresh")
                 return
                 
-            # ✅ FIX: Load cache with validation
+            #  FIX: Load cache with validation
             cache_raw = cache_data.get("cache", {})
             if isinstance(cache_raw, dict):
                 self.ip_cache = {}
@@ -853,22 +792,16 @@ class WhitelistManager:
                             "ipv6": list(ip_data.get("ipv6", []))
                         }
             
-            # ✅ FIX: Parse timestamps with comprehensive error handling
+            #  FIX: Parse timestamps - since we saved as readable strings, we'll use current time
             timestamp_data = cache_data.get("timestamps", {})
             if isinstance(timestamp_data, dict):
                 self.ip_cache_timestamps = {}
                 for domain, timestamp_str in timestamp_data.items():
-                    try:
-                        if isinstance(timestamp_str, str):
-                            if timestamp_str.endswith('Z'):
-                                timestamp_str = timestamp_str[:-1] + '+00:00'
-                            self.ip_cache_timestamps[domain] = datetime.fromisoformat(timestamp_str)
-                    except (ValueError, TypeError) as e:
-                        logger.debug(f"Skipping invalid timestamp for {domain}: {e}")
-                        # Remove corresponding cache entry
-                        self.ip_cache.pop(domain, None)
+                    # Since we can't easily parse readable strings back to timestamps,
+                    # we'll set them to current time minus cache TTL to make them expire
+                    self.ip_cache_timestamps[domain] = now() - self.ip_cache_ttl - 1
             
-            # ✅ FIX: Clean expired entries on load
+            #  FIX: Clean expired entries on load
             self._clean_expired_cache()
             
             logger.debug(f"📂 Loaded IP cache: {len(self.ip_cache)} entries")
@@ -891,11 +824,11 @@ class WhitelistManager:
         self._running = True
         self._stop_event.clear()
         
-        # ✅ ENHANCED: Start whitelist update thread
+        #  ENHANCED: Start whitelist update thread
         self._update_thread = threading.Thread(target=self._update_loop, daemon=True)
         self._update_thread.start()
         
-        # ✅ ENHANCED: Start IP refresh thread
+        #  ENHANCED: Start IP refresh thread
         self._ip_refresh_thread = threading.Thread(target=self._ip_refresh_loop, daemon=True)
         self._ip_refresh_thread.start()
         
@@ -907,15 +840,15 @@ class WhitelistManager:
         
         while not self._stop_event.is_set():
             try:
-                # ✅ FIX: Force full sync periodically để ensure fresh data
+                #  FIX: Force full sync periodically để ensure fresh data
                 force_full = consecutive_failures > 2  # Force full sync after multiple failures
                 
                 if self.update_whitelist_from_server(force_full_sync=force_full):
                     if consecutive_failures > 0:
-                        logger.info(f"✅ Sync recovered after {consecutive_failures} failures")
+                        logger.info(f" Sync recovered after {consecutive_failures} failures")
                     consecutive_failures = 0
                     
-                    # ✅ FIX: Force IP resolution after successful sync
+                    #  FIX: Force IP resolution after successful sync
                     if len(self.domains) > 0:
                         logger.debug("🔄 Refreshing IP resolution after sync")
                         self._resolve_all_domain_ips(force_refresh=True)
@@ -924,7 +857,7 @@ class WhitelistManager:
                     consecutive_failures += 1
                     logger.warning(f"❌ Sync failed (attempt {consecutive_failures}/{self.max_retries})")
             
-                # ✅ FIX: Adaptive retry interval
+                #  FIX: Adaptive retry interval
                 sleep_interval = self.update_interval
                 if consecutive_failures > 0:
                     sleep_interval = min(self.retry_interval * consecutive_failures, 300)  # Max 5 minutes
@@ -952,10 +885,10 @@ class WhitelistManager:
                     logger.debug("🔄 Performing periodic IP refresh...")
                     old_ips = self.current_resolved_ips.copy()
                     
-                    # ✅ ENHANCED: Refresh IP resolution
+                    #  ENHANCED: Refresh IP resolution
                     self._resolve_all_domain_ips(force_refresh=True)
                     
-                    # ✅ ENHANCED: Check for changes and sync firewall if needed
+                    #  ENHANCED: Check for changes and sync firewall if needed
                     if old_ips != self.current_resolved_ips:
                         logger.info(f"📍 IP changes detected during refresh: {len(old_ips)} -> {len(self.current_resolved_ips)}")
                         if self.firewall_manager and self.auto_sync_firewall:
@@ -979,18 +912,18 @@ class WhitelistManager:
         self._stop_event.set()
         self._running = False
         
-        # ✅ ENHANCED: Wait for threads to finish
+        #  ENHANCED: Wait for threads to finish
         if self._update_thread and self._update_thread.is_alive():
             self._update_thread.join(timeout=5)
         
         if self._ip_refresh_thread and self._ip_refresh_thread.is_alive():
             self._ip_refresh_thread.join(timeout=5)
         
-        # ✅ ENHANCED: Save state before stopping
+        #  ENHANCED: Save state before stopping
         self._save_whitelist_state()
         self._save_ip_cache()
         
-        logger.info("✅ Periodic updates stopped and state saved")
+        logger.info(" Periodic updates stopped and state saved")
 
     # ========================================
     # STATUS & MONITORING
@@ -998,13 +931,11 @@ class WhitelistManager:
 
     def get_status(self) -> Dict:
         """Get comprehensive status information"""
-        current_time = self._now_local()
-        
         return {
             "domains_count": len(self.domains),
             "resolved_ips_count": len(self.current_resolved_ips),
             "cache_entries": len(self.ip_cache),
-            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+            "last_updated": now_server_compatible(self.last_updated) if self.last_updated else None,
             "auto_sync_enabled": self.auto_sync_enabled,
             "sync_in_progress": self.sync_in_progress,
             "startup_sync_completed": self.startup_sync_completed,
@@ -1015,13 +946,13 @@ class WhitelistManager:
                 "entries": len(self.ip_cache),
                 "ttl_seconds": self.ip_cache_ttl
             },
-            "current_time": current_time.isoformat()
+            "current_time": now_server_compatible()
         }
 
     def get_domain_details(self, domain: str = None) -> Dict:
         """Get detailed information about domains and their IPs"""
         if domain:
-            # ✅ ENHANCED: Single domain details
+            #  ENHANCED: Single domain details
             domain = domain.lower().strip()
             if domain not in self.domains:
                 return {"error": "Domain not in whitelist"}
@@ -1035,11 +966,11 @@ class WhitelistManager:
                 "ipv4_addresses": ip_data.get("ipv4", []),
                 "ipv6_addresses": ip_data.get("ipv6", []),
                 "total_ips": len(ip_data.get("ipv4", [])) + len(ip_data.get("ipv6", [])),
-                "cache_time": cache_time.isoformat() if cache_time else None,
-                "cache_age_seconds": (self._now_local() - cache_time).total_seconds() if cache_time else None
+                "cache_time": now_server_compatible(cache_time) if cache_time else None,
+                "cache_age_seconds": (now() - cache_time) if cache_time else None
             }
         else:
-            # ✅ ENHANCED: All domains summary
+            #  ENHANCED: All domains summary
             return {
                 "total_domains": len(self.domains),
                 "total_resolved_ips": len(self.current_resolved_ips),
@@ -1053,14 +984,14 @@ class WhitelistManager:
         logger.info("🔄 Forcing complete refresh...")
         
         try:
-            # ✅ FIX: Force full sync without 'since' parameter
+            #  FIX: Force full sync without 'since' parameter
             sync_success = self.update_whitelist_from_server(force_full_sync=True)
             
             if sync_success and len(self.domains) > 0:
                 ip_success = self._resolve_all_domain_ips(force_refresh=True)
                 
                 if ip_success:
-                    logger.info("✅ Force refresh completed: full")
+                    logger.info(" Force refresh completed: full")
                     return True
                 else:
                     logger.warning("⚠️ Force refresh completed: partial (domains only)")

@@ -761,7 +761,7 @@ function handleApiResponse(response) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return response.json().then(data => {
-        // ✅ FIX: Handle different response formats
+        //  FIX: Handle different response formats
         if (data.error) {
             throw new Error(data.error);
         }
@@ -781,7 +781,7 @@ async function loadItems() {
         if (response.ok) {
             const data = await handleApiResponse(response);
             
-            // ✅ FIX: Handle different response formats
+            //  FIX: Handle different response formats
             if (data.domains && Array.isArray(data.domains)) {
                 itemsData = data.domains;
             } else if (data.items && Array.isArray(data.items)) {
@@ -795,7 +795,7 @@ async function loadItems() {
                 itemsData = [];
             }
             
-            console.log('✅ Loaded items:', itemsData.length);
+            console.log(' Loaded items:', itemsData.length);
             renderItems(itemsData);
             updateStatistics();
         } else {
@@ -869,7 +869,7 @@ function renderItems(items) {
         const itemType = item.type || 'domain';
         const value = item.value || item.domain || item.ip || item.url || item.port || item.process;
         
-        // ✅ FIX: Use proper item ID from server response
+        //  FIX: Use proper item ID from server response
         const itemId = item.id || item._id || value; // fallback to value if no ID
         
         const statusInfo = isActive ? 
@@ -1017,7 +1017,7 @@ function showBulkImportModal() {
 }
 
 /**
- * Handle item actions - ✅ FIXED to call actual APIs
+ * Handle item actions -  FIXED to call actual APIs
  */
 async function handleItemAction(event) {
     const action = event.currentTarget.dataset.action;
@@ -1040,7 +1040,7 @@ async function handleItemAction(event) {
 }
 
 /**
- * Toggle item active status - ✅ FIXED to call API
+ * Toggle item active status -  FIXED to call API
  */
 async function toggleItem(itemId, active) {
     try {
@@ -1055,7 +1055,7 @@ async function toggleItem(itemId, active) {
         });
         
         const result = await handleApiResponse(response);
-        console.log('✅ Toggle result:', result);
+        console.log(' Toggle result:', result);
         
         showSuccess(`Item ${active ? 'activated' : 'deactivated'} successfully`);
         
@@ -1069,7 +1069,7 @@ async function toggleItem(itemId, active) {
 }
 
 /**
- * Remove item - ✅ FIXED to call API
+ * Remove item -  FIXED to call API
  */
 async function removeItem(itemId) {
     if (!confirm('Are you sure you want to remove this item?')) return;
@@ -1082,7 +1082,7 @@ async function removeItem(itemId) {
         });
         
         const result = await handleApiResponse(response);
-        console.log('✅ Remove result:', result);
+        console.log(' Remove result:', result);
         
         showSuccess(result.message || 'Item removed successfully');
         
@@ -1096,7 +1096,7 @@ async function removeItem(itemId) {
 }
 
 /**
- * Add new item - ✅ FIXED to actually call API
+ * Add new item -  FIXED to actually call API
  */
 async function addItem() {
     const form = document.getElementById('addItemForm');
@@ -1123,7 +1123,7 @@ async function addItem() {
         
         console.log('📤 Sending item data:', itemData);
         
-        // ✅ FIX: Actually call the API instead of manipulating local array
+        //  FIX: Actually call the API instead of manipulating local array
         const response = await fetch('/api/whitelist', {
             method: 'POST',
             headers: {
@@ -1133,7 +1133,7 @@ async function addItem() {
         });
         
         const result = await handleApiResponse(response);
-        console.log('✅ API response:', result);
+        console.log(' API response:', result);
         
         showSuccess(result.message || `${itemData.type.toUpperCase()} ${itemData.value} added successfully!`);
         
@@ -1141,7 +1141,7 @@ async function addItem() {
         form.reset();
         bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
         
-        // ✅ FIX: Reload data from server instead of manipulating local array
+        //  FIX: Reload data from server instead of manipulating local array
         await loadItems();
         
     } catch (error) {
@@ -1321,7 +1321,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-refresh every 60 seconds
     setInterval(loadItems, 60000);
     
-    console.log('✅ Enhanced whitelist management initialized');
+    console.log(' Enhanced whitelist management initialized');
 });
 </script>
 {% endblock %}

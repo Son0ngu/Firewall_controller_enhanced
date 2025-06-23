@@ -2,13 +2,18 @@
 Log Model - handles log data operations
 """
 
-from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 import logging
+
+# Import time utilities
+from time_utils import (
+    now_vietnam, now_vietnam_naive, to_vietnam_timezone, 
+    parse_agent_timestamp_direct, get_time_ago_string, calculate_age_seconds
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,53 +23,10 @@ class LogModel:
     def __init__(self, db: Database):
         self.db = db
         self.collection: Collection = db.logs
-        
-        # ✅ FIX: Add logger instance
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # ✅ FIXED: Force UTC+7 timezone for Vietnam
-        self.vietnam_timezone = timezone(timedelta(hours=7), name="UTC+7")
         self._create_indexes()
         
-        self.logger.info(f"LogModel initialized with Vietnam timezone: {self.vietnam_timezone}")
-    
-    def _get_vietnam_timezone(self) -> timezone:
-        """Get Vietnam timezone (UTC+7)"""
-        return timezone(timedelta(hours=7), name="UTC+7")
-    
-    def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone"""
-        # ✅ FIX: Always get UTC time first, then convert to Vietnam
-        utc_now = datetime.now(timezone.utc)
-        vn_time = utc_now.astimezone(self.vietnam_timezone)
-        
-        # ✅ DEBUG: Log time calculation
-        self.logger.debug(f"UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        self.logger.debug(f"VN time:  {vn_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        
-        return vn_time
-    
-    def _ensure_vietnam_timezone(self, dt: datetime) -> datetime:
-        """Ensure datetime is in Vietnam timezone"""
-        if dt is None:
-            return None
-            
-        if dt.tzinfo is None:
-            # ✅ FIX: Naive datetime handling
-            # Check if this might already be Vietnam time
-            current_utc = datetime.now(timezone.utc)
-            current_vn = current_utc.astimezone(self.vietnam_timezone)
-            
-            # If the naive time is close to Vietnam time, assume it's Vietnam
-            if abs((dt.hour - current_vn.hour) % 24) <= 1:
-                return dt.replace(tzinfo=self.vietnam_timezone)
-            else:
-                # Otherwise, treat as UTC and convert
-                dt_utc = dt.replace(tzinfo=timezone.utc)
-                return dt_utc.astimezone(self.vietnam_timezone)
-        else:
-            # Convert to Vietnam timezone
-            return dt.astimezone(self.vietnam_timezone)
+        self.logger.info("LogModel initialized with Vietnam timezone support")
     
     def _create_indexes(self):
         """Create necessary indexes for performance"""
@@ -133,8 +95,12 @@ class LogModel:
                 log["_id"] = str(log["_id"])
                 
                 # Convert timestamp to Vietnam timezone for display
-                if "timestamp" in log and isinstance(log["timestamp"], datetime):
-                    vn_time = self._ensure_vietnam_timezone(log["timestamp"])
+                if "timestamp" in log and log["timestamp"]:
+                    if isinstance(log["timestamp"], str):
+                        vn_time = parse_agent_timestamp_direct(log["timestamp"])
+                    else:
+                        vn_time = to_vietnam_timezone(log["timestamp"])
+                    
                     log["timestamp"] = vn_time
                     log["display_time"] = vn_time.strftime('%H:%M:%S')
                 
@@ -179,37 +145,39 @@ class LogModel:
         if not logs:
             return []
         
-        current_time = self._now_local()
+        current_time = now_vietnam_naive()
         
-        # ✅ FIX: Process timestamps for Vietnam timezone
+        # Process timestamps for Vietnam timezone
         for log in logs:
             if 'timestamp' not in log:
                 log['timestamp'] = current_time
             else:
                 log['timestamp'] = self._parse_timestamp(log['timestamp'])
             
-            # ✅ ADD: Server received timestamp
+            # Add server received timestamp
             log['server_received_at'] = current_time
         
         result = self.collection.insert_many(logs)
         self.logger.info(f"Inserted {len(logs)} logs with Vietnam timezone")
         return [str(id) for id in result.inserted_ids]
     
-    def _parse_timestamp(self, timestamp) -> datetime:
-        """Parse timestamp and convert to Vietnam timezone"""
-        if isinstance(timestamp, datetime):
-            return self._ensure_vietnam_timezone(timestamp)
-        elif isinstance(timestamp, str):
-            try:
-                # Parse ISO string
-                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                return self._ensure_vietnam_timezone(dt)
-            except (ValueError, TypeError):
-                self.logger.warning(f"Failed to parse timestamp '{timestamp}', using current time")
-                return self._now_local()
-        else:
-            self.logger.warning(f"Invalid timestamp type: {type(timestamp)}, using current time")
-            return self._now_local()
+    def _parse_timestamp(self, timestamp) -> object:
+        """Parse timestamp and convert to Vietnam naive datetime"""
+        if timestamp is None:
+            return now_vietnam_naive()
+        
+        try:
+            if isinstance(timestamp, str):
+                # Parse ISO string and convert to Vietnam naive
+                vn_time = parse_agent_timestamp_direct(timestamp)
+                return vn_time.replace(tzinfo=None)
+            else:
+                # Convert datetime to Vietnam naive
+                vn_time = to_vietnam_timezone(timestamp)
+                return vn_time.replace(tzinfo=None)
+        except Exception as e:
+            self.logger.warning(f"Failed to parse timestamp '{timestamp}': {e}, using current time")
+            return now_vietnam_naive()
     
     def get_total_count(self) -> int:
         """Get total count of all logs"""
@@ -234,14 +202,18 @@ class LogModel:
                        .sort('timestamp', DESCENDING)
                        .limit(limit))
             
-            # ✅ FIX: Convert to Vietnam timezone
+            # Convert to Vietnam timezone
             for log in logs:
                 log['_id'] = str(log['_id'])
-                if 'timestamp' in log and isinstance(log['timestamp'], datetime):
-                    vn_time = self._ensure_vietnam_timezone(log['timestamp'])
+                if 'timestamp' in log and log['timestamp']:
+                    if isinstance(log['timestamp'], str):
+                        vn_time = parse_agent_timestamp_direct(log['timestamp'])
+                    else:
+                        vn_time = to_vietnam_timezone(log['timestamp'])
+                    
                     log['timestamp'] = vn_time.isoformat()
                     log['display_time'] = vn_time.strftime('%Y-%m-%d %H:%M:%S')
-                    log['time_ago'] = self._get_time_ago(vn_time)
+                    log['time_ago'] = get_time_ago_string(vn_time)
             
             return logs
             
@@ -249,23 +221,6 @@ class LogModel:
             self.logger.error(f"Error getting recent logs: {e}")
             return []
     
-    def _get_time_ago(self, timestamp: datetime) -> str:
-        """Get human-readable time ago string"""
-        now = self._now_local()
-        diff = now - timestamp
-        
-        if diff.days > 0:
-            return f"{diff.days} ngày trước"
-        elif diff.seconds > 3600:
-            hours = diff.seconds // 3600
-            return f"{hours} giờ trước"
-        elif diff.seconds > 60:
-            minutes = diff.seconds // 60
-            return f"{minutes} phút trước"
-        else:
-            return "Vừa xong"
-
-    # Add other methods that were in the original file...
     def find_logs(self, query: Dict = None, limit: int = 100, skip: int = 0, 
                   sort_field: str = "timestamp", sort_order: int = DESCENDING) -> List[Dict]:
         """Find logs with query"""
@@ -278,11 +233,15 @@ class LogModel:
                        .skip(skip)
                        .limit(limit))
             
-            # ✅ FIX: Convert to Vietnam timezone
+            # Convert to Vietnam timezone
             for log in logs:
                 log['_id'] = str(log['_id'])
-                if 'timestamp' in log and isinstance(log['timestamp'], datetime):
-                    vn_time = self._ensure_vietnam_timezone(log['timestamp'])
+                if 'timestamp' in log and log['timestamp']:
+                    if isinstance(log['timestamp'], str):
+                        vn_time = parse_agent_timestamp_direct(log['timestamp'])
+                    else:
+                        vn_time = to_vietnam_timezone(log['timestamp'])
+                    
                     log['timestamp'] = vn_time.isoformat()
                     log['display_time'] = vn_time.strftime('%Y-%m-%d %H:%M:%S')
             
@@ -292,15 +251,20 @@ class LogModel:
             self.logger.error(f"Error in find_logs: {e}")
             return []
 
-    def get_logs_summary(self, since: datetime = None) -> Dict:
+    def get_logs_summary(self, since: object = None) -> Dict:
         """Get logs summary statistics since a date in Vietnam timezone"""
         try:
             if since is None:
                 # Default to last 24 hours in Vietnam time
-                since = self._now_local() - timedelta(days=1)
+                from datetime import timedelta
+                since = now_vietnam_naive() - timedelta(days=1)
             else:
-                # Ensure since is in Vietnam timezone
-                since = self._ensure_vietnam_timezone(since)
+                # Convert to Vietnam naive for MongoDB query
+                if isinstance(since, str):
+                    since_vn = parse_agent_timestamp_direct(since)
+                else:
+                    since_vn = to_vietnam_timezone(since)
+                since = since_vn.replace(tzinfo=None)
             
             query = {'timestamp': {'$gte': since}}
             
@@ -315,7 +279,7 @@ class LogModel:
                 'allowed_logs': allowed_logs,
                 'blocked_logs': blocked_logs,
                 'error_logs': error_logs,
-                'since': since.isoformat(),
+                'since': since.isoformat() if hasattr(since, 'isoformat') else str(since),
                 'timezone': 'UTC+7'
             }
             

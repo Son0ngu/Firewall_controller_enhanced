@@ -3,9 +3,14 @@ Whitelist Service - Business logic for whitelist operations
 """
 
 import logging
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from models.whitelist_model import WhitelistModel
+
+# Import time utilities
+from time_utils import (
+    now_vietnam, now_vietnam_naive, now_vietnam_iso,
+    to_vietnam_timezone, parse_agent_timestamp_direct
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,25 +21,9 @@ class WhitelistService:
         """Initialize WhitelistService with model and socketio"""
         self.model = whitelist_model
         self.socketio = socketio
-        
-        # ✅ FIX: Use correct attribute name from model
-        self.server_timezone = self.model.server_timezone  # Changed from .timezone to .server_timezone
-        
-        # Set up logger for this service
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # ✅ ADD: Debug timezone info
-        self.logger.info(f"WhitelistService initialized with timezone: {self.server_timezone}")
-    
-    def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone"""
-        # ✅ FIX: Use model's method directly - no need to duplicate
-        return self.model._now_local()
-    
-    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
-        """Ensure datetime is timezone-aware"""
-        # ✅ FIX: Use model's method directly - no need to duplicate
-        return self.model._ensure_timezone_aware(dt)
+        self.logger.info("WhitelistService initialized with time_utils")
     
     def get_all_entries(self, filters: Dict = None) -> Dict:
         """Get all whitelist entries with optional filtering"""
@@ -44,7 +33,7 @@ class WhitelistService:
         
         entries = self.model.find_all_entries(query)
         
-        # ✅ FIX: Proper timezone handling - entries are already converted by model
+        # Format entries for response
         formatted_entries = []
         for entry in entries:
             formatted_entry = {
@@ -55,11 +44,10 @@ class WhitelistService:
                 "category": entry.get("category"),
                 "priority": entry.get("priority", "normal"),
                 "added_by": entry.get("added_by"),
-                # ✅ FIX: Entries from model are already in UTC+7, just format them
                 "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None
             }
             
-            # ✅ CONDITIONAL: Only add optional fields if they exist
+            # Add optional fields if they exist
             if entry.get("notes"):
                 formatted_entry["notes"] = entry.get("notes")
             if entry.get("expiry_date"):
@@ -70,12 +58,6 @@ class WhitelistService:
                 formatted_entry["is_temporary"] = entry.get("is_temporary")
             if entry.get("dns_config"):
                 formatted_entry["dns_config"] = entry.get("dns_config")
-            
-            # ✅ ADD: Include timezone info for debugging
-            if entry.get("timezone"):
-                formatted_entry["timezone"] = entry.get("timezone")
-            if entry.get("local_added_date"):
-                formatted_entry["local_added_date"] = entry.get("local_added_date")
             
             formatted_entries.append(formatted_entry)
         
@@ -102,11 +84,11 @@ class WhitelistService:
         if existing:
             raise ValueError("Entry already exists")
         
-        # ✅ FIX: Get current time
-        current_time = self._now_local()
+        # Use Vietnam time for timestamps
+        current_time = now_vietnam_naive()
         logger.info(f"Adding entry with timestamp: {current_time}")
         
-        # ✅ FIX: Minimal entry data
+        # Create processed entry
         processed_entry = {
             "type": entry_type,
             "value": value,
@@ -117,24 +99,22 @@ class WhitelistService:
             "is_active": True
         }
         
-        # ✅ CONDITIONAL: Only add optional fields if specified
+        # Add optional fields if specified
         if entry_data.get("notes"):
             processed_entry["notes"] = entry_data.get("notes")
         
         if entry_data.get("expiry_date"):
             try:
-                expiry_str = entry_data["expiry_date"]
-                if expiry_str.endswith('Z'):
-                    expiry_str = expiry_str[:-1] + '+00:00'
+                # Parse expiry date using time_utils
+                expiry_vietnam = parse_agent_timestamp_direct(entry_data["expiry_date"])
+                processed_entry["expiry_date"] = expiry_vietnam.replace(tzinfo=None)
                 
-                parsed_date = datetime.fromisoformat(expiry_str)
-                processed_entry["expiry_date"] = self._ensure_timezone_aware(parsed_date)
-                
-            except (ValueError, AttributeError) as e:
+            except Exception as e:
                 logger.warning(f"Invalid expiry date format: {e}")
                 raise ValueError("Invalid expiry date format")
                 
         elif entry_data.get("is_temporary"):
+            from datetime import timedelta
             processed_entry["is_temporary"] = True
             processed_entry["expiry_date"] = current_time + timedelta(hours=24)
         
@@ -168,13 +148,13 @@ class WhitelistService:
                 "value": value,
                 "category": processed_entry["category"],
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()
+                "timestamp": now_vietnam_iso()
             })
         
         return {
             "id": entry_id,
             "message": f"{entry_type.capitalize()} added to whitelist",
-            "timestamp": current_time.isoformat()
+            "timestamp": now_vietnam_iso()
         }
     
     def test_entry(self, entry_data: Dict) -> Dict:
@@ -216,7 +196,6 @@ class WhitelistService:
             return {"valid": True, "message": "Entry is valid"}
             
         except Exception as e:
-            # ✅ FIX: Use self.logger instead of self.logger.error
             self.logger.error(f"Error testing entry: {e}")
             return {"valid": False, "message": f"Test failed: {str(e)}"}
     
@@ -259,60 +238,53 @@ class WhitelistService:
                 }
                 
         except Exception as e:
-            # ✅ FIX: Use self.logger instead of self.logger.error  
             self.logger.error(f"Error testing DNS: {e}")
             return {"valid": False, "message": f"DNS test failed: {str(e)}"}
     
-    def get_agent_sync_data(self, since: str = None, agent_id: str = None) -> Dict:
-        """Get whitelist data for agent synchronization với better logic"""
+    def get_agent_sync_data(self, since_datetime: Optional[object] = None, agent_id: str = None) -> Dict:
+        """Get whitelist data for agent synchronization"""
         try:
-            since_date = None
             sync_type = "full"  # Default to full sync
             
-            if since:
+            # Handle since parameter
+            if since_datetime:
                 try:
-                    if isinstance(since, str):
-                        since_str = since
-                        if since_str.endswith('Z'):
-                            since_str = since_str[:-1] + '+00:00'
-                        since_date = datetime.fromisoformat(since_str)
-                    else:
-                        since_date = since
-                        
-                    since_date = self._ensure_timezone_aware(since_date)
                     sync_type = "incremental"
+                    current_time = now_vietnam_naive()
+                    
+                    # Convert since to Vietnam naive
+                    if isinstance(since_datetime, str):
+                        since_vn = parse_agent_timestamp_direct(since_datetime)
+                        since_naive = since_vn.replace(tzinfo=None)
+                    else:
+                        since_vn = to_vietnam_timezone(since_datetime)
+                        since_naive = since_vn.replace(tzinfo=None)
+                    
+                    # Check if since is too old (more than 24 hours)
+                    from datetime import timedelta
+                    hours_ago = (current_time - since_naive).total_seconds() / 3600
+                    
+                    if hours_ago > 24:  # More than 24 hours ago
+                        sync_type = "full"
+                        self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
+                        since_datetime = None
                         
-                except (ValueError, AttributeError) as e:
-                    self.logger.warning(f"Invalid since date format '{since}': {e}")
-                    since_date = None
+                except Exception as e:
+                    self.logger.warning(f"Error processing since parameter: {e}")
+                    since_datetime = None
                     sync_type = "full"
-        
-            # ✅ FIX: Always return all active domains for now (since incremental has issues)
-            query = {"is_active": True}
             
-            # ✅ TEMPORARY: Disable incremental sync until fixed
-            if since_date and sync_type == "incremental":
-                current_time = self._now_local()
-                hours_ago = (current_time - since_date).total_seconds() / 3600
-                
-                # ✅ FIX: More conservative incremental sync
-                if hours_ago <= 1:  # Only incremental if within last 1 hour
-                    query["added_date"] = {"$gte": since_date}
-                    self.logger.debug(f"Incremental sync: domains added after {since_date}")
-                else:
-                    sync_type = "full"
-                    self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
-        
-            entries = self.model.find_all_entries(query)
-            current_time = self._now_local()
+            # Get entries from model
+            entries = self.model.get_entries_for_sync(since_datetime)
+            current_time = now_vietnam_naive()
             
-            # ✅ FIX: Format entries consistently
+            # Format entries for agent sync
             domains = []
             for entry in entries:
                 domain_entry = {
                     "value": entry.get("value"),
                     "type": entry.get("type", "domain"),
-                    "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None,
+                    "added_date": entry.get("added_date"),
                     "priority": entry.get("priority", "normal"),
                     "category": entry.get("category", "uncategorized"),
                     "is_active": entry.get("is_active", True)
@@ -325,10 +297,10 @@ class WhitelistService:
                 "count": len(domains),
                 "type": sync_type,
                 "success": True,
-                "server_time": current_time.isoformat()
+                "server_time": now_vietnam_iso()
             }
             
-            # ✅ ADD: Include agent_id if provided
+            # Include agent_id if provided
             if agent_id:
                 response["agent_id"] = agent_id
             
@@ -339,7 +311,7 @@ class WhitelistService:
             self.logger.error(f"Error in agent sync: {e}")
             return {
                 "domains": [],
-                "timestamp": self._now_local().isoformat(),
+                "timestamp": now_vietnam_iso(),
                 "count": 0,
                 "type": "error",
                 "success": False,
@@ -359,7 +331,7 @@ class WhitelistService:
                 "id": entry_id,
                 "value": entry.get("value"),
                 "type": entry.get("type", "domain"),
-                "timestamp": self._now_local().isoformat()
+                "timestamp": now_vietnam_iso()
             })
         
         return success
@@ -372,7 +344,7 @@ class WhitelistService:
         if len(entries_data) > 1000:
             raise ValueError("Maximum 1000 entries allowed per bulk operation")
         
-        current_time = self._now_local()
+        current_time = now_vietnam_naive()
         processed_entries = []
         errors = []
         
@@ -423,7 +395,7 @@ class WhitelistService:
             self.socketio.emit("whitelist_bulk_added", {
                 "count": len(inserted_ids),
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()
+                "timestamp": now_vietnam_iso()
             })
         
         return {
@@ -455,7 +427,7 @@ class WhitelistService:
             update_data['value'] = value
         
         # Update timestamp
-        update_data['updated_at'] = self._now_local()
+        update_data['updated_at'] = now_vietnam_naive()
         
         success = self.model.update_entry(entry_id, update_data)
         
@@ -464,7 +436,7 @@ class WhitelistService:
                 "id": entry_id,
                 "value": update_data.get('value', entry.get('value')),
                 "type": update_data.get('type', entry.get('type', 'domain')),
-                "timestamp": update_data['updated_at'].isoformat()
+                "timestamp": now_vietnam_iso()
             })
         
         return success

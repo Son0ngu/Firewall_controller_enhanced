@@ -2,26 +2,28 @@
 Main Flask application with MVC architecture
 """
 
-# ✅ QUAN TRỌNG: Monkey patch PHẢI ở đầu tiên, trước tất cả imports khác
+#  QUAN TRỌNG: Monkey patch PHẢI ở đầu tiên, trước tất cả imports khác
 import eventlet
 eventlet.monkey_patch()
 
 import os
 import sys
 import logging
-from datetime import datetime
 
-# ✅ Add current directory to Python path
+#  Add current directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO
 from flask_cors import CORS
 
-# ✅ Import từ config.py (không phải database/config.py)
+#  Import từ config.py (không phải database/config.py)
 from database.config import get_config, get_mongo_client, get_database, validate_config, close_mongo_client
 
-# ✅ Import MVC components với absolute imports
+# Import time utilities
+from time_utils import now_vietnam_iso, parse_agent_timestamp_direct
+
+#  Import MVC components với absolute imports
 from models.whitelist_model import WhitelistModel
 from models.agent_model import AgentModel
 from models.log_model import LogModel
@@ -48,7 +50,7 @@ def create_app():
     """Create Flask application with MVC architecture - Singleton pattern"""
     global _app_initialized
     
-    # ✅ FIX: Prevent multiple initialization
+    #  FIX: Prevent multiple initialization
     if _app_initialized:
         logger.info("⏭️ App already initialized, skipping...")
         # Return minimal app for reloader
@@ -71,18 +73,19 @@ def create_app():
     config = get_config()
     app.config.from_object(config)
     
-    # ✅ Add template filters
+    #  Add template filters using time_utils
     @app.template_filter('format_datetime')
     def format_datetime_filter(dt, format='%Y-%m-%d %H:%M:%S'):
-        """Format datetime for template"""
+        """Format datetime for template using time_utils"""
         if dt is None:
             return 'N/A'
         if isinstance(dt, str):
             try:
-                dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+                # Parse ISO string using time_utils
+                dt = parse_agent_timestamp_direct(dt)
             except:
                 return dt
-        return dt.strftime(format)
+        return format_datetime(dt, format)
     
     # Validate configuration
     if not validate_config(config):
@@ -106,26 +109,26 @@ def create_app():
         engineio_logger=False
     )
     
-    # ✅ FIX: Initialize database BEFORE using it
+    #  FIX: Initialize database BEFORE using it
     try:
         db = get_database(config)
-        app.logger.info(f"✅ MongoDB connected: {config.MONGO_DBNAME}")
+        app.logger.info(f" MongoDB connected: {config.MONGO_DBNAME}")
         
-        # ✅ FIX: Initialize indexes safely with proper parameters
+        #  FIX: Initialize indexes safely with proper parameters
         initialize_database_indexes(app, db)
         
     except Exception as e:
         app.logger.error(f"❌ MongoDB connection failed: {e}")
         raise RuntimeError("Database connection failed")
     
-    # ✅ FIX: Initialize MVC components and get services
+    #  FIX: Initialize MVC components and get services
     try:
         log_service, agent_service = register_controllers(app, socketio, db)
         
         if log_service is None or agent_service is None:
             raise RuntimeError("Failed to initialize services")
             
-        app.logger.info("✅ MVC components initialized successfully")
+        app.logger.info(" MVC components initialized successfully")
         
     except Exception as e:
         app.logger.error(f"❌ Failed to initialize MVC components: {e}")
@@ -142,7 +145,7 @@ def create_app():
     app.log_service = log_service
     app.agent_service = agent_service
     
-    # ✅ Mark as initialized
+    #  Mark as initialized
     _app_initialized = True
     
     app.logger.info("🚀 MVC Application initialized successfully")
@@ -158,15 +161,15 @@ def initialize_database_indexes(app, db):
         from models.log_model import LogModel
         from models.agent_model import AgentModel
         
-        # ✅ FIX: Pass db parameter properly
+        #  FIX: Pass db parameter properly
         whitelist_model = WhitelistModel(db)
         log_model = LogModel(db) 
         agent_model = AgentModel(db)
         
-        app.logger.info("✅ Database indexes initialized successfully")
+        app.logger.info(" Database indexes initialized successfully")
         
     except Exception as e:
-        # ✅ FIX: Use app.logger properly
+        #  FIX: Use app.logger properly
         app.logger.warning(f"Index initialization had issues: {e}")
         # Continue anyway - not critical for startup
         import traceback
@@ -177,42 +180,42 @@ def register_controllers(app, socketio, db):
     try:
         logger.info("🔧 Initializing MVC components...")
         
-        # ✅ FIX: Initialize models với db parameter
+        #  FIX: Initialize models với db parameter
         whitelist_model = WhitelistModel(db)
         agent_model = AgentModel(db)
         log_model = LogModel(db)
         
-        logger.info("✅ Models initialized")
+        logger.info(" Models initialized")
         
-        # ✅ Initialize services
+        #  Initialize services
         whitelist_service = WhitelistService(whitelist_model, socketio)
         agent_service = AgentService(agent_model, socketio)
         log_service = LogService(log_model, socketio)
         
-        logger.info("✅ Services initialized")
+        logger.info(" Services initialized")
         
-        # ✅ Initialize controllers
+        #  Initialize controllers
         whitelist_controller = WhitelistController(whitelist_model, whitelist_service, socketio)
         agent_controller = AgentController(agent_model, agent_service, socketio)
         log_controller = LogController(log_model, log_service, socketio)
         
-        logger.info("✅ Controllers initialized")
+        logger.info(" Controllers initialized")
         
-        # ✅ Register blueprints with proper URL prefixes
+        #  Register blueprints with proper URL prefixes
         app.register_blueprint(whitelist_controller.blueprint, url_prefix='/api')
         app.register_blueprint(agent_controller.blueprint, url_prefix='/api')
         app.register_blueprint(log_controller.blueprint, url_prefix='/api')
         
-        logger.info("✅ All controllers registered successfully")
+        logger.info(" All controllers registered successfully")
         
-        # ✅ Debug: Log registered routes
+        #  Debug: Log registered routes
         logger.info("📋 Registered API routes:")
         for rule in app.url_map.iter_rules():
             if rule.rule.startswith('/api/'):
                 methods = ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
                 logger.info(f"  {methods:15} {rule.rule}")
         
-        # ✅ FIX: Return services để dùng trong main routes
+        #  FIX: Return services để dùng trong main routes
         return log_service, agent_service
         
     except Exception as e:
@@ -245,7 +248,7 @@ def register_main_routes(app, log_service, agent_service):
                 stats['allowed_count'] = log_service.get_count_by_action('ALLOWED')
                 stats['blocked_count'] = log_service.get_count_by_action('BLOCKED')
                 
-                # ✅ FIX: Get active agents count properly
+                #  FIX: Get active agents count properly
                 try:
                     agent_stats = agent_service.calculate_statistics()
                     stats['active_agents'] = agent_stats.get('active', 0)
@@ -290,7 +293,7 @@ def register_main_routes(app, log_service, agent_service):
             "status": "healthy",
             "version": "1.0.0",
             "architecture": "MVC",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": now_vietnam_iso()
         }), 200
     
     @app.route('/api/config')
@@ -342,13 +345,13 @@ if __name__ == "__main__":
         logger.info(f"🏗️  Architecture: Model-View-Controller")
         logger.info(f"🗄️  Database: {config.MONGO_DBNAME}")
         
-        # ✅ FIX: Disable reloader để tránh double initialization
+        #  FIX: Disable reloader để tránh double initialization
         socketio.run(
             app, 
             host=config.HOST, 
             port=config.PORT, 
             debug=config.DEBUG,
-            use_reloader=False  # ✅ CHANGE: Disable reloader
+            use_reloader=False  #  CHANGE: Disable reloader
         )
         
     except KeyboardInterrupt:

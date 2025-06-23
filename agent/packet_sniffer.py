@@ -1,17 +1,18 @@
 # Import các thư viện cần thiết
 import logging  # Thư viện ghi log để theo dõi hoạt động của module
 import threading  # Thư viện hỗ trợ đa luồng để chạy bắt gói tin trong luồng riêng
-import time  # Thư viện xử lý thời gian, dùng cho việc tạm dừng
-import re  # ✅ ADD: Missing import for regex validation
-from datetime import datetime  # Thư viện xử lý ngày giờ để gắn thời gian cho các sự kiện
+import re  #  ADD: Missing import for regex validation
 from typing import Callable, Dict, Optional  # Thư viện hỗ trợ kiểu dữ liệu tĩnh
+
+# Import time utilities
+from time_utils import now_server_compatible, sleep
 
 # Import các module từ thư viện Scapy để bắt và phân tích gói tin mạng
 from scapy.all import sniff  # Hàm sniff để bắt gói tin mạng
 from scapy.layers.http import HTTPRequest  # Lớp xử lý gói tin HTTP Request
-from scapy.layers.inet import IP, TCP, UDP  # ✅ ADD: Missing UDP import
-from scapy.layers.dns import DNS  # ✅ ADD: Missing DNS import
-from scapy.packet import Raw  # ✅ ADD: Missing Raw import
+from scapy.layers.inet import IP, TCP, UDP  #  ADD: Missing UDP import
+from scapy.layers.dns import DNS  #  ADD: Missing DNS import
+from scapy.packet import Raw  #  ADD: Missing Raw import
 from scapy.layers.tls.extensions import ServerName  # Lớp xử lý phần mở rộng ServerName trong TLS
 from scapy.layers.tls.handshake import TLSClientHello  # Lớp xử lý bản tin ClientHello trong TLS
 from scapy.packet import Packet  # Lớp cơ sở cho các gói tin trong Scapy
@@ -100,7 +101,7 @@ class PacketSniffer:
         while self.running and retry_count < max_retries:
             try:
                 # Xây dựng bộ lọc BPF (Berkeley Packet Filter) cho gói tin
-                # ✅ FIX: Enhanced filter để bắt nhiều traffic hơn
+                #  FIX: Enhanced filter để bắt nhiều traffic hơn
                 filter_str = "tcp and (dst port 80 or dst port 443 or dst port 53) or udp and dst port 53"
                 
                 # Ghi log thông tin về bộ lọc đang sử dụng
@@ -126,7 +127,7 @@ class PacketSniffer:
                 
                 if retry_count < max_retries and self.running:
                     logger.info(f"Retrying packet capture in 5 seconds...")
-                    time.sleep(5)
+                    sleep(5)
                 else:
                     logger.error("Failed to start packet capture after all retries")
                     break
@@ -139,7 +140,7 @@ class PacketSniffer:
             packet: The Scapy packet object
         """
         try:
-            # ✅ FIX: Enhanced packet processing với better logic
+            #  FIX: Enhanced packet processing với better logic
             if not packet.haslayer(IP):
                 return
             
@@ -148,7 +149,7 @@ class PacketSniffer:
             src_ip = ip_layer.src
             dst_ip = ip_layer.dst
             
-            # ✅ FIX: Handle both TCP and UDP
+            #  FIX: Handle both TCP and UDP
             domain = None
             protocol = "unknown"
             dst_port = None
@@ -180,23 +181,23 @@ class PacketSniffer:
                 else:
                     protocol = f"UDP/{dst_port}"
             
-            # ✅ FIX: Nếu tìm thấy tên miền hoặc có kết nối đáng chú ý, tạo record
+            #  FIX: Nếu tìm thấy tên miền hoặc có kết nối đáng chú ý, tạo record
             if domain or dst_port in [80, 443, 53]:
-                # ✅ FIX: Create complete record with all required fields
+                #  FIX: Create complete record with all required fields
                 record = {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": now_server_compatible(),
                     "domain": domain,
                     "src_ip": src_ip,
                     "dest_ip": dst_ip,
                     "src_port": src_port,
-                    "port": dst_port,  # ✅ FIX: Use dest_port as main port
+                    "port": dst_port,  #  FIX: Use dest_port as main port
                     "dest_port": dst_port,
                     "protocol": protocol,
                     "packet_size": len(packet),
                     "connection_direction": "outbound"
                 }
                 
-                # ✅ FIX: Call callback with complete record
+                #  FIX: Call callback with complete record
                 self.callback(record)
     
         except Exception as e:
@@ -291,7 +292,7 @@ class PacketSniffer:
                 if len(payload) <= 5 or payload[5] != 0x01:
                     return None
 
-                # ✅ FIX: Enhanced SNI extraction với better error handling
+                #  FIX: Enhanced SNI extraction với better error handling
                 try:
                     # Bỏ qua header bản ghi (5 bytes) và header handshake (4 bytes)
                     pos = 9

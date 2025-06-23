@@ -7,7 +7,9 @@ from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.whitelist_model import WhitelistModel
 from services.whitelist_service import WhitelistService
-from datetime import datetime
+
+# Import time utilities
+from time_utils import now_vietnam_iso, parse_agent_timestamp_direct
 
 class WhitelistController:
     """Controller for whitelist operations"""
@@ -197,19 +199,19 @@ class WhitelistController:
             
             self.logger.debug(f"Agent sync request - since: {since}, agent_id: {agent_id}")
             
-            # ✅ FIX: Better parameter validation
+            #  FIX: Better parameter validation using time_utils
             since_datetime = None
             if since:
                 try:
-                    since_datetime = datetime.fromisoformat(since.replace('Z', '+00:00'))
-                except ValueError as e:
+                    since_datetime = parse_agent_timestamp_direct(since)
+                except Exception as e:
                     self.logger.warning(f"Invalid since parameter: {since}, error: {e}")
                     # Continue without since filter
             
             # Call service method
             result = self.service.get_agent_sync_data(since_datetime, agent_id)
             
-            # ✅ FIX: Ensure response format is correct
+            #  FIX: Ensure response format is correct
             if not isinstance(result, dict):
                 result = {"domains": [], "error": "Invalid response format"}
             
@@ -227,12 +229,12 @@ class WhitelistController:
         except Exception as e:
             self.logger.error(f"Error in agent sync: {str(e)}", exc_info=True)
             
-            # ✅ FIX: Always return valid JSON with domains array
+            #  FIX: Always return valid JSON with domains array - using time_utils
             error_response = {
                 "success": False,
                 "error": "Sync failed: " + str(e),
                 "domains": [],  # Always include empty domains array
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": now_vietnam_iso(),
                 "count": 0,
                 "type": "error"
             }
