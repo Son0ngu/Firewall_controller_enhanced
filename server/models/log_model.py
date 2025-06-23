@@ -1,5 +1,6 @@
 """
 Log Model - handles log data operations
+UTC ONLY - Clean and simple
 """
 
 from typing import Dict, List, Optional
@@ -9,16 +10,16 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 import logging
 
-# Import time utilities
+# Import time utilities - UTC ONLY
 from time_utils import (
-    now_vietnam, now_vietnam_naive, to_vietnam_timezone, 
-    parse_agent_timestamp_direct, get_time_ago_string, calculate_age_seconds
+    now_utc, to_utc_naive, parse_agent_timestamp, 
+    get_time_ago_string, calculate_age_seconds, format_datetime
 )
 
 logger = logging.getLogger(__name__)
 
 class LogModel:
-    """Model for log data operations"""
+    """Model for log data operations - UTC ONLY"""
     
     def __init__(self, db: Database):
         self.db = db
@@ -26,7 +27,7 @@ class LogModel:
         self.logger = logging.getLogger(self.__class__.__name__)
         self._create_indexes()
         
-        self.logger.info("LogModel initialized with Vietnam timezone support")
+        self.logger.info("LogModel initialized with UTC timezone support")
     
     def _create_indexes(self):
         """Create necessary indexes for performance"""
@@ -71,7 +72,7 @@ class LogModel:
             return 0
 
     def find_all_logs(self, query: Dict = None, limit: int = 100, offset: int = 0) -> List[Dict]:
-        """Find all logs with enhanced debugging"""
+        """Find all logs with enhanced debugging - UTC ONLY"""
         try:
             if query is None:
                 query = {}
@@ -90,19 +91,27 @@ class LogModel:
             
             self.logger.debug(f"Found {len(logs)} logs from database")
             
-            # Convert ObjectId to string and handle timezone
+            # Convert ObjectId to string and handle timezone - UTC ONLY
             for log in logs:
                 log["_id"] = str(log["_id"])
                 
-                # Convert timestamp to Vietnam timezone for display
+                # Convert timestamp to UTC for display
                 if "timestamp" in log and log["timestamp"]:
                     if isinstance(log["timestamp"], str):
-                        vn_time = parse_agent_timestamp_direct(log["timestamp"])
+                        utc_time = parse_agent_timestamp(log["timestamp"])  # UTC parsing
                     else:
-                        vn_time = to_vietnam_timezone(log["timestamp"])
+                        # Convert to UTC
+                        from datetime import datetime, timezone
+                        if isinstance(log["timestamp"], datetime):
+                            if log["timestamp"].tzinfo is None:
+                                utc_time = log["timestamp"].replace(tzinfo=timezone.utc)
+                            else:
+                                utc_time = log["timestamp"].astimezone(timezone.utc)
+                        else:
+                            utc_time = now_utc()
                     
-                    log["timestamp"] = vn_time
-                    log["display_time"] = vn_time.strftime('%H:%M:%S')
+                    log["timestamp"] = utc_time
+                    log["display_time"] = utc_time.strftime('%H:%M:%S')
                 
                 # Ensure all required fields exist with defaults
                 log.setdefault("level", "INFO")
@@ -141,43 +150,50 @@ class LogModel:
             return 0
 
     def insert_logs(self, logs: List[Dict]) -> List[str]:
-        """Insert multiple log entries with Vietnam timezone"""
+        """Insert multiple log entries with UTC timezone"""
         if not logs:
             return []
         
-        current_time = now_vietnam_naive()
+        current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
         
-        # Process timestamps for Vietnam timezone
+        # Process timestamps for UTC timezone
         for log in logs:
             if 'timestamp' not in log:
                 log['timestamp'] = current_time
             else:
                 log['timestamp'] = self._parse_timestamp(log['timestamp'])
             
-            # Add server received timestamp
+            # Add server received timestamp - UTC
             log['server_received_at'] = current_time
         
         result = self.collection.insert_many(logs)
-        self.logger.info(f"Inserted {len(logs)} logs with Vietnam timezone")
+        self.logger.info(f"Inserted {len(logs)} logs with UTC timezone")
         return [str(id) for id in result.inserted_ids]
     
     def _parse_timestamp(self, timestamp) -> object:
-        """Parse timestamp and convert to Vietnam naive datetime"""
+        """Parse timestamp and convert to UTC naive datetime"""
         if timestamp is None:
-            return now_vietnam_naive()
+            return to_utc_naive(now_utc())
         
         try:
             if isinstance(timestamp, str):
-                # Parse ISO string and convert to Vietnam naive
-                vn_time = parse_agent_timestamp_direct(timestamp)
-                return vn_time.replace(tzinfo=None)
+                # Parse ISO string and convert to UTC naive
+                utc_time = parse_agent_timestamp(timestamp)  # UTC parsing
+                return utc_time.replace(tzinfo=None)
             else:
-                # Convert datetime to Vietnam naive
-                vn_time = to_vietnam_timezone(timestamp)
-                return vn_time.replace(tzinfo=None)
+                # Convert datetime to UTC naive
+                from datetime import datetime, timezone
+                if isinstance(timestamp, datetime):
+                    if timestamp.tzinfo is None:
+                        utc_time = timestamp.replace(tzinfo=timezone.utc)
+                    else:
+                        utc_time = timestamp.astimezone(timezone.utc)
+                    return utc_time.replace(tzinfo=None)
+                else:
+                    return to_utc_naive(now_utc())
         except Exception as e:
             self.logger.warning(f"Failed to parse timestamp '{timestamp}': {e}, using current time")
-            return now_vietnam_naive()
+            return to_utc_naive(now_utc())
     
     def get_total_count(self) -> int:
         """Get total count of all logs"""
@@ -196,24 +212,32 @@ class LogModel:
             return 0
     
     def get_recent_logs(self, limit: int = 10) -> List[Dict]:
-        """Get recent logs in Vietnam timezone"""
+        """Get recent logs in UTC timezone"""
         try:
             logs = list(self.collection.find()
                        .sort('timestamp', DESCENDING)
                        .limit(limit))
             
-            # Convert to Vietnam timezone
+            # Convert to UTC timezone
             for log in logs:
                 log['_id'] = str(log['_id'])
                 if 'timestamp' in log and log['timestamp']:
                     if isinstance(log['timestamp'], str):
-                        vn_time = parse_agent_timestamp_direct(log['timestamp'])
+                        utc_time = parse_agent_timestamp(log['timestamp'])  # UTC parsing
                     else:
-                        vn_time = to_vietnam_timezone(log['timestamp'])
+                        # Convert to UTC
+                        from datetime import datetime, timezone
+                        if isinstance(log['timestamp'], datetime):
+                            if log['timestamp'].tzinfo is None:
+                                utc_time = log['timestamp'].replace(tzinfo=timezone.utc)
+                            else:
+                                utc_time = log['timestamp'].astimezone(timezone.utc)
+                        else:
+                            utc_time = now_utc()
                     
-                    log['timestamp'] = vn_time.isoformat()
-                    log['display_time'] = vn_time.strftime('%Y-%m-%d %H:%M:%S')
-                    log['time_ago'] = get_time_ago_string(vn_time)
+                    log['timestamp'] = utc_time.isoformat()
+                    log['display_time'] = utc_time.strftime('%Y-%m-%d %H:%M:%S')
+                    log['time_ago'] = get_time_ago_string(utc_time)
             
             return logs
             
@@ -223,7 +247,7 @@ class LogModel:
     
     def find_logs(self, query: Dict = None, limit: int = 100, skip: int = 0, 
                   sort_field: str = "timestamp", sort_order: int = DESCENDING) -> List[Dict]:
-        """Find logs with query"""
+        """Find logs with query - UTC ONLY"""
         try:
             if query is None:
                 query = {}
@@ -233,17 +257,25 @@ class LogModel:
                        .skip(skip)
                        .limit(limit))
             
-            # Convert to Vietnam timezone
+            # Convert to UTC timezone
             for log in logs:
                 log['_id'] = str(log['_id'])
                 if 'timestamp' in log and log['timestamp']:
                     if isinstance(log['timestamp'], str):
-                        vn_time = parse_agent_timestamp_direct(log['timestamp'])
+                        utc_time = parse_agent_timestamp(log['timestamp'])  # UTC parsing
                     else:
-                        vn_time = to_vietnam_timezone(log['timestamp'])
+                        # Convert to UTC
+                        from datetime import datetime, timezone
+                        if isinstance(log['timestamp'], datetime):
+                            if log['timestamp'].tzinfo is None:
+                                utc_time = log['timestamp'].replace(tzinfo=timezone.utc)
+                            else:
+                                utc_time = log['timestamp'].astimezone(timezone.utc)
+                        else:
+                            utc_time = now_utc()
                     
-                    log['timestamp'] = vn_time.isoformat()
-                    log['display_time'] = vn_time.strftime('%Y-%m-%d %H:%M:%S')
+                    log['timestamp'] = utc_time.isoformat()
+                    log['display_time'] = utc_time.strftime('%Y-%m-%d %H:%M:%S')
             
             return logs
             
@@ -252,19 +284,26 @@ class LogModel:
             return []
 
     def get_logs_summary(self, since: object = None) -> Dict:
-        """Get logs summary statistics since a date in Vietnam timezone"""
+        """Get logs summary statistics since a date in UTC timezone"""
         try:
             if since is None:
-                # Default to last 24 hours in Vietnam time
+                # Default to last 24 hours in UTC time
                 from datetime import timedelta
-                since = now_vietnam_naive() - timedelta(days=1)
+                since = to_utc_naive(now_utc()) - timedelta(days=1)
             else:
-                # Convert to Vietnam naive for MongoDB query
+                # Convert to UTC naive for MongoDB query
                 if isinstance(since, str):
-                    since_vn = parse_agent_timestamp_direct(since)
+                    since_utc = parse_agent_timestamp(since)  # UTC parsing
                 else:
-                    since_vn = to_vietnam_timezone(since)
-                since = since_vn.replace(tzinfo=None)
+                    from datetime import datetime, timezone
+                    if isinstance(since, datetime):
+                        if since.tzinfo is None:
+                            since_utc = since.replace(tzinfo=timezone.utc)
+                        else:
+                            since_utc = since.astimezone(timezone.utc)
+                    else:
+                        since_utc = now_utc()
+                since = since_utc.replace(tzinfo=None)
             
             query = {'timestamp': {'$gte': since}}
             
@@ -280,7 +319,7 @@ class LogModel:
                 'blocked_logs': blocked_logs,
                 'error_logs': error_logs,
                 'since': since.isoformat() if hasattr(since, 'isoformat') else str(since),
-                'timezone': 'UTC+7'
+                'timezone': 'UTC'  # Changed from 'UTC+7'
             }
             
         except Exception as e:
@@ -291,5 +330,5 @@ class LogModel:
                 'blocked_logs': 0,
                 'error_logs': 0,
                 'since': None,
-                'timezone': 'UTC+7'
+                'timezone': 'UTC'  # Changed from 'UTC+7'
             }

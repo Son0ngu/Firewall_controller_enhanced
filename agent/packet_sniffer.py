@@ -4,8 +4,8 @@ import threading  # Thư viện hỗ trợ đa luồng để chạy bắt gói t
 import re  #  ADD: Missing import for regex validation
 from typing import Callable, Dict, Optional  # Thư viện hỗ trợ kiểu dữ liệu tĩnh
 
-# Import time utilities
-from time_utils import now_server_compatible, sleep
+# Import time utilities - UTC ONLY
+from time_utils import now_iso, sleep
 
 # Import các module từ thư viện Scapy để bắt và phân tích gói tin mạng
 from scapy.all import sniff  # Hàm sniff để bắt gói tin mạng
@@ -183,9 +183,9 @@ class PacketSniffer:
             
             #  FIX: Nếu tìm thấy tên miền hoặc có kết nối đáng chú ý, tạo record
             if domain or dst_port in [80, 443, 53]:
-                #  FIX: Create complete record with all required fields
+                #  FIX: Create complete record with all required fields - UTC only
                 record = {
-                    "timestamp": now_server_compatible(),
+                    "timestamp": now_iso(),  # UTC ISO timestamp
                     "domain": domain,
                     "src_ip": src_ip,
                     "dest_ip": dst_ip,

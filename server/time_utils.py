@@ -1,22 +1,20 @@
 """
-Clean Server Time Utilities - COMPLETE VERSION
+Clean Server Time Utilities - UTC ONLY
+Simplified time management - chỉ sử dụng UTC:
+- All timestamps in UTC
+- No timezone confusion
+- Clean and simple
 """
 
 import time
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("server_time_utils")
 
 # ========================================
-# TIMEZONE CONFIGURATION
-# ========================================
-
-VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
-
-# ========================================
-# CORE TIME FUNCTIONS
+# CORE TIME FUNCTIONS - UTC ONLY
 # ========================================
 
 def now() -> float:
@@ -27,21 +25,12 @@ def now_utc() -> datetime:
     """Get current UTC datetime"""
     return datetime.now(timezone.utc)
 
-def now_vietnam() -> datetime:
-    """Get current Vietnam datetime (UTC+7)"""
-    return datetime.now(VIETNAM_TIMEZONE)
+def now_iso() -> str:
+    """Get current UTC time as ISO string"""
+    return now_utc().isoformat()
 
-def now_vietnam_naive() -> datetime:
-    """Get current Vietnam time as naive datetime (for MongoDB)"""
-    vietnam_time = now_vietnam()
-    return vietnam_time.replace(tzinfo=None)
-
-def now_vietnam_iso() -> str:
-    """Get current Vietnam time as ISO string"""
-    return now_vietnam().isoformat()
-
-def to_vietnam_timezone(dt: datetime) -> datetime:
-    """Convert any datetime to Vietnam timezone"""
+def to_utc(dt: datetime) -> datetime:
+    """Convert any datetime to UTC"""
     if dt is None:
         return None
     
@@ -49,21 +38,19 @@ def to_vietnam_timezone(dt: datetime) -> datetime:
         # Assume UTC if no timezone
         dt = dt.replace(tzinfo=timezone.utc)
     
-    return dt.astimezone(VIETNAM_TIMEZONE)
+    return dt.astimezone(timezone.utc)
 
-def to_vietnam_naive(dt: datetime) -> datetime:
-    """Convert datetime to Vietnam naive (for MongoDB storage)"""
+def to_utc_naive(dt: datetime) -> datetime:
+    """Convert datetime to UTC naive (for MongoDB storage)"""
     if dt is None:
         return None
     
-    vietnam_dt = to_vietnam_timezone(dt)
-    return vietnam_dt.replace(tzinfo=None)
+    utc_dt = to_utc(dt)
+    return utc_dt.replace(tzinfo=None)
 
-def parse_agent_timestamp_direct(iso_string: str) -> datetime:
+def parse_agent_timestamp(iso_string: str) -> datetime:
     """
-    Parse agent timestamp.
-    Nếu agent gửi format có timezone, trả về datetime với timezone đó.
-    Nếu chỉ nhận được format không có timezone, ASSUME UTC và convert ra giờ VN.
+    Parse agent timestamp - always return UTC datetime
     """
     try:
         if not isinstance(iso_string, str):
@@ -71,65 +58,43 @@ def parse_agent_timestamp_direct(iso_string: str) -> datetime:
         
         logger.debug(f"Parsing agent timestamp: '{iso_string}'")
         
-        # Nếu có dấu "T" và ("+" hoặc "Z")
+        # Handle ISO format with timezone
         if 'T' in iso_string and ('+' in iso_string or 'Z' in iso_string):
             dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
-            if '+07:00' in iso_string:
-                # Nếu có múi giờ VN thì giữ nguyên (không remove tzinfo)
-                logger.debug(f"Vietnam timezone detected: {dt}")
-                return dt  # Giữ dt có tzinfo
-            else:
-                # Nếu không phải VN → chuyển về giờ VN
-                logger.debug(f"Converting {dt} to Vietnam timezone")
-                vn_time = dt.astimezone(VIETNAM_TIMEZONE)
-                return vn_time
+            return dt.astimezone(timezone.utc)  # Always convert to UTC
         elif 'T' in iso_string:
+            # ISO without timezone - assume UTC
             dt = datetime.fromisoformat(iso_string)
-            logger.debug(f"ISO without timezone, assuming UTC: {dt}")
-            utc_dt = dt.replace(tzinfo=timezone.utc)
-            vn_time = utc_dt.astimezone(VIETNAM_TIMEZONE)
-            return vn_time
+            return dt.replace(tzinfo=timezone.utc)
         else:
-            # Xử lý format đơn giản
+            # Handle simple formats
             formats_to_try = ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S']
             for fmt in formats_to_try:
                 try:
                     dt = datetime.strptime(iso_string, fmt)
-                    logger.debug(f"Matched format '{fmt}': {dt}")
-                    # Assume old data là UTC
-                    utc_dt = dt.replace(tzinfo=timezone.utc)
-                    vn_time = utc_dt.astimezone(VIETNAM_TIMEZONE)
-                    return vn_time
+                    return dt.replace(tzinfo=timezone.utc)  # Assume UTC
                 except ValueError:
                     continue
+            
             logger.warning(f"No format matched for '{iso_string}', using current time")
-            return now_vietnam()
+            return now_utc()
+            
     except Exception as e:
         logger.warning(f"Failed to parse agent timestamp '{iso_string}': {e}")
-        return now_vietnam()
+        return now_utc()
 
 # ========================================
-# FORMATTING FUNCTIONS
+# FORMATTING FUNCTIONS - UTC ONLY
 # ========================================
 
 def format_datetime(dt, format='%Y-%m-%d %H:%M:%S') -> str:
-    """
-    Format datetime object to string
-    
-    Args:
-        dt: datetime object or string
-        format: strftime format string
-        
-    Returns:
-        str: Formatted datetime string
-    """
+    """Format datetime object to string (UTC)"""
     if dt is None:
         return 'N/A'
     
     if isinstance(dt, str):
         try:
-            # Try to parse if it's a string
-            dt = parse_agent_timestamp_direct(dt)
+            dt = parse_agent_timestamp(dt)
         except:
             return dt
     
@@ -137,53 +102,42 @@ def format_datetime(dt, format='%Y-%m-%d %H:%M:%S') -> str:
         return str(dt)
     
     try:
+        # Convert to UTC if needed
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        
         return dt.strftime(format)
     except Exception as e:
         logger.warning(f"Error formatting datetime {dt}: {e}")
         return str(dt)
 
 def format_timestamp(timestamp: float, format='%Y-%m-%d %H:%M:%S') -> str:
-    """
-    Format Unix timestamp to string
-    
-    Args:
-        timestamp: Unix timestamp
-        format: strftime format string
-        
-    Returns:
-        str: Formatted timestamp string (Vietnam time)
-    """
+    """Format Unix timestamp to string (UTC)"""
     if timestamp is None:
         return 'N/A'
     
     try:
-        # Convert to Vietnam datetime
-        dt = datetime.fromtimestamp(timestamp, tz=VIETNAM_TIMEZONE)
+        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
         return dt.strftime(format)
     except Exception as e:
         logger.warning(f"Error formatting timestamp {timestamp}: {e}")
         return str(timestamp)
 
 def is_recent(dt: datetime, minutes: int = 5) -> bool:
-    """
-    Check if datetime is recent (within specified minutes)
-    
-    Args:
-        dt: datetime to check
-        minutes: minutes threshold
-        
-    Returns:
-        bool: True if recent
-    """
+    """Check if datetime is recent (within specified minutes) - UTC"""
     if dt is None:
         return False
     
     try:
-        # Convert to Vietnam timezone if needed
+        # Convert to UTC if needed
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=VIETNAM_TIMEZONE)
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
         
-        current = now_vietnam()
+        current = now_utc()
         time_diff = current - dt
         return time_diff.total_seconds() <= (minutes * 60)
         
@@ -192,24 +146,18 @@ def is_recent(dt: datetime, minutes: int = 5) -> bool:
         return False
 
 def calculate_age_seconds(dt: datetime) -> float:
-    """
-    Calculate age of datetime in seconds
-    
-    Args:
-        dt: datetime to calculate age for
-        
-    Returns:
-        float: Age in seconds
-    """
+    """Calculate age of datetime in seconds - UTC"""
     if dt is None:
         return 0.0
     
     try:
-        # Convert to Vietnam timezone if needed
+        # Convert to UTC if needed
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=VIETNAM_TIMEZONE)
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
         
-        current = now_vietnam()
+        current = now_utc()
         time_diff = current - dt
         return time_diff.total_seconds()
         
@@ -218,15 +166,7 @@ def calculate_age_seconds(dt: datetime) -> float:
         return 0.0
 
 def get_time_ago_string(dt: datetime) -> str:
-    """
-    Get human-readable "time ago" string
-    
-    Args:
-        dt: datetime to calculate for
-        
-    Returns:
-        str: Human readable time ago string
-    """
+    """Get human-readable "time ago" string - UTC"""
     if dt is None:
         return 'N/A'
     
@@ -250,32 +190,53 @@ def get_time_ago_string(dt: datetime) -> str:
         return str(dt)
 
 # ========================================
-# DEBUG FUNCTIONS
+# CACHE & VALIDATION - UTC ONLY
+# ========================================
+
+def is_cache_valid(timestamp: float, ttl: float) -> bool:
+    """Check if cache timestamp is still valid - UTC"""
+    if not timestamp:
+        return False
+    current_time = now()
+    return (current_time - timestamp) < ttl
+
+def cache_age(timestamp: float) -> float:
+    """Get cache age in seconds - UTC"""
+    if not timestamp:
+        return float('inf')
+    return now() - timestamp
+
+# ========================================
+# DEBUG FUNCTIONS - UTC ONLY
 # ========================================
 
 def get_time_info() -> dict:
-    """Get comprehensive time information for debugging"""
+    """Get comprehensive time information for debugging - UTC only"""
     current_utc = now_utc()
-    current_vietnam = now_vietnam()
-    current_naive = now_vietnam_naive()
     
     return {
         "current_utc": current_utc.isoformat(),
-        "current_vietnam": current_vietnam.isoformat(),
-        "current_vietnam_naive": current_naive.isoformat(),
         "current_timestamp": now(),
-        "timezone_offset": "+07:00"
+        "timezone": "UTC"
     }
 
 def debug_time_info():
-    """Print time debug information"""
+    """Print time debug information - UTC only"""
     info = get_time_info()
-    print("🕐 Server Time Debug Info:")
+    print("🕐 Server Time Debug Info (UTC ONLY):")
     print(f"   UTC Time: {info['current_utc']}")
-    print(f"   Vietnam Time: {info['current_vietnam']}")
-    print(f"   Vietnam Naive: {info['current_vietnam_naive']}")
     print(f"   Timestamp: {info['current_timestamp']}")
-    print(f"   Timezone: {info['timezone_offset']}")
+    print(f"   Timezone: {info['timezone']}")
+
+# ========================================
+# ALIASES FOR COMPATIBILITY
+# ========================================
+
+# Keep old function names for backward compatibility but make them UTC
+now_vietnam = now_utc  # Now returns UTC
+now_vietnam_naive = lambda: now_utc().replace(tzinfo=None)  # UTC naive
+now_vietnam_iso = now_iso  # UTC ISO
+parse_agent_timestamp_direct = parse_agent_timestamp  # UTC parsing
 
 if __name__ == "__main__":
     # Test functions when run directly
@@ -284,7 +245,7 @@ if __name__ == "__main__":
     
     # Test format functions
     print("🧪 Testing format functions:")
-    test_dt = now_vietnam_naive()
+    test_dt = now_utc().replace(tzinfo=None)
     print(f"format_datetime: {format_datetime(test_dt)}")
     print(f"format_timestamp: {format_timestamp(now())}")
     print(f"is_recent: {is_recent(test_dt)}")

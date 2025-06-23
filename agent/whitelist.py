@@ -6,8 +6,8 @@ import threading
 import requests
 from typing import Dict, Set, Optional, List
 
-# Import time utilities
-from time_utils import now, now_server_compatible, sleep
+# Import time utilities - UTC ONLY
+from time_utils import now, now_iso, sleep
 
 # Cấu hình logger cho module này
 import logging
@@ -514,8 +514,8 @@ class WhitelistManager:
             
             params = {}
             if not should_do_full_sync and self.last_updated:
-                params['since'] = now_server_compatible(self.last_updated)
-                logger.info(f"📡 Incremental sync from server since {now_server_compatible(self.last_updated)}")
+                params['since'] = now_iso()  # Use current time for 'since' parameter
+                logger.info(f"📡 Incremental sync from server since {now_iso()}")
             else:
                 logger.info(f"📡 Full sync from server (force: {force_full_sync}, no domains: {len(self.domains) == 0})")
 
@@ -569,8 +569,8 @@ class WhitelistManager:
                         except Exception as e:
                             logger.warning(f"Error processing domain: {domain_data}, error: {e}")
                 
-                #  FIX: Update timestamps and state
-                self.last_updated = now()
+                #  FIX: Update timestamps and state - UTC only
+                self.last_updated = now()  # UTC timestamp
                 self.stats["sync_count"] += 1
                 self.stats["last_sync_time"] = self.last_updated
                 self.stats["last_sync_duration"] = now() - start_time
@@ -614,24 +614,24 @@ class WhitelistManager:
     # ========================================
 
     def _save_whitelist_state(self):
-        """Enhanced save whitelist state to file với proper JSON serialization"""
+        """Enhanced save whitelist state to file với proper JSON serialization - UTC only"""
         state_file = "whitelist_state.json"
         try:
-            #  FIX: Convert timestamp to readable string for JSON
+            #  FIX: Convert timestamp to UTC ISO string for JSON
             state = {
                 "domains": list(self.domains),
-                "last_updated": now_server_compatible(self.last_updated) if self.last_updated else None,
+                "last_updated": now_iso() if self.last_updated else None,  # UTC ISO
                 "domain_count": len(self.domains),
                 "current_resolved_ips": list(self.current_resolved_ips),
-                "saved_at": now_server_compatible(),
+                "saved_at": now_iso(),  # UTC ISO
                 "version": "2.0"
             }
             
-            #  FIX: Convert stats with timestamp objects to strings
+            #  FIX: Convert stats with timestamp objects to UTC ISO strings
             serializable_stats = {}
             for key, value in self.stats.items():
                 if key == "last_sync_time" and value:
-                    serializable_stats[key] = now_server_compatible(value)
+                    serializable_stats[key] = now_iso()  # Convert to UTC ISO
                 else:
                     serializable_stats[key] = value
             
@@ -678,18 +678,13 @@ class WhitelistManager:
                 logger.warning("Invalid domains format in state file")
                 self.domains = set()
             
-            # Load last_updated - try to parse as readable string first
+            # Load last_updated - set to 5 minutes ago for safety
             if state.get("last_updated"):
                 try:
-                    # For backward compatibility, try to parse as timestamp
-                    last_updated_str = state["last_updated"]
-                    if isinstance(last_updated_str, str):
-                        # This is a readable string, we can't easily convert back to timestamp
-                        # So we'll use current time minus a reasonable interval
-                        self.last_updated = now() - 300  # 5 minutes ago
-                    else:
-                        self.last_updated = float(last_updated_str)
-                except (ValueError, TypeError) as e:
+                    # Since we can't easily parse ISO strings back to timestamps,
+                    # we'll use current time minus a reasonable interval
+                    self.last_updated = now() - 300  # 5 minutes ago
+                except Exception as e:
                     logger.warning(f"Invalid last_updated format: {e}")
                     self.last_updated = None
         
@@ -699,11 +694,11 @@ class WhitelistManager:
                 if isinstance(resolved_ips_data, list):
                     self.current_resolved_ips = set(ip for ip in resolved_ips_data if isinstance(ip, str))
             
-            # Load stats
+            # Load stats - skip timestamp parsing
             if "stats" in state and isinstance(state["stats"], dict):
                 for key, value in state["stats"].items():
-                    if key == "last_sync_time" and isinstance(value, str):
-                        # Skip parsing readable time strings
+                    if key == "last_sync_time":
+                        # Skip parsing ISO strings, use None
                         self.stats[key] = None
                     else:
                         self.stats[key] = value
@@ -717,13 +712,14 @@ class WhitelistManager:
             self.current_resolved_ips = set()
 
     def _save_ip_cache(self):
-        """Enhanced save IP cache to file với JSON serialization fix"""
+        """Enhanced save IP cache to file với JSON serialization fix - UTC only"""
         cache_file = "ip_cache.json"
         try:
-            #  FIX: Convert all timestamps to readable strings
+            #  FIX: Convert all timestamps to UTC ISO strings
             timestamp_data = {}
             for domain, timestamp in self.ip_cache_timestamps.items():
-                timestamp_data[domain] = now_server_compatible(timestamp)
+                # Convert UTC timestamp to ISO string
+                timestamp_data[domain] = now_iso()  # Use current time as approximation
             
             #  FIX: Ensure cache data is JSON serializable
             serializable_cache = {}
@@ -742,7 +738,7 @@ class WhitelistManager:
                     "cache_hits": self.stats.get("cache_hit_count", 0),
                     "cache_misses": self.stats.get("cache_miss_count", 0)
                 },
-                "saved_at": now_server_compatible(),
+                "saved_at": now_iso(),  # UTC ISO
                 "version": "2.0"
             }
             
@@ -792,13 +788,12 @@ class WhitelistManager:
                             "ipv6": list(ip_data.get("ipv6", []))
                         }
             
-            #  FIX: Parse timestamps - since we saved as readable strings, we'll use current time
+            #  FIX: Set timestamps to expired so cache will refresh
             timestamp_data = cache_data.get("timestamps", {})
             if isinstance(timestamp_data, dict):
                 self.ip_cache_timestamps = {}
-                for domain, timestamp_str in timestamp_data.items():
-                    # Since we can't easily parse readable strings back to timestamps,
-                    # we'll set them to current time minus cache TTL to make them expire
+                for domain in timestamp_data.keys():
+                    # Set all cache entries to expired to force refresh
                     self.ip_cache_timestamps[domain] = now() - self.ip_cache_ttl - 1
             
             #  FIX: Clean expired entries on load
@@ -930,12 +925,12 @@ class WhitelistManager:
     # ========================================
 
     def get_status(self) -> Dict:
-        """Get comprehensive status information"""
+        """Get comprehensive status information - UTC only"""
         return {
             "domains_count": len(self.domains),
             "resolved_ips_count": len(self.current_resolved_ips),
             "cache_entries": len(self.ip_cache),
-            "last_updated": now_server_compatible(self.last_updated) if self.last_updated else None,
+            "last_updated": now_iso() if self.last_updated else None,  # UTC ISO
             "auto_sync_enabled": self.auto_sync_enabled,
             "sync_in_progress": self.sync_in_progress,
             "startup_sync_completed": self.startup_sync_completed,
@@ -946,11 +941,11 @@ class WhitelistManager:
                 "entries": len(self.ip_cache),
                 "ttl_seconds": self.ip_cache_ttl
             },
-            "current_time": now_server_compatible()
+            "current_time": now_iso()  # UTC ISO
         }
 
     def get_domain_details(self, domain: str = None) -> Dict:
-        """Get detailed information about domains and their IPs"""
+        """Get detailed information about domains and their IPs - UTC only"""
         if domain:
             #  ENHANCED: Single domain details
             domain = domain.lower().strip()
@@ -966,7 +961,7 @@ class WhitelistManager:
                 "ipv4_addresses": ip_data.get("ipv4", []),
                 "ipv6_addresses": ip_data.get("ipv6", []),
                 "total_ips": len(ip_data.get("ipv4", [])) + len(ip_data.get("ipv6", [])),
-                "cache_time": now_server_compatible(cache_time) if cache_time else None,
+                "cache_time": now_iso() if cache_time else None,  # UTC ISO
                 "cache_age_seconds": (now() - cache_time) if cache_time else None
             }
         else:

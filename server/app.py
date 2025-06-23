@@ -1,5 +1,6 @@
 """
 Main Flask application with MVC architecture
+UTC ONLY - Clean and simple
 """
 
 #  QUAN TRỌNG: Monkey patch PHẢI ở đầu tiên, trước tất cả imports khác
@@ -20,8 +21,8 @@ from flask_cors import CORS
 #  Import từ config.py (không phải database/config.py)
 from database.config import get_config, get_mongo_client, get_database, validate_config, close_mongo_client
 
-# Import time utilities
-from time_utils import now_vietnam_iso, parse_agent_timestamp_direct
+# Import time utilities - UTC ONLY
+from time_utils import now_iso, format_datetime, parse_agent_timestamp
 
 #  Import MVC components với absolute imports
 from models.whitelist_model import WhitelistModel
@@ -73,16 +74,16 @@ def create_app():
     config = get_config()
     app.config.from_object(config)
     
-    #  Add template filters using time_utils
+    #  Add template filters using time_utils - UTC ONLY
     @app.template_filter('format_datetime')
-    def format_datetime_filter(dt, format='%Y-%m-%d %H:%M:%S'):
-        """Format datetime for template using time_utils"""
+    def format_datetime_filter(dt, format='%Y-%m-%d %H:%M:%S UTC'):
+        """Format datetime for template using time_utils - UTC ONLY"""
         if dt is None:
             return 'N/A'
         if isinstance(dt, str):
             try:
-                # Parse ISO string using time_utils
-                dt = parse_agent_timestamp_direct(dt)
+                # Parse ISO string using UTC parsing
+                dt = parse_agent_timestamp(dt)  # UTC parsing
             except:
                 return dt
         return format_datetime(dt, format)
@@ -112,7 +113,7 @@ def create_app():
     #  FIX: Initialize database BEFORE using it
     try:
         db = get_database(config)
-        app.logger.info(f" MongoDB connected: {config.MONGO_DBNAME}")
+        app.logger.info(f"✅ MongoDB connected: {config.MONGO_DBNAME}")
         
         #  FIX: Initialize indexes safely with proper parameters
         initialize_database_indexes(app, db)
@@ -128,7 +129,7 @@ def create_app():
         if log_service is None or agent_service is None:
             raise RuntimeError("Failed to initialize services")
             
-        app.logger.info(" MVC components initialized successfully")
+        app.logger.info("✅ MVC components initialized successfully")
         
     except Exception as e:
         app.logger.error(f"❌ Failed to initialize MVC components: {e}")
@@ -166,7 +167,7 @@ def initialize_database_indexes(app, db):
         log_model = LogModel(db) 
         agent_model = AgentModel(db)
         
-        app.logger.info(" Database indexes initialized successfully")
+        app.logger.info("✅ Database indexes initialized successfully")
         
     except Exception as e:
         #  FIX: Use app.logger properly
@@ -185,28 +186,28 @@ def register_controllers(app, socketio, db):
         agent_model = AgentModel(db)
         log_model = LogModel(db)
         
-        logger.info(" Models initialized")
+        logger.info("✅ Models initialized")
         
         #  Initialize services
         whitelist_service = WhitelistService(whitelist_model, socketio)
         agent_service = AgentService(agent_model, socketio)
         log_service = LogService(log_model, socketio)
         
-        logger.info(" Services initialized")
+        logger.info("✅ Services initialized")
         
         #  Initialize controllers
         whitelist_controller = WhitelistController(whitelist_model, whitelist_service, socketio)
         agent_controller = AgentController(agent_model, agent_service, socketio)
         log_controller = LogController(log_model, log_service, socketio)
         
-        logger.info(" Controllers initialized")
+        logger.info("✅ Controllers initialized")
         
         #  Register blueprints with proper URL prefixes
         app.register_blueprint(whitelist_controller.blueprint, url_prefix='/api')
         app.register_blueprint(agent_controller.blueprint, url_prefix='/api')
         app.register_blueprint(log_controller.blueprint, url_prefix='/api')
         
-        logger.info(" All controllers registered successfully")
+        logger.info("✅ All controllers registered successfully")
         
         #  Debug: Log registered routes
         logger.info("📋 Registered API routes:")
@@ -225,11 +226,11 @@ def register_controllers(app, socketio, db):
         return None, None
 
 def register_main_routes(app, log_service, agent_service):
-    """Register main web routes"""
+    """Register main web routes - UTC ONLY"""
     
     @app.route('/')
     def index():
-        """Dashboard route with statistics"""
+        """Dashboard route with statistics - UTC ONLY"""
         try:
             # Get dashboard statistics
             stats = {
@@ -289,48 +290,73 @@ def register_main_routes(app, log_service, agent_service):
     
     @app.route('/api/health')
     def health_check():
+        """Health check endpoint - UTC ONLY"""
         return jsonify({
             "status": "healthy",
             "version": "1.0.0",
             "architecture": "MVC",
-            "timestamp": now_vietnam_iso()
+            "timestamp": now_iso()  # UTC ISO
         }), 200
     
     @app.route('/api/config')
     def get_client_config():
+        """Client configuration endpoint - UTC ONLY"""
         return jsonify({
             "socketio_enabled": True,
             "version": "1.0.0",
             "architecture": "MVC",
-            "environment": os.environ.get('FLASK_ENV', 'production')
+            "environment": os.environ.get('FLASK_ENV', 'production'),
+            "timezone": "UTC",
+            "server_time": now_iso()  # UTC ISO
         }), 200
 
 def register_error_handlers(app):
-    """Register error handlers"""
+    """Register error handlers - UTC ONLY"""
     
     @app.errorhandler(404)
     def not_found(e):
         if request.path.startswith('/api/'):
-            return jsonify({"error": "Not found"}), 404
+            return jsonify({
+                "error": "Not found",
+                "timestamp": now_iso()  # UTC ISO
+            }), 404
         return render_template('404.html'), 404
     
     @app.errorhandler(500)
     def server_error(e):
         app.logger.error(f"Server error: {str(e)}")
         if request.path.startswith('/api/'):
-            return jsonify({"error": "Internal server error"}), 500
+            return jsonify({
+                "error": "Internal server error",
+                "timestamp": now_iso()  # UTC ISO
+            }), 500
         return render_template('500.html'), 500
 
 def register_socketio_events(socketio):
-    """Register Socket.IO events"""
+    """Register Socket.IO events - UTC ONLY"""
     
     @socketio.on('connect')
     def handle_connect():
-        logger.info(f"Client connected: {request.sid}")
+        logger.info(f"Client connected: {request.sid} at {now_iso()}")
+        # Send welcome message with UTC timestamp
+        socketio.emit('server_message', {
+            'type': 'welcome',
+            'message': 'Connected to Firewall Controller',
+            'timestamp': now_iso()  # UTC ISO
+        }, room=request.sid)
     
     @socketio.on('disconnect')
     def handle_disconnect():
-        logger.info(f"Client disconnected: {request.sid}")
+        logger.info(f"Client disconnected: {request.sid} at {now_iso()}")
+    
+    @socketio.on('ping')
+    def handle_ping(data):
+        """Handle ping from client - UTC ONLY"""
+        logger.debug(f"Ping received from {request.sid}")
+        socketio.emit('pong', {
+            'timestamp': now_iso(),  # UTC ISO
+            'client_data': data
+        }, room=request.sid)
 
 if __name__ == "__main__":
     try:
@@ -344,6 +370,7 @@ if __name__ == "__main__":
         logger.info(f"🌐 Server: {config.HOST}:{config.PORT}")
         logger.info(f"🏗️  Architecture: Model-View-Controller")
         logger.info(f"🗄️  Database: {config.MONGO_DBNAME}")
+        logger.info(f"🕐 Timezone: UTC (Clean & Simple)")
         
         #  FIX: Disable reloader để tránh double initialization
         socketio.run(

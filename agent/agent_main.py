@@ -6,11 +6,11 @@ Firewall Controller Agent - Module Chính (Refactored)
 - Consolidated IP detection logic
 - Enhanced error handling in critical paths
 - Streamlined component initialization
-- Detailed Vietnamese comments
+- UTC ONLY - No timezone confusion
 """
 
 # ========================================
-# IMPORTS - Updated để sử dụng time_utils
+# IMPORTS - UTC ONLY
 # ========================================
 
 # Core system libraries
@@ -37,12 +37,12 @@ from log_sender import LogSender
 from heartbeat_sender import HeartbeatSender
 from command_processor import CommandProcessor
 
-#  NEW: Import time utilities
+# UPDATED: Clean time utilities - UTC only
 from time_utils import (
-    now, now_iso, now_utc_iso, now_vietnam_iso, now_server_compatible,
+    now, now_iso, now_server_compatible,
     uptime, uptime_string, sleep,
     is_cache_valid, cache_age,
-    agent_time, cache_time, debug_time_info 
+    debug_time_info 
 )
 
 # ========================================
@@ -168,12 +168,12 @@ def validate_configuration(config: Dict) -> bool:
         return False
 
 # ========================================
-# IP DETECTION LOGIC (Updated)
+# IP DETECTION LOGIC - UTC ONLY
 # ========================================
 
 class IPDetector:
     """
-    UPDATED: IP detection với time_utils
+    UPDATED: IP detection với UTC only
     """
     
     def __init__(self):
@@ -184,11 +184,11 @@ class IPDetector:
 
     def get_local_ip(self, force_refresh: bool = False) -> str:
         """
-         UPDATED: Sử dụng time_utils
+        UPDATED: Sử dụng UTC time_utils
         """
-        current_time = now()  #  Use time_utils
+        current_time = now()  # UTC timestamp
         
-        #  UPDATED: Use cache validation from time_utils
+        # Use cache validation from time_utils
         if (not force_refresh and 
             self._cached_local_ip and 
             is_cache_valid(self._last_ip_check, self._ip_cache_ttl)):
@@ -197,7 +197,7 @@ class IPDetector:
             logger.debug(f"IP cache hit: {self._cached_local_ip} (age: {age:.1f}s)")
             return self._cached_local_ip
         
-        #  Log cache miss reason
+        # Log cache miss reason
         if force_refresh:
             logger.debug("IP cache miss: force refresh requested")
         elif not self._cached_local_ip:
@@ -214,8 +214,8 @@ class IPDetector:
                 
                 if local_ip and local_ip != "127.0.0.1":
                     self._cached_local_ip = local_ip
-                    self._last_ip_check = current_time  #  Use time_utils timestamp
-                    logger.debug(f"Detected local IP (method 1): {local_ip} at {now_server_compatible()}")
+                    self._last_ip_check = current_time
+                    logger.debug(f"Detected local IP (method 1): {local_ip} at {now_iso()}")
                     return local_ip
         except Exception as e:
             logger.debug(f"Method 1 failed: {e}")
@@ -227,8 +227,8 @@ class IPDetector:
             
             if local_ip and local_ip != "127.0.0.1":
                 self._cached_local_ip = local_ip
-                self._last_ip_check = current_time  #  Use time_utils timestamp
-                logger.debug(f"Detected local IP (method 2): {local_ip} at {now_server_compatible()}")
+                self._last_ip_check = current_time
+                logger.debug(f"Detected local IP (method 2): {local_ip} at {now_iso()}")
                 return local_ip
         except Exception as e:
             logger.debug(f"Method 2 failed: {e}")
@@ -243,8 +243,8 @@ class IPDetector:
                         # Skip loopback và link-local addresses
                         if not ip.startswith(('127.', '169.254.')):
                             self._cached_local_ip = ip
-                            self._last_ip_check = current_time  #  Use time_utils timestamp
-                            logger.debug(f"Detected local IP (method 3): {ip} at {now_server_compatible()}")
+                            self._last_ip_check = current_time
+                            logger.debug(f"Detected local IP (method 3): {ip} at {now_iso()}")
                             return ip
         except Exception as e:
             logger.debug(f"Method 3 failed: {e}")
@@ -252,21 +252,20 @@ class IPDetector:
         # Fallback
         logger.warning("Could not detect local IP, using localhost")
         self._cached_local_ip = "127.0.0.1"
-        self._last_ip_check = current_time  #  Use time_utils timestamp
+        self._last_ip_check = current_time
         return "127.0.0.1"
     
     def get_cache_debug_info(self) -> Dict:
         """
-         NEW: Get cache debug info using time_utils
+        Get cache debug info using UTC time_utils
         """
         return {
             "cached_ip": self._cached_local_ip,
             "last_check_timestamp": self._last_ip_check,
-            "last_check_readable": agent_time.get_readable_timestamp(self._last_ip_check) if self._last_ip_check > 0 else "never",
+            "last_check_iso": now_server_compatible(self._last_ip_check) if self._last_ip_check > 0 else "never",
             "cache_age": cache_age(self._last_ip_check) if self._last_ip_check > 0 else -1,
             "ttl": self._ip_cache_ttl,
-            "cache_valid": is_cache_valid(self._last_ip_check, self._ip_cache_ttl),
-            "cache_info": cache_time.get_cache_info(self._last_ip_check, self._ip_cache_ttl) if self._last_ip_check > 0 else None
+            "cache_valid": is_cache_valid(self._last_ip_check, self._ip_cache_ttl)
         }
     
     def get_admin_status(self, force_refresh: bool = False) -> bool:
@@ -310,9 +309,7 @@ def get_local_ip() -> str:
 
 class CriticalErrorHandler:
     """
-     REQUIRED: Proper error handling in critical paths
-    
-    Centralized error handling cho các operations critical.
+    Proper error handling in critical paths
     """
     
     @staticmethod
@@ -320,15 +317,6 @@ class CriticalErrorHandler:
                     return_on_error=None, log_traceback=True, **kwargs):
         """
         Thực thi function một cách an toàn với error handling.
-        
-        Args:
-            func: Function cần thực thi
-            error_msg: Message khi có lỗi
-            return_on_error: Giá trị trả về khi có lỗi
-            log_traceback: Có log traceback không
-            
-        Returns:
-            Kết quả của function hoặc return_on_error
         """
         try:
             return func(*args, **kwargs)
@@ -347,7 +335,7 @@ class CriticalErrorHandler:
                 logger.info(f"Starting critical operation: {operation_name}")
                 try:
                     result = func(*args, **kwargs)
-                    logger.info(f" Critical operation completed: {operation_name}")
+                    logger.info(f"Critical operation completed: {operation_name}")
                     return result
                 except Exception as e:
                     logger.error(f"Critical operation failed: {operation_name} - {e}", exc_info=True)
@@ -356,13 +344,13 @@ class CriticalErrorHandler:
         return decorator
 
 # ========================================
-# AGENT REGISTRATION
+# AGENT REGISTRATION - UTC ONLY
 # ========================================
 
 @CriticalErrorHandler.critical_operation("Agent Registration")
 def register_agent() -> bool:
     """
-     UPDATED: Registration với time_utils
+    UPDATED: Registration với UTC timestamps
     """
     try:
         # Collect agent information
@@ -382,8 +370,8 @@ def register_agent() -> bool:
                 "firewall_management": admin_status,
                 "whitelist_sync": True
             },
-            "registration_time": now_iso(),  #  Use time_utils
-            "registration_timestamp": now()  #  Unix timestamp
+            "registration_time": now_iso(),  # UTC ISO
+            "registration_timestamp": now()  # UTC Unix timestamp
         }
         
         # Try registration với multiple servers
@@ -403,13 +391,6 @@ def register_agent() -> bool:
 def try_register_with_server(server_url: str, agent_info: Dict) -> bool:
     """
     Thử đăng ký với một server cụ thể.
-    
-    Args:
-        server_url: URL của server
-        agent_info: Thông tin agent
-        
-    Returns:
-        bool: True nếu thành công
     """
     try:
         register_url = f"{server_url.rstrip('/')}/api/agents/register"
@@ -427,17 +408,17 @@ def try_register_with_server(server_url: str, agent_info: Dict) -> bool:
             if data.get('success'):
                 agent_data = data.get('data', {})
                 
-                #  Save credentials globally
+                # Save credentials globally
                 config['agent_id'] = agent_data.get('agent_id')
                 config['agent_token'] = agent_data.get('token')
                 config['user_id'] = agent_data.get('user_id')
                 config['server_url'] = server_url
                 
-                #  Update agent state
+                # Update agent state
                 agent_state['agent_id'] = config['agent_id']
                 agent_state['registration_completed'] = True
                 
-                logger.info(f" Registration successful - Agent ID: {config['agent_id']}")
+                logger.info(f"Registration successful - Agent ID: {config['agent_id']}")
                 return True
             else:
                 logger.warning(f"Registration rejected: {data.get('error')}")
@@ -457,12 +438,12 @@ def try_register_with_server(server_url: str, agent_info: Dict) -> bool:
         return False
 
 # ========================================
-# PACKET DETECTION HANDLER (Updated)
+# PACKET DETECTION HANDLER - UTC ONLY
 # ========================================
 
 def handle_domain_detection(record: Dict):
     """
-     UPDATED: Handler với time_utils timestamps
+    UPDATED: Handler với UTC timestamps only
     """
     try:
         # Extract packet information
@@ -519,11 +500,10 @@ def handle_domain_detection(record: Dict):
             action = "MONITORED"
             level = "INFO"
         
-        #  UPDATED: Create enhanced log record với time_utils
+        # UPDATED: Create enhanced log record với UTC timestamps
         enhanced_record = {
-            "timestamp": now_iso(),  #  ISO timestamp
-            "timestamp_utc": now_utc_iso(),  #  UTC timestamp
-            "timestamp_unix": now(),  # Unix timestamp
+            "timestamp": now_iso(),  # UTC ISO timestamp
+            "timestamp_unix": now(),  # UTC Unix timestamp
             "agent_id": config.get("agent_id", "unknown"),
             "level": level,
             "action": action,
@@ -539,7 +519,7 @@ def handle_domain_detection(record: Dict):
             "domain_allowed": domain_allowed,
             "ip_allowed": ip_allowed,
             "source": "domain_detection",
-            "agent_uptime": uptime_string()  # Add uptime info
+            "agent_uptime": uptime_string()
         }
         
         # Queue log với error handling
@@ -572,8 +552,6 @@ def handle_domain_detection(record: Dict):
 def initialize_components():
     """
     ENHANCED: Khởi tạo tất cả components với proper error handling
-    
-    Khởi tạo các components theo thứ tự với error handling và state tracking.
     """
     global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
     
@@ -701,12 +679,12 @@ def process_command(command: Dict):
         logger.error(f"Error processing command: {e}")
 
 # ========================================
-# CLEANUP
+# CLEANUP - UTC ONLY
 # ========================================
 
 def cleanup():
     """
-    UPDATED: Cleanup với time_utils logging
+    UPDATED: Cleanup với UTC timestamps only
     """
     global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender
     
@@ -733,10 +711,10 @@ def cleanup():
         shutdown_log = {
             "agent_id": config['agent_id'],
             "event_type": "agent_shutdown",
-            "timestamp": now_iso(),  # Use time_utils
-            "timestamp_unix": now(),  # Unix timestamp
-            "uptime_seconds": uptime(),  # Uptime
-            "uptime_string": uptime_string(),  # Formatted uptime
+            "timestamp": now_iso(),  # UTC ISO
+            "timestamp_unix": now(),  # UTC Unix timestamp
+            "uptime_seconds": uptime(),
+            "uptime_string": uptime_string(),
             "uptime_info": agent_state
         }
         CriticalErrorHandler.safe_execute(
@@ -744,7 +722,7 @@ def cleanup():
             shutdown_log,
             error_msg="Error sending shutdown log"
         )
-        sleep(2)  # Use time_utils sleep
+        sleep(2)
         
         CriticalErrorHandler.safe_execute(
             log_sender.stop,
@@ -785,52 +763,22 @@ def signal_handler(sig, frame):
     running = False
 
 # ========================================
-# ENHANCED SECURITY INITIALIZATION
-# ========================================
-
-def initialize_security_protection():
-    """
-    Initialize advanced security protection
-    """
-    try:
-        logger.info("Initializing security protection...")
-        
-        # Check if running as admin
-        if not check_admin_privileges():
-            logger.warning("Not running as admin - limited protection available")
-            return False
-        
-        # Initialize process protector
-        from process_protection import ProcessProtector
-        protector = ProcessProtector()
-        
-        if protector.start_protection():
-            logger.info("Advanced process protection active")
-            return True
-        else:
-            logger.warning("Failed to activate advanced protection")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error initializing security protection: {e}")
-        return False
-
-# ========================================
-# MAIN FUNCTION
+# MAIN FUNCTION - UTC ONLY
 # ========================================
 
 def main():
     """
-    UPDATED: Main function với time_utils
+    UPDATED: Main function với UTC timestamps only
     """
     global config, running
     
     try:
         logger.info("Starting Secure Firewall Controller Agent...")
         
-        # ADD: Debug time info in debug mode
+        # Debug time info in debug mode
         if logger.isEnabledFor(logging.DEBUG):
-            debug_time_info()
+            debug_info = debug_time_info()
+            logger.debug(f"Time info: {debug_info}")
         
         # Load and validate configuration
         logger.info("Loading configuration...")
@@ -854,7 +802,7 @@ def main():
         startup_delay = config["general"]["startup_delay"]
         if startup_delay > 0:
             logger.info(f"Applying startup delay: {startup_delay} seconds...")
-            sleep(startup_delay)  # Use time_utils sleep
+            sleep(startup_delay)
         
         # Initialize all components
         if not initialize_components():
@@ -871,8 +819,8 @@ def main():
                 "admin_privileges": check_admin_privileges(),
                 "firewall_enabled": config["firewall"]["enabled"],
                 "firewall_mode": config["firewall"]["mode"],
-                "timestamp": now_iso(),  # Use time_utils
-                "timestamp_unix": now(),  # Unix timestamp
+                "timestamp": now_iso(),  # UTC ISO
+                "timestamp_unix": now(),  # UTC Unix timestamp
             }
             log_sender.queue_log(startup_log)
         
@@ -880,24 +828,24 @@ def main():
         agent_state['startup_completed'] = True
         logger.info(f"🎉 Agent startup completed successfully (startup time: {uptime_string()})")
         
-        # UPDATED: Main loop với time_utils
+        # Main loop với UTC timestamps
         loop_count = 0
-        last_status_log = now()  # Use time_utils
+        last_status_log = now()  # UTC timestamp
         
         while running:
-            sleep(1)  # Use time_utils sleep
+            sleep(1)
             loop_count += 1
             
             # Log status every 5 minutes
-            if now() - last_status_log >= 300:  # Use time_utils
+            if now() - last_status_log >= 300:
                 logger.info(f"Agent running - Loop: {loop_count}, Uptime: {uptime_string()}")
                 
-                # ADD: Debug cache info in debug mode
+                # Debug cache info in debug mode
                 if logger.isEnabledFor(logging.DEBUG):
                     cache_info = ip_detector.get_cache_debug_info()
                     logger.debug(f"IP Cache: {cache_info}")
                 
-                last_status_log = now()  #  Use time_utils
+                last_status_log = now()
         
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
@@ -934,7 +882,6 @@ def run_as_service():
                 win32event.SetEvent(self.stop_event)
                 self.running = False
                 
-                # FIX: Proper cleanup
                 global running
                 running = False
                 
@@ -954,7 +901,6 @@ def run_as_service():
                 )
                 
                 try:
-                    # FIX: Run main logic with proper error handling
                     main()
                 except Exception as e:
                     servicemanager.LogErrorMsg(f"Service error: {e}")
@@ -966,7 +912,7 @@ def run_as_service():
                     (self._svc_name_, '')
                 )
         
-        # FIX: Enhanced command line handling
+        # Enhanced command line handling
         if len(sys.argv) == 1:
             # No arguments - run as service
             servicemanager.Initialize()
@@ -975,7 +921,6 @@ def run_as_service():
         else:
             # Handle service commands
             if sys.argv[1] == 'install':
-                #  ADD: Installation with auto-start
                 win32serviceutil.InstallService(
                     pythonClassString=f"{__name__}.AgentService",
                     serviceName=AgentService._svc_name_,
@@ -984,8 +929,6 @@ def run_as_service():
                     startType=win32service.SERVICE_AUTO_START
                 )
                 print(f"Service '{AgentService._svc_display_name_}' installed successfully")
-                print("   - Set to start automatically")
-                print("   - Use 'python agent_main.py start' to start now")
                 
             elif sys.argv[1] == 'remove':
                 win32serviceutil.RemoveService(AgentService._svc_name_)

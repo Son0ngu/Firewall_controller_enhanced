@@ -1,5 +1,6 @@
 """
 Whitelist Model - handles whitelist data operations
+UTC ONLY - Clean and simple
 """
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
@@ -10,11 +11,11 @@ from pymongo.database import Database
 import logging
 import re
 
-# Import time utilities
-from time_utils import now_vietnam_naive, to_vietnam_timezone, parse_agent_timestamp_direct
+# Import time utilities - UTC ONLY
+from time_utils import now_utc, to_utc_naive, parse_agent_timestamp
 
 class WhitelistModel:
-    """Model for whitelist data operations"""
+    """Model for whitelist data operations - UTC ONLY"""
     
     def __init__(self, db: Database):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -125,10 +126,10 @@ class WhitelistModel:
             # Continue anyway - indexes are not critical for basic functionality
     
     def insert_entry(self, entry_data: Dict) -> str:
-        """Insert a new whitelist entry with Vietnam timezone"""
+        """Insert a new whitelist entry - UTC ONLY"""
         try:
-            # Use Vietnam time for all timestamps
-            current_time = now_vietnam_naive()
+            # Use UTC time for all timestamps - UTC naive for MongoDB storage
+            current_time = to_utc_naive(now_utc())
             
             # Store all timestamps as naive datetime in MongoDB
             entry_data["added_date"] = current_time
@@ -162,7 +163,7 @@ class WhitelistModel:
     
     def find_all_entries(self, query: Dict = None, sort_field: str = "added_date", 
                         sort_order: int = DESCENDING) -> List[Dict]:
-        """Find all whitelist entries with proper sorting"""
+        """Find all whitelist entries with proper sorting - UTC ONLY"""
         query = query or {}
         
         #  FIX: Add active filter by default
@@ -180,7 +181,7 @@ class WhitelistModel:
         for entry in cursor:
             entry["_id"] = str(entry["_id"])
             
-            # Convert entry timezones for display
+            # Convert entry timezones for display - UTC ONLY
             entry = self._convert_entry_timezones(entry)
             
             #  FIX: Ensure all required fields exist
@@ -195,17 +196,21 @@ class WhitelistModel:
         return entries
     
     def _convert_entry_timezones(self, entry: Dict) -> Dict:
-        """Convert entry datetime fields for display"""
+        """Convert entry datetime fields for display - UTC ONLY"""
         if not entry:
             return entry
             
         for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
             if date_field in entry and entry[date_field]:
                 try:
-                    # Since we store as naive datetime (Vietnam time), just add formatting
+                    # Since we store as UTC naive datetime, convert to UTC timezone for display
                     if hasattr(entry[date_field], 'strftime'):
-                        entry[f"{date_field}_formatted"] = entry[date_field].strftime('%Y-%m-%d %H:%M:%S VN')
-                        entry[f"{date_field}_iso"] = entry[date_field].isoformat()
+                        # Convert naive datetime to UTC timezone
+                        from datetime import timezone
+                        utc_dt = entry[date_field].replace(tzinfo=timezone.utc)
+                        
+                        entry[f"{date_field}_formatted"] = utc_dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+                        entry[f"{date_field}_iso"] = utc_dt.isoformat()
                         
                 except Exception as e:
                     self.logger.warning(f"Timezone conversion error for {date_field}: {e}")
@@ -231,9 +236,9 @@ class WhitelistModel:
             return None
     
     def cleanup_expired_entries(self) -> int:
-        """Remove expired entries"""
+        """Remove expired entries - UTC ONLY"""
         try:
-            current_time = now_vietnam_naive()
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB comparison
             
             #  ADD: Debug log before cleanup
             expired_query = {"expiry_date": {"$lt": current_time}}
@@ -317,10 +322,10 @@ class WhitelistModel:
             return False
     
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
-        """Update entry by ID"""
+        """Update entry by ID - UTC ONLY"""
         try:
-            # Add updated timestamp
-            update_data["updated_at"] = now_vietnam_naive()
+            # Add updated timestamp - UTC naive for MongoDB
+            update_data["updated_at"] = to_utc_naive(now_utc())
             
             result = self.collection.update_one(
                 {"_id": ObjectId(entry_id)},
@@ -380,18 +385,26 @@ class WhitelistModel:
             return None
 
     def get_entries_for_sync(self, since_date=None) -> List[Dict]:
-        """Get entries for agent synchronization"""
+        """Get entries for agent synchronization - UTC ONLY"""
         try:
             query = {"is_active": True}
             
             if since_date:
-                # Convert to Vietnam naive for database query
+                # Parse and convert to UTC naive for database query
                 if isinstance(since_date, str):
-                    since_vn = parse_agent_timestamp_direct(since_date)
-                    since_naive = since_vn.replace(tzinfo=None)
+                    since_utc = parse_agent_timestamp(since_date)  # UTC parsing
+                    since_naive = since_utc.replace(tzinfo=None)  # UTC naive for MongoDB
                 else:
-                    since_vn = to_vietnam_timezone(since_date)
-                    since_naive = since_vn.replace(tzinfo=None)
+                    # Convert datetime to UTC naive
+                    from datetime import timezone
+                    if isinstance(since_date, datetime):
+                        if since_date.tzinfo is None:
+                            since_utc = since_date.replace(tzinfo=timezone.utc)
+                        else:
+                            since_utc = since_date.astimezone(timezone.utc)
+                        since_naive = since_utc.replace(tzinfo=None)
+                    else:
+                        since_naive = to_utc_naive(now_utc())
                 
                 query["added_date"] = {"$gte": since_naive}
             
@@ -407,9 +420,12 @@ class WhitelistModel:
                     "category": entry.get("category", "uncategorized")
                 }
                 
-                # Add timestamp for sync
+                # Add timestamp for sync - UTC ISO format
                 if entry.get("added_date"):
-                    sync_entry["added_date"] = entry["added_date"].isoformat()
+                    # Convert naive datetime to UTC timezone for ISO format
+                    from datetime import timezone
+                    utc_dt = entry["added_date"].replace(tzinfo=timezone.utc)
+                    sync_entry["added_date"] = utc_dt.isoformat()
                 
                 sync_entries.append(sync_entry)
             
@@ -420,13 +436,13 @@ class WhitelistModel:
             return []
 
     def bulk_insert_entries(self, entries: List[Dict]) -> List[str]:
-        """Bulk insert multiple entries"""
+        """Bulk insert multiple entries - UTC ONLY"""
         if not entries:
             return []
         
         try:
-            # Set timestamps for all entries
-            current_time = now_vietnam_naive()
+            # Set timestamps for all entries - UTC naive for MongoDB
+            current_time = to_utc_naive(now_utc())
             
             for entry in entries:
                 entry["added_date"] = current_time

@@ -1,5 +1,6 @@
 """
 Enhanced Windows Service Security - Chống kill từ user thường
+UTC ONLY - Clean and simple
 """
 
 import logging
@@ -15,7 +16,7 @@ import servicemanager
 import ntsecuritycon
 from typing import Optional
 
-# Import time utilities
+# Import time utilities - UTC ONLY
 from time_utils import sleep
 
 logger = logging.getLogger("service_security")
@@ -52,7 +53,7 @@ class SecureServiceManager:
             if not self._install_protection_hooks():
                 logger.warning("⚠️ Failed to install protection hooks")
             
-            logger.info(" Security settings applied successfully")
+            logger.info("✅ Security settings applied successfully")
             return True
             
         except Exception as e:
@@ -122,7 +123,7 @@ class SecureServiceManager:
             win32service.CloseServiceHandle(service)
             win32service.CloseServiceHandle(sc_manager)
             
-            logger.info(" Service security descriptor applied")
+            logger.info("✅ Service security descriptor applied")
             return True
             
         except Exception as e:
@@ -198,7 +199,7 @@ class SecureServiceManager:
                 None, None, new_dacl, None
             )
             
-            logger.info(" Process security descriptor applied")
+            logger.info("✅ Process security descriptor applied")
             return True
             
         except Exception as e:
@@ -284,7 +285,7 @@ class SecureServiceManager:
                 logger.warning("Cannot find TerminateProcess address")
                 return False
             
-            logger.info(" Protection hooks installed")
+            logger.info("✅ Protection hooks installed")
             return True
             
         except Exception as e:

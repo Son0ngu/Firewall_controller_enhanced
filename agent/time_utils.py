@@ -1,53 +1,45 @@
 """
-Time Utilities for Firewall Controller Agent
+Time Utilities for Firewall Controller Agent - UTC ONLY
 
-Centralized time management cho agent với các features:
-- Consistent timestamp formats 
-- UTC timestamps for server communication
-- Cache-aware time functions
-- Time validation and debugging
+Simplified time management - chỉ sử dụng UTC:
+- All timestamps in UTC
+- No timezone confusion
+- Clean and simple
 """
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("time_utils")
-VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
 
 # ========================================
-# CORE TIME FUNCTIONS (simplified)
+# CORE TIME FUNCTIONS - UTC ONLY
 # ========================================
 
 def now() -> float:
-    """Unix timestamp."""
+    """Unix timestamp (always UTC)."""
     return time.time()
 
 def now_iso() -> str:
-    """Local time ISO."""
-    return datetime.now().isoformat()
-
-def now_utc_iso() -> str:
-    """UTC time ISO with Z."""
+    """UTC time ISO with Z suffix."""
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
-def now_vietnam_iso() -> str:
-    """Vietnam time ISO."""
-    return datetime.now(VIETNAM_TIMEZONE).isoformat()
+def now_utc_iso() -> str:
+    """Same as now_iso() - for compatibility."""
+    return now_iso()
 
-# Alias for server compatibility
 def now_server_compatible(ts: Optional[float] = None) -> str:
     """
-    Return Vietnam ISO timestamp.
-    Nếu ts được cung cấp (Unix timestamp), trả về thời gian tương ứng; nếu không, trả về thời gian hiện tại.
+    Return UTC ISO timestamp.
     """
     if ts is None:
-        return now_vietnam_iso()
-    return datetime.fromtimestamp(ts, VIETNAM_TIMEZONE).isoformat()
+        return now_iso()
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat().replace('+00:00', 'Z')
 
 def sleep(duration: float):
-    """Sleep with logging."""
+    """Sleep function."""
     if duration > 0:
         time.sleep(duration)
 
@@ -64,7 +56,7 @@ def cache_age(timestamp: float) -> float:
     return now() - timestamp
 
 # ========================================
-# AGENT SPECIFIC (if needed)
+# AGENT UPTIME
 # ========================================
 
 _start_time = now()
@@ -82,18 +74,17 @@ def uptime_string() -> str:
     return f"{hours}h {mins}m {secs}s"
 
 # ========================================
-# ALIASES FOR BACKWARD COMPATIBILITY
+# ALIASES FOR COMPATIBILITY
 # ========================================
 
-agent_time = now_vietnam_iso  # Agent time = Vietnam time
-cache_time = now              # Cache time = Unix timestamp
+# Remove Vietnam aliases
+agent_time = now_iso
+cache_time = now
 
 def debug_time_info() -> dict:
-    """Debug time information."""
+    """Debug time information - UTC only."""
     return {
         "unix": now(),
-        "local": now_iso(),
-        "utc": now_utc_iso(),
-        "vietnam": now_vietnam_iso(),
+        "utc_iso": now_iso(),
         "uptime": uptime_string()
     }

@@ -1,5 +1,6 @@
 """
 Agent Model - handles agent data operations
+UTC ONLY - Clean and simple
 """
 
 import logging
@@ -9,8 +10,8 @@ from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 
-# Import time utilities
-from time_utils import now_vietnam, now_vietnam_naive, to_vietnam_timezone
+# Import time utilities - UTC ONLY
+from time_utils import now_utc, to_utc_naive
 
 class AgentModel:
     """Model for agent data operations"""
@@ -38,10 +39,10 @@ class AgentModel:
             self.logger.warning(f"Error creating indexes: {e}")
 
     def register_agent(self, agent_data: Dict) -> Dict:
-        """Register a new agent (CREATE only, not update)"""
+        """Register a new agent (CREATE only, not update) - UTC ONLY"""
         try:
-            # Use Vietnam time for registration
-            current_time = now_vietnam_naive()
+            # Use UTC time for registration
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
             agent_data.update({
                 "registered_date": current_time,
                 "updated_date": current_time,
@@ -60,9 +61,9 @@ class AgentModel:
             raise
 
     def update_agent(self, agent_id: str, update_data: Dict) -> bool:
-        """Update existing agent"""
+        """Update existing agent - UTC ONLY"""
         try:
-            update_data["updated_date"] = now_vietnam_naive()
+            update_data["updated_date"] = to_utc_naive(now_utc())  # UTC naive for MongoDB
             result = self.collection.update_one(
                 {"agent_id": agent_id},
                 {"$set": update_data}
@@ -74,10 +75,10 @@ class AgentModel:
             return False
     
     def update_heartbeat(self, agent_id: str, update_data: Dict) -> bool:
-        """Update agent heartbeat"""
+        """Update agent heartbeat - UTC ONLY"""
         try:
-            # Set proper heartbeat timestamp
-            current_time = now_vietnam_naive()
+            # Set proper heartbeat timestamp - UTC naive for MongoDB
+            current_time = to_utc_naive(now_utc())
             
             update_data_with_heartbeat = {
                 **update_data,
@@ -134,10 +135,10 @@ class AgentModel:
             return 0
     
     def get_active_agents(self, inactive_threshold_minutes: int = 5) -> List[Dict]:
-        """Get list of active agents"""
+        """Get list of active agents - UTC ONLY"""
         try:
             from datetime import timedelta
-            current_time = now_vietnam_naive()
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB comparison
             threshold = current_time - timedelta(minutes=inactive_threshold_minutes)
             return list(self.collection.find({
                 "last_heartbeat": {"$gte": threshold}
@@ -147,10 +148,10 @@ class AgentModel:
             return []
     
     def get_inactive_agents(self, inactive_threshold_minutes: int = 5) -> List[Dict]:
-        """Get list of inactive agents"""
+        """Get list of inactive agents - UTC ONLY"""
         try:
             from datetime import timedelta
-            current_time = now_vietnam_naive()
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB comparison
             threshold = current_time - timedelta(minutes=inactive_threshold_minutes)
             return list(self.collection.find({
                 "last_heartbeat": {"$lt": threshold}
@@ -170,10 +171,10 @@ class AgentModel:
             return False
     
     def get_agent_statistics(self, inactive_threshold_minutes: int = 5) -> Dict:
-        """Get agent statistics"""
+        """Get agent statistics - UTC ONLY"""
         try:
             from datetime import timedelta
-            current_time = now_vietnam_naive()
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB comparison
             inactive_threshold = current_time - timedelta(minutes=inactive_threshold_minutes)
             
             pipeline = [
