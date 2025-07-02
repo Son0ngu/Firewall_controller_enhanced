@@ -2,11 +2,12 @@
 import logging
 import subprocess
 import re
-import time
 import socket
 import threading
 from typing import Dict, List, Optional, Set
-from datetime import datetime
+
+# Import time utilities - UTC ONLY
+from time_utils import now, now_iso, sleep
 
 # Cấu hình logger cho module này
 logger = logging.getLogger("firewall_manager")
@@ -26,15 +27,15 @@ class FirewallManager:
         """
         self.rule_prefix = rule_prefix
         
-        # ✅ SIMPLIFIED: Only track allowed IPs
+        #  SIMPLIFIED: Only track allowed IPs
         self.allowed_ips: Set[str] = set()
         self.essential_ips: Set[str] = set()
         
-        # ✅ SIMPLIFIED: State tracking
+        #  SIMPLIFIED: State tracking
         self.whitelist_mode_active = False
         self.default_deny_enabled = False
         
-        # ✅ SIMPLIFIED: Threading control
+        #  SIMPLIFIED: Threading control
         self.rule_creation_lock = threading.Lock()
         
         # Check admin privileges
@@ -48,7 +49,7 @@ class FirewallManager:
         except Exception as e:
             logger.error(f"Error loading existing rules: {e}")
 
-        # ✅ NEW: Backup current policy before making changes
+        #  NEW: Backup current policy before making changes
         self._backup_current_policy()
 
     # ========================================
@@ -76,12 +77,12 @@ class FirewallManager:
             
             logger.info(f"📊 Total IPv4 IPs to allow: {len(all_allowed_ips)}")
             
-            # ✅ STEP 1: Set Windows Firewall to Default Deny for Outbound
+            #  STEP 1: Set Windows Firewall to Default Deny for Outbound
             if not self._enable_default_deny_policy():
                 logger.error("❌ Failed to enable Default Deny policy")
                 return False
             
-            # ✅ STEP 2: Create ONLY allow rules (no block rules needed)
+            #  STEP 2: Create ONLY allow rules (no block rules needed)
             success = self._create_allow_rules_only(all_allowed_ips)
             
             if success:
@@ -141,11 +142,11 @@ class FirewallManager:
         try:
             logger.info("🔒 Enabling Windows Firewall Default Deny policy...")
             
-            # ✅ IMPROVED: Check current state first
+            #  IMPROVED: Check current state first
             current_policies = self._get_current_firewall_policy()
             logger.debug(f"Current firewall policies: {current_policies}")
             
-            # ✅ Set outbound default action to BLOCK for all profiles
+            #  Set outbound default action to BLOCK for all profiles
             profiles = ["domain", "private", "public"]
             success_count = 0
             
@@ -177,7 +178,7 @@ class FirewallManager:
                 else:
                     logger.error(f"❌ Failed to set {profile.title()} profile: {result.stderr}")
             
-            # ✅ IMPROVED: More lenient success criteria
+            #  IMPROVED: More lenient success criteria
             if success_count >= 1:  # At least one profile should succeed
                 # Verify the policy is set
                 if self._verify_default_deny_policy():
@@ -213,7 +214,7 @@ class FirewallManager:
             if result.returncode == 0:
                 output = result.stdout
                 
-                # ✅ IMPROVED: Better parsing logic
+                #  IMPROVED: Better parsing logic
                 profiles_verified = 0
                 lines = output.split('\n')
                 current_profile = None
@@ -234,12 +235,12 @@ class FirewallManager:
                         else:
                             logger.debug(f"❌ Profile allows outbound: {line}")
                 
-                # ✅ IMPROVED: More lenient verification
+                #  IMPROVED: More lenient verification
                 if profiles_verified >= 1:  # At least 1 profile should have outbound blocking
                     logger.info(f"✅ Default Deny policy verified - {profiles_verified} profiles blocking outbound")
                     return True
                 else:
-                    # ✅ FALLBACK: Try alternative verification method
+                    #  FALLBACK: Try alternative verification method
                     logger.warning("⚠️ Standard verification failed, trying alternative method...")
                     return self._verify_policy_alternative(output)
             else:
@@ -281,7 +282,7 @@ class FirewallManager:
         try:
             logger.info("🔄 Restoring Windows Firewall to default policy...")
             
-            # ✅ Restore default policy for all profiles
+            #  Restore default policy for all profiles
             profiles = ["Domain", "Private", "Public"]
             
             for profile in profiles:
@@ -328,17 +329,17 @@ class FirewallManager:
                     try:
                         if self._create_simple_allow_rule(ip):
                             success_count += 1
-                            logger.debug(f"   ✅ Allow rule created for {ip}")
+                            logger.debug(f"    ✅ Allow rule created for {ip}")
                         else:
                             error_count += 1
-                            logger.warning(f"   ❌ Failed to create allow rule for {ip}")
+                            logger.warning(f"    ❌ Failed to create allow rule for {ip}")
                             
-                        # Small delay for stability
-                        time.sleep(0.02)
+                        # Small delay for stability - using time_utils
+                        sleep(0.02)
                         
                     except Exception as e:
                         error_count += 1
-                        logger.error(f"   ❌ Exception creating allow rule for {ip}: {e}")
+                        logger.error(f"    ❌ Exception creating allow rule for {ip}: {e}")
         
             logger.info(f"🔓 Allow rules creation completed: {success_count} success, {error_count} errors")
             
@@ -364,11 +365,11 @@ class FirewallManager:
                 logger.debug(f"Allow rule already exists for {ip}")
                 return True
             
-            # ✅ SIMPLE NAMING: No priority needed with Default Deny
-            timestamp = int(time.time())
+            #  SIMPLE NAMING: Using time_utils for timestamp - UTC ONLY
+            timestamp = int(now())  # UTC Unix timestamp
             rule_name = f"{self.rule_prefix}_Allow_{ip.replace('.', '_')}_{timestamp}"
             
-            # ✅ SIMPLE COMMAND: Just allow the IP, Windows handles the rest
+            #  SIMPLE COMMAND: Just allow the IP, Windows handles the rest
             command = [
                 "netsh", "advfirewall", "firewall", "add", "rule",
                 f"name={rule_name}",
@@ -378,7 +379,7 @@ class FirewallManager:
                 "protocol=any",
                 "enable=yes",
                 "profile=any",
-                f"description=ALLOW rule for whitelisted IP {ip} (Created: {datetime.now().isoformat()})"
+                f"description=ALLOW rule for whitelisted IP {ip} (Created: {now_iso()})"  # UTC ISO
             ]
             
             result = subprocess.run(
@@ -415,7 +416,7 @@ class FirewallManager:
                 logger.debug(f"IP {ip} already in whitelist")
                 return True
             
-            # ✅ SIMPLE: Just create allow rule, Default Deny handles the rest
+            #  SIMPLE: Just create allow rule, Default Deny handles the rest
             success = self._create_simple_allow_rule(ip)
             
             if success:
@@ -436,7 +437,7 @@ class FirewallManager:
                 logger.debug(f"IP {ip} not in whitelist")
                 return True
             
-            # ✅ SIMPLE: Just delete allow rule, Default Deny blocks automatically
+            #  SIMPLE: Just delete allow rule, Default Deny blocks automatically
             success = self._remove_allow_rule(ip)
             
             if success:
@@ -533,14 +534,14 @@ class FirewallManager:
             success_count = 0
             error_count = 0
             
-            # ✅ Add new IPs (create allow rules)
+            #  Add new IPs (create allow rules)
             for ip in added_ips:
                 if self.add_ip_to_whitelist(ip, "sync_update"):
                     success_count += 1
                 else:
                     error_count += 1
             
-            # ✅ Remove old IPs (delete allow rules)
+            #  Remove old IPs (delete allow rules)
             for ip in removed_ips:
                 if self.remove_ip_from_whitelist(ip):
                     success_count += 1
@@ -563,17 +564,17 @@ class FirewallManager:
         try:
             logger.info("🧹 Cleaning up whitelist firewall...")
             
-            # ✅ STEP 1: Remove all our allow rules
+            #  STEP 1: Remove all our allow rules
             success = self.clear_all_rules()
             
-            # ✅ STEP 2: Restore ORIGINAL Windows Firewall policy
+            #  STEP 2: Restore ORIGINAL Windows Firewall policy
             if self._restore_original_policy():
                 logger.info("✅ Windows Firewall policy restored to original state")
             else:
                 logger.warning("⚠️ Failed to restore original policy, using defaults")
                 self._restore_default_policy()
         
-            # ✅ STEP 3: Clear state
+            #  STEP 3: Clear state
             self.allowed_ips.clear()
             self.essential_ips.clear()
             self.whitelist_mode_active = False
@@ -591,13 +592,13 @@ class FirewallManager:
         try:
             logger.info("🗑️ Performing complete firewall cleanup...")
             
-            # ✅ STEP 1: Remove all our allow rules
+            #  STEP 1: Remove all our allow rules
             rules_success = self.clear_all_rules()
             
-            # ✅ STEP 2: Restore original firewall policy
+            #  STEP 2: Restore original firewall policy
             policy_success = self._restore_original_policy()
             
-            # ✅ STEP 3: Clear all state
+            #  STEP 3: Clear all state
             self.allowed_ips.clear()
             self.essential_ips.clear()
             self.whitelist_mode_active = False
@@ -690,7 +691,8 @@ class FirewallManager:
             "essential_ips_count": len(self.essential_ips),
             "total_allowed": len(self.allowed_ips) + len(self.essential_ips),
             "rule_prefix": self.rule_prefix,
-            "approach": "default_deny_with_allow_rules"
+            "approach": "default_deny_with_allow_rules",
+            "status_timestamp": now_iso()  # UTC timestamp
         }
 
     def get_firewall_policy_status(self) -> Dict:
@@ -715,15 +717,22 @@ class FirewallManager:
                     "firewall_enabled": "state" in output.lower() and "on" in output.lower(),
                     "whitelist_mode_active": self.whitelist_mode_active,
                     "allowed_ips_count": len(self.allowed_ips),
-                    "policy_output": output
+                    "policy_output": output,
+                    "checked_at": now_iso()  # UTC timestamp
                 }
                 
                 return status
             else:
-                return {"error": f"Failed to get firewall status: {result.stderr}"}
+                return {
+                    "error": f"Failed to get firewall status: {result.stderr}",
+                    "checked_at": now_iso()  # UTC timestamp
+                }
                 
         except Exception as e:
-            return {"error": f"Exception getting firewall status: {e}"}
+            return {
+                "error": f"Exception getting firewall status: {e}",
+                "checked_at": now_iso()  # UTC timestamp
+            }
 
     def validate_firewall_state(self) -> Dict[str, any]:
         """Validate current firewall state"""
@@ -735,7 +744,8 @@ class FirewallManager:
                 "default_deny_enabled": self.default_deny_enabled,
                 "total_allowed_ips": len(self.allowed_ips),
                 "policy_verified": False,
-                "issues": []
+                "issues": [],
+                "validated_at": now_iso()  # UTC timestamp
             }
             
             # Check policy state
@@ -756,7 +766,10 @@ class FirewallManager:
             
         except Exception as e:
             logger.error(f"Error validating firewall state: {e}")
-            return {"error": str(e)}
+            return {
+                "error": str(e),
+                "validated_at": now_iso()  # UTC timestamp
+            }
 
     def test_whitelist_connectivity(self, sample_ips: List[str]) -> Dict[str, bool]:
         """Test connectivity to sample whitelisted IPs"""
@@ -778,21 +791,21 @@ class FirewallManager:
                                 result = sock.connect_ex((ip, port))
                                 if result == 0:
                                     results[ip] = True
-                                    logger.debug(f"   ✅ {ip}:{port} - Connected")
+                                    logger.debug(f"    ✅ {ip}:{port} - Connected")
                                     break
                                 else:
-                                    logger.debug(f"   ⚠️ {ip}:{port} - Connection failed (code: {result})")
+                                    logger.debug(f"    ⚠️ {ip}:{port} - Connection failed (code: {result})")
                             except Exception as e:
-                                logger.debug(f"   ❌ {ip}:{port} - Exception: {e}")
+                                logger.debug(f"    ❌ {ip}:{port} - Exception: {e}")
                                 continue
                         
                         if ip not in results:
                             results[ip] = False
-                            logger.debug(f"   ❌ {ip} - All ports failed")
+                            logger.debug(f"    ❌ {ip} - All ports failed")
                             
                 except Exception as e:
                     results[ip] = False
-                    logger.debug(f"   ❌ {ip} - Exception: {e}")
+                    logger.debug(f"    ❌ {ip} - Exception: {e}")
             
             success_count = sum(1 for success in results.values() if success)
             logger.info(f"🧪 Connectivity test: {success_count}/{len(results)} IPs accessible")

@@ -1,12 +1,16 @@
 """
 Log Controller - handles log HTTP requests
+UTC ONLY - Clean and simple
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from typing import Dict, Tuple
 from models.log_model import LogModel
 from services.log_service import LogService
 import logging
+
+# Import time utilities - UTC ONLY
+from time_utils import now_iso
 
 class LogController:
     """Controller for log operations"""
@@ -24,7 +28,7 @@ class LogController:
     def _register_routes(self):
         """Register all log routes"""
         
-        # ✅ IMPORTANT: Stats route MUST be before generic /logs route
+        #  IMPORTANT: Stats route MUST be before generic /logs route
         self.blueprint.add_url_rule('/logs/stats', 
                                    methods=['GET'], 
                                    view_func=self.get_statistics)
@@ -39,7 +43,7 @@ class LogController:
                                    methods=['GET'], 
                                    view_func=self.list_logs)
         
-        # ✅ ADD: DELETE /api/logs/clear - Clear logs
+        #  ADD: DELETE /api/logs/clear - Clear logs
         self.blueprint.add_url_rule('/logs/clear', 
                                    methods=['DELETE'], 
                                    view_func=self.clear_logs)
@@ -141,8 +145,8 @@ class LogController:
             
             elif clear_action == 'old':
                 # Clear logs older than 30 days
-                from datetime import datetime, timedelta
-                thirty_days_ago = datetime.now() - timedelta(days=30)
+                from datetime import datetime, timedelta, timezone
+                thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
                 filters['timestamp'] = {'$lt': thirty_days_ago}
             
             elif clear_action == 'filtered':
@@ -157,12 +161,12 @@ class LogController:
             result = self.service.clear_logs(filters)
             
             if result.get("success"):
-                # Emit real-time update
+                # Emit real-time update - UTC only
                 if self.socketio:
                     self.socketio.emit('logs_cleared', {
                         'action': clear_action,
                         'deleted_count': result.get('deleted_count', 0),
-                        'timestamp': self.service._now_local().isoformat()
+                        'timestamp': now_iso()  # UTC ISO
                     })
                 
                 return jsonify(result), 200
@@ -186,7 +190,6 @@ class LogController:
             
             if result.get("success"):
                 if format == 'csv':
-                    from flask import Response
                     return Response(
                         result["data"],
                         mimetype="text/csv",
@@ -224,7 +227,7 @@ class LogController:
                 "filtered_blocked": stats.get("filtered_blocked", 0),
                 "filtered_warnings": stats.get("filtered_warnings", 0),
                 "has_filters": stats.get("has_filters", False),
-                "timestamp": self.service._now_local().isoformat()
+                "timestamp": now_iso()  # UTC ISO
             }), 200
             
         except Exception as e:
@@ -235,7 +238,8 @@ class LogController:
                 "total": 0,
                 "allowed": 0,
                 "blocked": 0,
-                "warnings": 0
+                "warnings": 0,
+                "timestamp": now_iso()  # UTC ISO
             }), 500
     
     def get_statistics(self):
@@ -275,9 +279,9 @@ class LogController:
         return filters
     
     def _error_response(self, message: str, status_code: int) -> Tuple:
-        """Create error response"""
+        """Create error response - UTC only"""
         return jsonify({
             "success": False,
             "error": message,
-            "timestamp": self.service._now_local().isoformat()
+            "timestamp": now_iso()  # UTC ISO
         }), status_code
