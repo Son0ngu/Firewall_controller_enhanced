@@ -278,12 +278,19 @@ class WhitelistService:
             all_active_entries = list(self.model.collection.find(all_active_query))
             changes["active_domains"] = [entry.get("value") for entry in all_active_entries]
             
+            # ✅ ADD: Debug logging
+            self.logger.debug(f"Total active domains in DB: {len(changes['active_domains'])}")
+            self.logger.debug(f"Active domains: {changes['active_domains']}")
+            
             # Get newly added entries
             added_query = {
                 "is_active": True,
                 "added_date": {"$gte": since_naive}
             }
             added_entries = list(self.model.collection.find(added_query))
+            
+            # ✅ ADD: Debug logging
+            self.logger.debug(f"Newly added since {since_naive}: {len(added_entries)}")
             
             for entry in added_entries:
                 changes["added"].append({
@@ -302,6 +309,9 @@ class WhitelistService:
             }
             deactivated_entries = list(self.model.collection.find(deactivated_query))
             
+            # ✅ ADD: Debug logging
+            self.logger.debug(f"Deactivated since {since_naive}: {len(deactivated_entries)}")
+            
             for entry in deactivated_entries:
                 changes["removed"].append({
                     "value": entry.get("value"),
@@ -311,9 +321,9 @@ class WhitelistService:
                     "reason": "deactivated"
                 })
             
-            self.logger.debug(f"Change details: {len(changes['added'])} added, "
-                             f"{len(changes['removed'])} removed, "
-                             f"{len(changes['active_domains'])} total active")
+            self.logger.info(f"Change details: {len(changes['added'])} added, "
+                            f"{len(changes['removed'])} removed, "
+                            f"{len(changes['active_domains'])} total active")
             
             return changes
             
@@ -329,7 +339,7 @@ class WhitelistService:
                 "added": [],
                 "removed": [],
                 "modified": [],
-                "active_domains": []  # ← NEW: All currently active domains
+                "active_domains": []
             }
             
             # Handle since parameter
@@ -360,7 +370,7 @@ class WhitelistService:
                         self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
                         since_datetime = None
                     else:
-                        # ★ NEW: Get detailed changes for incremental sync
+                        # ✅ FIX: Get detailed changes for incremental sync
                         changes_details = self._get_detailed_changes(since_naive)
                         
                 except Exception as e:
@@ -368,15 +378,22 @@ class WhitelistService:
                     since_datetime = None
                     sync_type = "full"
             
-            # Get entries from model
-            entries = self.model.get_entries_for_sync(since_datetime)
-            current_time = to_utc_naive(now_utc())
-            
-            # ★ NEW: For incremental sync, also get ALL currently active domains
+            # ✅ FIX: Logic để trả về domains cho agent
             if sync_type == "incremental":
-                all_active_entries = self.model.get_entries_for_sync(None)  # Get all active
-                changes_details["active_domains"] = [entry.get("value") for entry in all_active_entries]
-                self.logger.info(f"Including {len(changes_details['active_domains'])} active domains for removal detection")
+                # ✅ Cho incremental sync: trả về TẤT CẢ active domains
+                # Agent sẽ tự so sánh với domains hiện tại để detect changes
+                entries = self.model.get_entries_for_sync(None)  # Get ALL active entries
+                
+                # Log incremental sync info
+                self.logger.info(f"Incremental sync: returning {len(entries)} total active domains, "
+                               f"Added: {len(changes_details['added'])}, "
+                               f"Removed: {len(changes_details['removed'])}")
+            else:
+                # Full sync: get all entries
+                entries = self.model.get_entries_for_sync(since_datetime)
+                self.logger.info(f"Full sync: returning {len(entries)} domains")
+            
+            current_time = to_utc_naive(now_utc())
             
             # Format entries for agent sync
             domains = []
@@ -398,7 +415,7 @@ class WhitelistService:
                 "type": sync_type,
                 "success": True,
                 "server_time": now_iso(),
-                "changes": changes_details  # ← NEW: Include detailed changes
+                "changes": changes_details  # Include detailed changes for debugging
             }
             
             # Include agent_id if provided
@@ -406,14 +423,7 @@ class WhitelistService:
                 response["agent_id"] = agent_id
             
             # Enhanced logging
-            if sync_type == "incremental" and changes_details:
-                self.logger.info(f"Agent sync response: incremental sync - "
-                               f"Added: {len(changes_details['added'])}, "
-                               f"Removed: {len(changes_details['removed'])}, "
-                               f"Total active: {len(changes_details['active_domains'])} "
-                               f"for agent {agent_id or 'unknown'}")
-            else:
-                self.logger.info(f"Agent sync response: {sync_type} sync with {len(domains)} total domains for agent {agent_id or 'unknown'}")
+            self.logger.info(f"Agent sync response: {sync_type} sync with {len(domains)} total domains for agent {agent_id or 'unknown'}")
             
             return response
             
