@@ -2,21 +2,22 @@ import json
 import logging
 import queue
 import threading
-import time
-from datetime import datetime
 from typing import Dict, List
 
 import requests
+
+# Import time utilities - UTC ONLY
+from time_utils import now, now_iso, sleep
 
 # Cấu hình logger
 logger = logging.getLogger("log_sender")
 
 class LogSender:
-    """Gửi log từ agent lên server trung tâm"""
+    """Gửi log từ agent lên server trung tâm - UTC ONLY"""
     
     def __init__(self, config: Dict):
         """Khởi tạo log sender với cấu hình cơ bản"""
-        # ✅ SỬA: Đọc từ config với fallback
+        #  SỬA: Đọc từ config với fallback
         server_config = config.get("server", {})
         
         # Ưu tiên urls array, fallback về single url
@@ -46,8 +47,8 @@ class LogSender:
         # Khởi tạo định danh agent
         self.agent_id = config.get("agent_id", self._generate_agent_id())
         
-        # ✅ Thêm tracking thời gian
-        self.last_send_time = time.time()
+        #  Thêm tracking thời gian - using time_utils UTC only
+        self.last_send_time = now()  # UTC timestamp
         
         logger.info(f"LogSender initialized with agent_id: {self.agent_id}")
         logger.info(f"Will send logs to: {', '.join(self.server_urls)}")
@@ -81,9 +82,9 @@ class LogSender:
         logger.info("Log sender stopped")
     
     def queue_log(self, log_data: Dict) -> bool:
-        """Thêm log vào hàng đợi để gửi"""
+        """Thêm log vào hàng đợi để gửi - UTC only"""
         try:
-            # ✅ FIX: Serialize datetime objects trước khi queue
+            #  FIX: Serialize datetime objects trước khi queue
             serialized_log = self._serialize_log_data(log_data.copy())
             
             # Thêm ID agent và timestamp
@@ -91,7 +92,7 @@ class LogSender:
                 serialized_log["agent_id"] = self.agent_id
                 
             if "timestamp" not in serialized_log:
-                serialized_log["timestamp"] = datetime.now().astimezone().isoformat()
+                serialized_log["timestamp"] = now_iso()  # UTC ISO timestamp
         
             # Thêm log vào hàng đợi
             self.log_queue.put_nowait(serialized_log)
@@ -104,13 +105,13 @@ class LogSender:
             return False
     
     def _serialize_log_data(self, log_data: Dict) -> Dict:
-        """Serialize datetime objects và ensure all fields có value"""
+        """Serialize datetime objects và ensure all fields có value - UTC only"""
         try:
             serialized = {}
             
             for key, value in log_data.items():
-                if isinstance(value, datetime):
-                    # ✅ FIX: Convert datetime to ISO string
+                if hasattr(value, 'isoformat'):  # datetime object
+                    #  FIX: Convert datetime to ISO string
                     serialized[key] = value.isoformat()
                 elif isinstance(value, dict):
                     # Recursively serialize nested dicts
@@ -118,19 +119,19 @@ class LogSender:
                 elif isinstance(value, list):
                     # Handle lists that might contain datetime objects
                     serialized[key] = [
-                        item.isoformat() if isinstance(item, datetime) 
+                        item.isoformat() if hasattr(item, 'isoformat') 
                         else (self._serialize_log_data(item) if isinstance(item, dict) else item)
                         for item in value
                     ]
                 elif value is None:
-                    # ✅ FIX: Convert None to "unknown"
+                    #  FIX: Convert None to "unknown"
                     serialized[key] = "unknown"
                 else:
                     serialized[key] = value
             
-            # ✅ FIX: Ensure essential fields exist
+            #  FIX: Ensure essential fields exist - UTC only
             essential_fields = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": now_iso(),  # UTC ISO timestamp
                 "agent_id": self.agent_id,
                 "level": "INFO",
                 "action": "UNKNOWN",
@@ -151,9 +152,9 @@ class LogSender:
             
         except Exception as e:
             logger.error(f"Error serializing log data: {e}")
-            # ✅ Fallback: return complete basic log data
+            #  Fallback: return complete basic log data - UTC only
             return {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": now_iso(),  # UTC ISO timestamp
                 "agent_id": self.agent_id,
                 "level": "ERROR",
                 "action": "ERROR",
@@ -170,11 +171,11 @@ class LogSender:
             }
     
     def _sender_loop(self):
-        """Vòng lặp gửi log theo định kỳ với tối ưu hóa"""
+        """Vòng lặp gửi log theo định kỳ với tối ưu hóa - UTC only"""
         while self.running:
             try:
-                # ✅ Thêm logic gửi định kỳ
-                current_time = time.time()
+                #  Thêm logic gửi định kỳ - using time_utils UTC only
+                current_time = now()  # UTC timestamp
                 queue_size = self.log_queue.qsize()
                 
                 # Gửi nếu đủ batch_size HOẶC đã qua send_interval
@@ -187,12 +188,12 @@ class LogSender:
                     self._send_logs()
                     self.last_send_time = current_time
                     
-                # Ngủ ngắn để không tốn CPU
-                time.sleep(1)
+                # Ngủ ngắn để không tốn CPU - using time_utils
+                sleep(1)
                     
             except Exception as e:
                 logger.error(f"Error in sender loop: {str(e)}")
-                time.sleep(5)
+                sleep(5)
     
     def _flush_queue(self):
         """Gửi tất cả log còn lại trong hàng đợi"""
@@ -224,33 +225,33 @@ class LogSender:
             self._send_batch(logs)
     
     def _send_batch(self, logs: List[Dict]) -> bool:
-        """Gửi một batch log lên server"""
+        """Gửi một batch log lên server - UTC only"""
         if not self.server_urls:
             logger.error("Server URL not configured")
             return False
         
-        # ✅ FIX: Additional serialization check before sending
+        #  FIX: Additional serialization check before sending
         try:
-            # ✅ Test JSON serialization trước khi gửi
+            #  Test JSON serialization trước khi gửi
             serialized_logs = []
             for log in logs:
                 try:
-                    # ✅ Ensure all datetime objects are converted
+                    #  Ensure all datetime objects are converted
                     clean_log = self._ensure_json_serializable(log)
                     serialized_logs.append(clean_log)
                 except Exception as e:
                     logger.error(f"Failed to serialize log: {e}")
-                    # ✅ Create fallback log entry
+                    #  Create fallback log entry - UTC only
                     fallback_log = {
                         "message": f"Log serialization failed: {str(e)}",
                         "level": "error",
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": now_iso(),  # UTC ISO timestamp
                         "agent_id": self.agent_id,
                         "original_log_preview": str(log)[:200] + "..." if len(str(log)) > 200 else str(log)
                     }
                     serialized_logs.append(fallback_log)
             
-            # ✅ Test JSON serialization
+            #  Test JSON serialization
             test_json = json.dumps({"logs": serialized_logs})
             
         except Exception as e:
@@ -261,14 +262,14 @@ class LogSender:
             # Gửi request đơn giản không cần xác thực
             url = f"{self.server_urls[0].rstrip('/')}/api/logs"
             
-            # ✅ FIX: Use serialized logs
+            #  FIX: Use serialized logs
             payload = {"logs": serialized_logs}
             
             response = requests.post(
                 url=url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=15  # ✅ Increase timeout for Render
+                timeout=15  #  Increase timeout for Render
             )
             
             # Kiểm tra kết quả
@@ -291,7 +292,7 @@ class LogSender:
     
     def _ensure_json_serializable(self, obj):
         """Ensure object is JSON serializable"""
-        if isinstance(obj, datetime):
+        if hasattr(obj, 'isoformat'):  # datetime object
             return obj.isoformat()
         elif isinstance(obj, dict):
             return {k: self._ensure_json_serializable(v) for k, v in obj.items()}
@@ -300,7 +301,7 @@ class LogSender:
         elif isinstance(obj, (str, int, float, bool)) or obj is None:
             return obj
         else:
-            # ✅ Convert unknown types to string
+            #  Convert unknown types to string
             return str(obj)
     
     def _generate_agent_id(self) -> str:
@@ -315,3 +316,17 @@ class LogSender:
                       for elements in range(0, 12, 2)][::-1])
         
         return f"{hostname}-{mac}"
+
+    def get_status(self) -> Dict:
+        """Get log sender status - UTC only"""
+        return {
+            "running": self.running,
+            "agent_id": self.agent_id,
+            "queue_size": self.log_queue.qsize(),
+            "max_queue_size": self.max_queue_size,
+            "batch_size": self.batch_size,
+            "send_interval": self.send_interval,
+            "last_send_time": self.last_send_time,  # UTC Unix timestamp
+            "server_urls": self.server_urls,
+            "status_timestamp": now_iso()  # UTC ISO timestamp
+        }

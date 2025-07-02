@@ -418,7 +418,7 @@ async function loadAgents() {
         if (agentsResponse.ok) {
             const data = await agentsResponse.json();
             agentsData = data.agents || [];
-            console.log('✅ Loaded agents:', agentsData);
+            console.log(' Loaded agents:', agentsData);
             renderAgents(agentsData);
         } else {
             console.error('❌ Failed to load agents:', agentsResponse.statusText);
@@ -640,7 +640,7 @@ async function pingAgent(agentId) {
         
         if (data.success) {
             const responseTime = data.data.response_time;
-            showNotification('success', `✅ Ping successful! Response time: ${responseTime}s`);
+            showNotification('success', ` Ping successful! Response time: ${responseTime}s`);
             
             // Update agent status
             if (agent) {
@@ -798,7 +798,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-refresh every 30 seconds
     setInterval(loadAgents, 30000);
     
-    console.log('✅ Agent management initialized');
+    console.log(' Agent management initialized');
 });
 </script>
 {% endblock %}

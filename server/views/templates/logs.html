@@ -511,7 +511,7 @@
             <div class="modal-header" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); color: white; border-radius: 15px 15px 0 0;">
                 <h5 class="modal-title">
                     <i class="fas fa-exclamation-triangle me-2"></i>
-                    <!-- ✅ ADD missing ID -->
+                    <!--  ADD missing ID -->
                     <span id="clearModalTitle">Confirm Clear Logs</span>
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -519,7 +519,7 @@
             <div class="modal-body p-4">
                 <div class="text-center mb-4">
                     <i class="fas fa-trash fa-4x text-danger mb-3"></i>
-                    <!-- ✅ ADD missing message element -->
+                    <!--  ADD missing message element -->
                     <p class="text-muted" id="clearModalMessage">
                         This action will permanently delete logs and cannot be undone.
                     </p>
@@ -555,7 +555,7 @@
 
 {% block extra_js %}
 <script>
-// ✅ SINGLE VARIABLE DECLARATION BLOCK
+//  SINGLE VARIABLE DECLARATION BLOCK
 let logsData = [];
 let selectedLogs = new Set();
 let allTimeStats = {};
@@ -569,7 +569,7 @@ let currentFilter = {
 let currentClearAction = null;
 
 /**
- * ✅ Load FULL statistics với better error handling
+ *  Load FULL statistics với better error handling
  */
 async function loadFullStatistics() {
     try {
@@ -593,7 +593,7 @@ async function loadFullStatistics() {
             
             try {
                 allTimeStats = JSON.parse(responseText);
-                console.log('✅ Statistics loaded:', allTimeStats);
+                console.log(' Statistics loaded:', allTimeStats);
                 return allTimeStats;
             } catch (parseError) {
                 console.error('❌ Statistics JSON parse error:', parseError);
@@ -617,7 +617,7 @@ async function loadFullStatistics() {
 }
 
 /**
- * ✅ Update statistics display với fallback handling
+ *  Update statistics display với fallback handling
  */
 async function updateStatistics() {
     try {
@@ -647,7 +647,7 @@ async function updateStatistics() {
                 } else {
                     totalEl.textContent = (allTimeStats.total || 0).toLocaleString();
                 }
-                console.log('✅ Updated total count:', totalEl.textContent);
+                console.log(' Updated total count:', totalEl.textContent);
             }
             
             if (allowedEl) {
@@ -656,7 +656,7 @@ async function updateStatistics() {
                 } else {
                     allowedEl.textContent = (allTimeStats.allowed || 0).toLocaleString();
                 }
-                console.log('✅ Updated allowed count:', allowedEl.textContent);
+                console.log(' Updated allowed count:', allowedEl.textContent);
             }
             
             if (blockedEl) {
@@ -665,7 +665,7 @@ async function updateStatistics() {
                 } else {
                     blockedEl.textContent = (allTimeStats.blocked || 0).toLocaleString();
                 }
-                console.log('✅ Updated blocked count:', blockedEl.textContent);
+                console.log(' Updated blocked count:', blockedEl.textContent);
             }
             
             if (warningsEl) {
@@ -674,7 +674,7 @@ async function updateStatistics() {
                 } else {
                     warningsEl.textContent = (allTimeStats.warnings || 0).toLocaleString();
                 }
-                console.log('✅ Updated warnings count:', warningsEl.textContent);
+                console.log(' Updated warnings count:', warningsEl.textContent);
             }
             
             // Update log count
@@ -710,7 +710,7 @@ async function updateStatistics() {
 }
 
 /**
- * ✅ Load logs function
+ *  Load logs function
  */
 async function loadLogs() {
     try {
@@ -737,7 +737,7 @@ async function loadLogs() {
             
             try {
                 const data = JSON.parse(responseText);
-                console.log('✅ Parsed JSON successfully');
+                console.log(' Parsed JSON successfully');
                 console.log('📊 Response structure:', {
                     success: data.success,
                     hasLogs: !!data.logs,
@@ -780,14 +780,14 @@ async function loadLogs() {
 }
 
 /**
- * ✅ Filter change handler
+ *  Filter change handler
  */
 function onFilterChange() {
     loadLogs();
 }
 
 /**
- * ✅ Render logs
+ *  Render logs
  */
 function renderLogs(logs) {
     console.log('🎨 renderLogs called with:', logs ? logs.length : 0, 'logs');
@@ -821,7 +821,7 @@ function renderLogs(logs) {
     
     logs.forEach((log, index) => {
         try {
-            // ✅ Enhanced data extraction with better fallbacks
+            //  Enhanced data extraction with better fallbacks
             console.log(`🔍 Processing log ${index}:`, log);
             
             const timestamp = log.timestamp ? 
@@ -834,7 +834,7 @@ function renderLogs(logs) {
             const level = (log.level || log.action || 'INFO').toString().toUpperCase();
             const action = (log.action || 'UNKNOWN').toString().toUpperCase();
             
-            // ✅ FIX: Better data extraction with multiple fallbacks
+            //  FIX: Better data extraction with multiple fallbacks
             const domain = log.domain || log.destination || log.url || 'N/A';
             const source_ip = log.source_ip || log.src_ip || log.client_ip || 'N/A';
             const dest_ip = log.dest_ip || log.ip || log.destination_ip || 'N/A';
@@ -942,11 +942,11 @@ function renderLogs(logs) {
         cb.addEventListener('change', updateSelectedLogs);
     });
     
-    console.log(`✅ Successfully rendered ${renderedCount}/${logs.length} logs`);
+    console.log(` Successfully rendered ${renderedCount}/${logs.length} logs`);
 }
 
 /**
- * ✅ Clear confirmation
+ *  Clear confirmation
  */
 function showClearConfirmation(action, count = 0, message = '') {
     currentClearAction = action;
@@ -998,7 +998,7 @@ function showClearConfirmation(action, count = 0, message = '') {
 }
 
 /**
- * ✅ Perform clear action - FIXED
+ *  Perform clear action - FIXED
  */
 async function performClearAction() {
     if (!currentClearAction) return;
@@ -1051,7 +1051,7 @@ async function performClearAction() {
         
         console.log('🗑️ Clearing logs with:', requestBody);
         
-        // ✅ FIX: Use correct URL
+        //  FIX: Use correct URL
         const response = await fetch('/api/logs/clear', {
             method: 'DELETE',
             headers: { 
@@ -1108,7 +1108,7 @@ async function performClearAction() {
 }
 
 /**
- * ✅ Single log clear
+ *  Single log clear
  */
 function clearSingleLog(logId) {
     currentClearAction = { action: 'single', logId: logId };
@@ -1116,7 +1116,7 @@ function clearSingleLog(logId) {
 }
 
 /**
- * ✅ Filter logs
+ *  Filter logs
  */
 function filterLogs() {
     const searchTerm = currentFilter.search.toLowerCase();
@@ -1142,7 +1142,7 @@ function filterLogs() {
 }
 
 /**
- * ✅ Show log details
+ *  Show log details
  */
 function showLogDetails(logId) {
     const log = logsData.find(l => (l._id || l.id || logsData.indexOf(l).toString()) === logId);
@@ -1190,7 +1190,7 @@ function showLogDetails(logId) {
 }
 
 /**
- * ✅ Export functionality
+ *  Export functionality
  */
 function exportLogs(logs = logsData) {
     const csvContent = [
@@ -1224,7 +1224,7 @@ function exportSingleLog(logId) {
 }
 
 /**
- * ✅ Utility functions
+ *  Utility functions
  */
 function refreshLogs() {
     const button = document.getElementById('refreshBtn');
@@ -1341,7 +1341,7 @@ function showNotification(type, message) {
 }
 
 /**
- * ✅ SINGLE INITIALIZATION
+ *  SINGLE INITIALIZATION
  */
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Initializing logs management...');
@@ -1485,7 +1485,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, 3000);
     
-    console.log('✅ Logs management initialized');
+    console.log(' Logs management initialized');
 });
 
 // Socket.IO for real-time updates
@@ -1518,7 +1518,7 @@ try {
     console.error('❌ Socket.IO error:', error);
 }
 
-// ✅ Add emergency test function
+//  Add emergency test function
 function emergencyTest() {
     console.log('🚨 Running emergency test');
     
@@ -1549,7 +1549,7 @@ function emergencyTest() {
         });
 }
 
-// ✅ Add test render function
+//  Add test render function
 function testRender() {
     console.log('🧪 Testing render with sample data');
     
@@ -1589,7 +1589,7 @@ function testRender() {
 function renderLogItem(log, index) {
     const logId = log._id || log.id || index.toString();
     
-    // ✅ FIX: Enhanced protocol display
+    //  FIX: Enhanced protocol display
     let protocolDisplay = log.protocol || 'unknown';
     let portDisplay = log.port || 'unknown';
     
@@ -1599,7 +1599,7 @@ function renderLogItem(log, index) {
         protocolDisplay = `Port ${portDisplay}`;
     }
     
-    // ✅ FIX: Enhanced source IP display
+    //  FIX: Enhanced source IP display
     let sourceDisplay = log.source_ip || 'unknown';
     if (sourceDisplay === 'unknown') {
         sourceDisplay = '<span class="text-muted">Local</span>';
@@ -1607,7 +1607,7 @@ function renderLogItem(log, index) {
         sourceDisplay = `<span class="log-ip">${sourceDisplay}</span>`;
     }
     
-    // ✅ FIX: Enhanced destination display
+    //  FIX: Enhanced destination display
     let destinationDisplay = log.destination || log.domain || log.dest_ip || 'unknown';
     if (log.service_type && log.service_type !== 'unknown') {
         destinationDisplay += `<small class="text-muted ms-1">(${log.service_type})</small>`;
@@ -1694,7 +1694,7 @@ function renderLogItem(log, index) {
     `;
 }
 
-// ✅ ADD: Helper functions
+//  ADD: Helper functions
 function formatTimestamp(timestamp) {
     if (!timestamp) return 'Unknown';
     try {
