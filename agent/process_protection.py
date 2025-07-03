@@ -29,7 +29,7 @@ class ProcessProtector:
         Khởi động protection system
         """
         try:
-            logger.info("🛡️ Starting advanced process protection...")
+            logger.info(" Starting advanced process protection...")
             
             # 1. Hook critical APIs
             self._hook_critical_apis()
@@ -47,7 +47,7 @@ class ProcessProtector:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to start protection: {e}")
+            logger.error(f" Failed to start protection: {e}")
             return False
     
     def _hook_critical_apis(self):
@@ -102,7 +102,7 @@ class ProcessProtector:
             
             # Block if trying to terminate our process
             if target_pid == current_pid:
-                logger.warning(f"🚫 Blocked TerminateProcess attempt on our process")
+                logger.warning(f" Blocked TerminateProcess attempt on our process")
                 return False  # Block the call
             
             # Allow for other processes
@@ -131,7 +131,7 @@ class ProcessProtector:
             if process_id == current_pid:
                 for access in dangerous_access:
                     if desired_access & access:
-                        logger.warning(f"🚫 Blocked OpenProcess with dangerous access: {hex(desired_access)}")
+                        logger.warning(f" Blocked OpenProcess with dangerous access: {hex(desired_access)}")
                         # Return limited handle
                         desired_access = 0x400  # PROCESS_QUERY_INFORMATION only
                         break
@@ -153,7 +153,7 @@ class ProcessProtector:
             target_pid = ctypes.windll.kernel32.GetProcessId(process_handle)
             
             if target_pid == current_pid:
-                logger.warning(f"🚫 Blocked NtTerminateProcess attempt")
+                logger.warning(f" Blocked NtTerminateProcess attempt")
                 return 0xC0000005  # STATUS_ACCESS_DENIED
             
             return self.original_apis["ntdll.dll.NtTerminateProcess"](process_handle, exit_status)
@@ -210,7 +210,7 @@ class ProcessProtector:
                 try:
                     if proc.info['name'].lower() in threat_processes:
                         # Log threat detection
-                        logger.warning(f"⚠️ Threat detected: {proc.info['name']} (PID: {proc.info['pid']})")
+                        logger.warning(f" Threat detected: {proc.info['name']} (PID: {proc.info['pid']})")
                         
                         # Additional protection measures could be taken here
                         

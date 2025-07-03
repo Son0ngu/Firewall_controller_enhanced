@@ -67,7 +67,7 @@ class WhitelistModel:
                     #  FIX: Check if existing index matches our requirements
                     if (existing['direction'] == direction and 
                         existing.get('sparse', False) == sparse):
-                        self.logger.debug(f"✓ Index '{field}' already exists with correct properties (name: {existing['name']})")
+                        self.logger.debug(f" Index '{field}' already exists with correct properties (name: {existing['name']})")
                         continue
                     else:
                         self.logger.info(f" Index '{field}' exists but with different properties - keeping existing")
@@ -77,15 +77,15 @@ class WhitelistModel:
                 try:
                     if sparse:
                         self.collection.create_index([(field, direction)], sparse=True)
-                        self.logger.debug(f"✓ Created sparse index: {field}")
+                        self.logger.debug(f" Created sparse index: {field}")
                     else:
                         self.collection.create_index([(field, direction)])
-                        self.logger.debug(f"✓ Created index: {field}")
+                        self.logger.debug(f" Created index: {field}")
                         
                 except Exception as e:
                     #  FIX: More detailed error handling
                     if "already exists" in str(e).lower():
-                        self.logger.debug(f"⏭️ Index '{field}' already exists (concurrent creation)")
+                        self.logger.debug(f" Index '{field}' already exists (concurrent creation)")
                     else:
                         self.logger.warning(f"Failed to create index '{field}': {e}")
             
@@ -101,7 +101,7 @@ class WhitelistModel:
                         key = idx['key']
                         if ('value' in key and 'type' in key and 'is_active' in key):
                             compound_exists = True
-                            self.logger.debug(f"✓ Compound index already exists as '{idx['name']}'")
+                            self.logger.debug(f" Compound index already exists as '{idx['name']}'")
                             break
                 
                 if not compound_exists:
@@ -110,17 +110,17 @@ class WhitelistModel:
                         ("type", 1), 
                         ("is_active", 1)
                     ], name=compound_index_name)
-                    self.logger.debug(f"✓ Created compound index: {compound_index_name}")
+                    self.logger.debug(f" Created compound index: {compound_index_name}")
                 else:
-                    self.logger.debug(f"⏭️ Compound index already exists")
+                    self.logger.debug(f" Compound index already exists")
                     
             except Exception as e:
                 if "already exists" in str(e).lower():
-                    self.logger.debug("⏭️ Compound index already exists (concurrent creation)")
+                    self.logger.debug(" Compound index already exists (concurrent creation)")
                 else:
                     self.logger.warning(f"Failed to create compound index: {e}")
             
-            self.logger.info("✓ Index setup completed (with enhanced conflict handling)")
+            self.logger.info(" Index setup completed (with enhanced conflict handling)")
             
         except Exception as e:
             self.logger.warning(f"Index creation process failed: {e}")
@@ -153,13 +153,13 @@ class WhitelistModel:
             result = self.collection.insert_one(entry_data)
             
             if result.inserted_id:
-                self.logger.info(f"✓ Successfully inserted: {entry_data['value']} with ID: {result.inserted_id}")
+                self.logger.info(f" Successfully inserted: {entry_data['value']} with ID: {result.inserted_id}")
                 return str(result.inserted_id)
             else:
                 raise Exception("Insert operation returned no ID")
                 
         except Exception as e:
-            self.logger.error(f"❌ Error inserting entry: {e}")
+            self.logger.error(f" Error inserting entry: {e}")
             raise
     
     def find_all_entries(self, query: Dict = None, sort_field: str = "added_date", 

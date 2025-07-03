@@ -633,7 +633,7 @@ class WhitelistManager:
             logger.info(f" Startup sync completed: {len(self.domains)} domains")
             return True
         else:
-            logger.error("❌ Startup sync failed - will retry in background")
+            logger.error(" Startup sync failed - will retry in background")
             return False
     
     def _update_stats(self, **kwargs):
@@ -874,9 +874,9 @@ class WhitelistManager:
             params = {}
             if not should_do_full_sync and self.last_updated:
                 params['since'] = self._timestamp_to_iso(self.last_updated)
-                logger.info(f"📡 [{sync_id}] Incremental sync since {params['since']}")
+                logger.info(f" [{sync_id}] Incremental sync since {params['since']}")
             else:
-                logger.info(f"📡 [{sync_id}] Full sync (forced={force_full_sync}, startup={not self.startup_sync_completed})")
+                logger.info(f" [{sync_id}] Full sync (forced={force_full_sync}, startup={not self.startup_sync_completed})")
             
             # Attempt sync with server fallback
             sync_result = self._sync_with_fallback(params)
@@ -1003,7 +1003,7 @@ class WhitelistManager:
                 error=error_msg
             )
             
-            logger.error(f"❌ [{sync_id}] Sync failed after {duration:.2f}s: {error_msg}")
+            logger.error(f" [{sync_id}] Sync failed after {duration:.2f}s: {error_msg}")
             return False
             
         finally:
@@ -1118,7 +1118,7 @@ class WhitelistManager:
                 self._increment_stat("firewall_sync_count")
                 logger.info(f" Initial firewall sync completed: {len(whitelisted_ips)} IPs")
             else:
-                logger.error("❌ Initial firewall sync failed")
+                logger.error(" Initial firewall sync failed")
                 
         except Exception as e:
             logger.error(f"Error in initial firewall sync: {e}")
@@ -1146,7 +1146,7 @@ class WhitelistManager:
                     self._increment_stat("firewall_sync_count")
                     logger.info(" Firewall sync completed")
                 else:
-                    logger.warning("⚠️ Firewall sync had errors")
+                    logger.warning(" Firewall sync had errors")
             else:
                 logger.debug("No IP changes, skipping firewall sync")
                 
@@ -1193,7 +1193,7 @@ class WhitelistManager:
             with open("whitelist_state.json", 'w', encoding='utf-8') as f:
                 json.dump(state, f, indent=2, ensure_ascii=False)
             
-            logger.debug(f"💾 State saved: {len(self.domains)} domains")
+            logger.debug(f" State saved: {len(self.domains)} domains")
             
         except Exception as e:
             logger.error(f"Error saving state: {e}")
@@ -1255,7 +1255,7 @@ class WhitelistManager:
             if state.get("current_server_index") is not None:
                 self.current_server_index = state["current_server_index"]
         
-            logger.info(f"📂 State loaded: {len(self.domains)} domains, last_updated={self._timestamp_to_iso(self.last_updated) if self.last_updated else 'None'}")
+            logger.info(f" State loaded: {len(self.domains)} domains, last_updated={self._timestamp_to_iso(self.last_updated) if self.last_updated else 'None'}")
         
         except Exception as e:
             logger.warning(f"Error loading state: {e}")
@@ -1325,7 +1325,7 @@ class WhitelistManager:
                         self._resolve_all_ips_parallel(force_refresh=False)
                 else:
                     consecutive_failures += 1
-                    logger.warning(f"⚠️ Sync failed (attempt {consecutive_failures})")
+                    logger.warning(f" Sync failed (attempt {consecutive_failures})")
                 
                 # Adaptive sleep interval
                 if consecutive_failures == 0:
@@ -1489,14 +1489,14 @@ class WhitelistManager:
                     logger.info(" Force refresh completed successfully")
                     return True
                 else:
-                    logger.warning("⚠️ Force refresh: domains synced but IP resolution failed")
+                    logger.warning(" Force refresh: domains synced but IP resolution failed")
                     return True  # Still consider success if domains synced
             else:
-                logger.error("❌ Force refresh failed - sync unsuccessful")
+                logger.error(" Force refresh failed - sync unsuccessful")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Error during force refresh: {e}")
+            logger.error(f" Error during force refresh: {e}")
             return False
     
     def get_domain_details(self, domain: str = None) -> Dict:

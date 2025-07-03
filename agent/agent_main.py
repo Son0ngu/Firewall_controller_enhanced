@@ -738,14 +738,14 @@ def cleanup():
         )
         logger.info("Heartbeat sender stopped")
     
-    # ✅ FIX: Complete firewall cleanup with policy restore
+    #  FIX: Complete firewall cleanup with policy restore
     if firewall:
         cleanup_enabled = config and config["firewall"].get("cleanup_on_exit", True)
         
         if cleanup_enabled:
-            logger.info("🔧 Performing complete firewall cleanup...")
+            logger.info(" Performing complete firewall cleanup...")
             
-            # ✅ Use complete cleanup method that restores policy
+            #  Use complete cleanup method that restores policy
             success = CriticalErrorHandler.safe_execute(
                 firewall.cleanup_whitelist_firewall,  # ← This restores policy
                 error_msg="Error in complete firewall cleanup",
@@ -753,12 +753,12 @@ def cleanup():
             )
             
             if success:
-                logger.info("✅ Firewall completely cleaned up and policy restored")
+                logger.info(" Firewall completely cleaned up and policy restored")
             else:
-                logger.warning("⚠️ Some firewall cleanup operations failed")
+                logger.warning(" Some firewall cleanup operations failed")
                 
-                # ✅ Fallback: try individual operations
-                logger.info("🔧 Attempting fallback cleanup...")
+                #  Fallback: try individual operations
+                logger.info(" Attempting fallback cleanup...")
                 
                 # Clear rules
                 CriticalErrorHandler.safe_execute(
@@ -779,9 +779,9 @@ def cleanup():
                         firewall._restore_default_policy,
                         error_msg="Error restoring default firewall policy"
                     )
-                    logger.info("🔧 Restored firewall to Windows defaults")
+                    logger.info(" Restored firewall to Windows defaults")
         else:
-            logger.info("🔧 Firewall cleanup disabled by configuration")
+            logger.info(" Firewall cleanup disabled by configuration")
     
     # Update final state
     agent_state['startup_completed'] = False

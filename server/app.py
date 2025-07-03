@@ -53,7 +53,7 @@ def create_app():
     
     #  FIX: Prevent multiple initialization
     if _app_initialized:
-        logger.info("⏭️ App already initialized, skipping...")
+        logger.info(" App already initialized, skipping...")
         # Return minimal app for reloader
         app = Flask(__name__, 
                     static_folder='views/static',
@@ -63,7 +63,7 @@ def create_app():
         socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
         return app, socketio
     
-    logger.info("🔧 Creating new Flask application...")
+    logger.info(" Creating new Flask application...")
     
     # Create Flask app
     app = Flask(__name__, 
@@ -119,7 +119,7 @@ def create_app():
         initialize_database_indexes(app, db)
         
     except Exception as e:
-        app.logger.error(f"❌ MongoDB connection failed: {e}")
+        app.logger.error(f" MongoDB connection failed: {e}")
         raise RuntimeError("Database connection failed")
     
     #  FIX: Initialize MVC components and get services
@@ -132,7 +132,7 @@ def create_app():
         app.logger.info(" MVC components initialized successfully")
         
     except Exception as e:
-        app.logger.error(f"❌ Failed to initialize MVC components: {e}")
+        app.logger.error(f" Failed to initialize MVC components: {e}")
         raise
     
     # Register application routes
@@ -155,7 +155,7 @@ def create_app():
 def initialize_database_indexes(app, db):
     """Initialize database indexes safely with proper parameters"""
     try:
-        app.logger.info("🔧 Initializing database indexes...")
+        app.logger.info(" Initializing database indexes...")
         
         # Initialize all model indexes with proper db parameter
         from models.whitelist_model import WhitelistModel
@@ -179,7 +179,7 @@ def initialize_database_indexes(app, db):
 def register_controllers(app, socketio, db):
     """Register all controllers với proper parameters"""
     try:
-        logger.info("🔧 Initializing MVC components...")
+        logger.info(" Initializing MVC components...")
         
         #  FIX: Initialize models với db parameter
         whitelist_model = WhitelistModel(db)
@@ -210,7 +210,7 @@ def register_controllers(app, socketio, db):
         logger.info(" All controllers registered successfully")
         
         #  Debug: Log registered routes
-        logger.info("📋 Registered API routes:")
+        logger.info(" Registered API routes:")
         for rule in app.url_map.iter_rules():
             if rule.rule.startswith('/api/'):
                 methods = ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
@@ -220,7 +220,7 @@ def register_controllers(app, socketio, db):
         return log_service, agent_service
         
     except Exception as e:
-        logger.error(f"❌ Error registering controllers: {e}")
+        logger.error(f" Error registering controllers: {e}")
         import traceback
         traceback.print_exc()
         return None, None
@@ -367,10 +367,10 @@ if __name__ == "__main__":
         config = app.config_instance
         
         logger.info(f" Starting MVC Firewall Controller")
-        logger.info(f"🌐 Server: {config.HOST}:{config.PORT}")
-        logger.info(f"🏗️  Architecture: Model-View-Controller")
-        logger.info(f"🗄️  Database: {config.MONGO_DBNAME}")
-        logger.info(f"🕐 Timezone: UTC (Clean & Simple)")
+        logger.info(f" Server: {config.HOST}:{config.PORT}")
+        logger.info(f" Architecture: Model-View-Controller")
+        logger.info(f" Database: {config.MONGO_DBNAME}")
+        logger.info(f" Timezone: UTC (Clean & Simple)")
         
         #  FIX: Disable reloader để tránh double initialization
         socketio.run(
@@ -382,10 +382,10 @@ if __name__ == "__main__":
         )
         
     except KeyboardInterrupt:
-        logger.info("⏹️  Server stopped by user")
+        logger.info(" Server stopped by user")
         close_mongo_client()
     except Exception as e:
-        logger.error(f"❌ Server error: {str(e)}")
+        logger.error(f" Server error: {str(e)}")
         import traceback
         traceback.print_exc()
         close_mongo_client()
