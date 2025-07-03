@@ -572,7 +572,7 @@ def initialize_components():
         
         # 3. Initialize FirewallManager (if enabled and has admin)
         if config["firewall"]["enabled"] and check_admin_privileges():
-            logger.info("🔥 Initializing firewall manager...")
+            logger.info(" Initializing firewall manager...")
             firewall = FirewallManager(config["firewall"]["rule_prefix"])
             
             # Link whitelist với firewall
@@ -684,7 +684,7 @@ def process_command(command: Dict):
 
 def cleanup():
     """
-    UPDATED: Cleanup với UTC timestamps only
+    UPDATED: Cleanup với firewall policy restore
     """
     global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender
     
@@ -711,8 +711,8 @@ def cleanup():
         shutdown_log = {
             "agent_id": config['agent_id'],
             "event_type": "agent_shutdown",
-            "timestamp": now_iso(),  # UTC ISO
-            "timestamp_unix": now(),  # UTC Unix timestamp
+            "timestamp": now_iso(),
+            "timestamp_unix": now(),
             "uptime_seconds": uptime(),
             "uptime_string": uptime_string(),
             "uptime_info": agent_state
@@ -738,13 +738,50 @@ def cleanup():
         )
         logger.info("Heartbeat sender stopped")
     
-    # Cleanup firewall rules
-    if firewall and config and config["firewall"]["cleanup_on_exit"]:
-        CriticalErrorHandler.safe_execute(
-            firewall.clear_all_rules,
-            error_msg="Error cleaning up firewall rules"
-        )
-        logger.info("Firewall rules cleaned up")
+    # ✅ FIX: Complete firewall cleanup with policy restore
+    if firewall:
+        cleanup_enabled = config and config["firewall"].get("cleanup_on_exit", True)
+        
+        if cleanup_enabled:
+            logger.info("🔧 Performing complete firewall cleanup...")
+            
+            # ✅ Use complete cleanup method that restores policy
+            success = CriticalErrorHandler.safe_execute(
+                firewall.cleanup_whitelist_firewall,  # ← This restores policy
+                error_msg="Error in complete firewall cleanup",
+                return_on_error=False
+            )
+            
+            if success:
+                logger.info("✅ Firewall completely cleaned up and policy restored")
+            else:
+                logger.warning("⚠️ Some firewall cleanup operations failed")
+                
+                # ✅ Fallback: try individual operations
+                logger.info("🔧 Attempting fallback cleanup...")
+                
+                # Clear rules
+                CriticalErrorHandler.safe_execute(
+                    firewall.clear_all_rules,
+                    error_msg="Error clearing firewall rules"
+                )
+                
+                # Restore policy
+                success = CriticalErrorHandler.safe_execute(
+                    firewall._restore_original_policy,
+                    error_msg="Error restoring original firewall policy",
+                    return_on_error=False
+                )
+                
+                if not success:
+                    # Final fallback: restore default policy
+                    CriticalErrorHandler.safe_execute(
+                        firewall._restore_default_policy,
+                        error_msg="Error restoring default firewall policy"
+                    )
+                    logger.info("🔧 Restored firewall to Windows defaults")
+        else:
+            logger.info("🔧 Firewall cleanup disabled by configuration")
     
     # Update final state
     agent_state['startup_completed'] = False

@@ -1,7 +1,7 @@
 """
 Command Processor - Handles commands from server
 
-✅ UPDATED: Sử dụng time_utils cho consistent time management
+ UPDATED: Sử dụng time_utils cho consistent time management
 """
 
 import logging
@@ -9,7 +9,7 @@ import platform
 import subprocess
 from typing import Dict, Any
 
-# ✅ Import time_utils thay vì time và datetime
+#  Import time_utils thay vì time và datetime
 from time_utils import (
     now, now_iso, now_server_compatible, uptime_string, sleep
 )
@@ -19,15 +19,15 @@ class CommandProcessor:
     
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self._creation_time = now()  # ✅ Use time_utils
+        self._creation_time = now()  #  Use time_utils
         
         # Command handlers
         self.handlers = {
             "ping": self.handle_ping,
             "system_info": self.handle_system_info,
             "restart": self.handle_restart,
-            "status": self.handle_status,              # ✅ NEW: Agent status
-            "config_reload": self.handle_config_reload,  # ✅ NEW: Reload config
+            "status": self.handle_status,              #  NEW: Agent status
+            "config_reload": self.handle_config_reload,  #  NEW: Reload config
             # Add more command types as needed
         }
         
@@ -37,9 +37,9 @@ class CommandProcessor:
     
     def process_command(self, command: Dict) -> Dict:
         """
-        ✅ UPDATED: Process command với time_utils timestamps
+         UPDATED: Process command với time_utils timestamps
         """
-        command_start_time = now()  # ✅ Use time_utils
+        command_start_time = now()  #  Use time_utils
         
         try:
             command_type = command.get("command_type")
@@ -56,7 +56,7 @@ class CommandProcessor:
                     "success": False,
                     "error": f"Unknown command type: {command_type}",
                     "command_id": command_id,
-                    "timestamp": now_iso(),  # ✅ Use time_utils
+                    "timestamp": now_iso(),  #  Use time_utils
                     "execution_time": 0
                 }
             
@@ -64,13 +64,13 @@ class CommandProcessor:
             result = self.handlers[command_type](parameters)
             
             # Calculate execution time
-            execution_time = now() - command_start_time  # ✅ Use time_utils
+            execution_time = now() - command_start_time  #  Use time_utils
             
             # Build result
             result.update({
                 "command_id": command_id,
                 "command_type": command_type,
-                "timestamp": now_iso(),  # ✅ Use time_utils
+                "timestamp": now_iso(),  #  Use time_utils
                 "execution_time": round(execution_time, 3),
             })
             
@@ -78,11 +78,11 @@ class CommandProcessor:
             if result.get("success", True):
                 self._successful_commands += 1
             
-            self.logger.info(f"✅ Command {command_type} completed in {execution_time:.3f}s")
+            self.logger.info(f" Command {command_type} completed in {execution_time:.3f}s")
             return result
             
         except Exception as e:
-            execution_time = now() - command_start_time  # ✅ Use time_utils
+            execution_time = now() - command_start_time  #  Use time_utils
             
             self.logger.error(f"💥 Error processing command {command.get('command_type')}: {e}")
             
@@ -91,13 +91,13 @@ class CommandProcessor:
                 "error": str(e),
                 "command_id": command.get("command_id", "unknown"),
                 "command_type": command.get("command_type", "unknown"),
-                "timestamp": now_iso(),  # ✅ Use time_utils
+                "timestamp": now_iso(),  #  Use time_utils
                 "execution_time": round(execution_time, 3)
             }
     
     def handle_ping(self, parameters: Dict) -> Dict:
         """
-        ✅ UPDATED: Handle ping command với time_utils
+         UPDATED: Handle ping command với time_utils
         """
         try:
             # Build ping response
@@ -108,8 +108,8 @@ class CommandProcessor:
                     "hostname": platform.node(),
                     "platform": platform.system(),
                     "python_version": platform.python_version(),
-                    "uptime": uptime_string(),           # ✅ Use time_utils
-                    "local_time": now_server_compatible(),        # ✅ Use time_utils
+                    "uptime": uptime_string(),           #  Use time_utils
+                    "local_time": now_server_compatible(),        #  Use time_utils
                     "processor_uptime": self._get_processor_uptime()
                 },
                 "parameters_received": parameters
@@ -127,12 +127,12 @@ class CommandProcessor:
     
     def handle_system_info(self, parameters: Dict) -> Dict:
         """
-        ✅ UPDATED: Handle system info với time_utils
+         UPDATED: Handle system info với time_utils
         """
         try:
             system_info = {
                 "success": True,
-                "collection_time": now_iso(),  # ✅ Use time_utils
+                "collection_time": now_iso(),  #  Use time_utils
                 "system": {
                     "hostname": platform.node(),
                     "platform": platform.system(),
@@ -143,14 +143,14 @@ class CommandProcessor:
                     "python_version": platform.python_version()
                 },
                 "agent": {
-                    "uptime": uptime_string(),           # ✅ Use time_utils
+                    "uptime": uptime_string(),           #  Use time_utils
                     "processor_uptime": self._get_processor_uptime(),
                     "commands_processed": self._total_commands,
                     "success_rate": self._get_success_rate()
                 }
             }
             
-            # ✅ Add resource info if psutil available
+            #  Add resource info if psutil available
             try:
                 import psutil
                 system_info["resources"] = {
@@ -173,25 +173,25 @@ class CommandProcessor:
             return {
                 "success": False,
                 "error": str(e),
-                "timestamp": now_iso()  # ✅ Use time_utils
+                "timestamp": now_iso()  #  Use time_utils
             }
     
     def handle_restart(self, parameters: Dict) -> Dict:
         """
-        ✅ UPDATED: Handle restart command với time_utils
+         UPDATED: Handle restart command với time_utils
         """
         try:
             delay = parameters.get("delay", 5)  # seconds
             reason = parameters.get("reason", "Remote restart command")
             
-            self.logger.info(f"🔄 Restart command received: {reason}")
-            self.logger.info(f"🔄 Agent will restart in {delay} seconds...")
+            self.logger.info(f" Restart command received: {reason}")
+            self.logger.info(f" Agent will restart in {delay} seconds...")
             
             # Schedule restart
             import threading
             def delayed_restart():
-                sleep(delay)  # ✅ Use time_utils sleep
-                self.logger.info(f"🔄 Restarting agent now (uptime was: {uptime_string()})")
+                sleep(delay)  #  Use time_utils sleep
+                self.logger.info(f" Restarting agent now (uptime was: {uptime_string()})")
                 
                 import sys
                 import os
@@ -205,7 +205,7 @@ class CommandProcessor:
             return {
                 "success": True,
                 "message": f"Agent will restart in {delay} seconds",
-                "restart_scheduled": now_iso(),  # ✅ Use time_utils
+                "restart_scheduled": now_iso(),  #  Use time_utils
                 "delay": delay,
                 "reason": reason
             }
@@ -214,19 +214,19 @@ class CommandProcessor:
             return {
                 "success": False,
                 "error": str(e),
-                "timestamp": now_iso()  # ✅ Use time_utils
+                "timestamp": now_iso()  #  Use time_utils
             }
     
     def handle_status(self, parameters: Dict) -> Dict:
         """
-        ✅ NEW: Handle status command - basic agent status
+         NEW: Handle status command - basic agent status
         """
         try:
             status_info = {
                 "success": True,
                 "status": "running",
-                "timestamp": now_iso(),              # ✅ Use time_utils
-                "uptime": uptime_string(),           # ✅ Use time_utils
+                "timestamp": now_iso(),              #  Use time_utils
+                "uptime": uptime_string(),           #  Use time_utils
                 "processor_uptime": self._get_processor_uptime(),
                 "commands": {
                     "total": self._total_commands,
@@ -239,7 +239,7 @@ class CommandProcessor:
                 }
             }
             
-            # ✅ Add basic resource info if available
+            #  Add basic resource info if available
             try:
                 import psutil
                 status_info["resources"] = {
@@ -260,10 +260,10 @@ class CommandProcessor:
     
     def handle_config_reload(self, parameters: Dict) -> Dict:
         """
-        ✅ NEW: Handle config reload command
+         NEW: Handle config reload command
         """
         try:
-            self.logger.info("🔄 Config reload requested")
+            self.logger.info(" Config reload requested")
             
             # Note: Actual config reload would be handled by main agent
             # This command just signals the request and provides confirmation
@@ -271,7 +271,7 @@ class CommandProcessor:
             return {
                 "success": True,
                 "message": "Config reload request received",
-                "timestamp": now_iso(),  # ✅ Use time_utils
+                "timestamp": now_iso(),  #  Use time_utils
                 "note": "Actual reload handled by main agent process"
             }
             
@@ -288,7 +288,7 @@ class CommandProcessor:
     
     def _get_processor_uptime(self) -> str:
         """Get command processor uptime"""
-        processor_uptime_seconds = now() - self._creation_time  # ✅ Use time_utils
+        processor_uptime_seconds = now() - self._creation_time  #  Use time_utils
         return self._format_duration(processor_uptime_seconds)
     
     def _get_success_rate(self) -> float:
@@ -341,14 +341,14 @@ class CommandProcessor:
     
     def get_processor_stats(self) -> Dict:
         """
-        ✅ NEW: Get basic processor statistics
+         NEW: Get basic processor statistics
         """
         return {
-            "creation_time": now_server_compatible(self._creation_time),  # ✅ Use time_utils
+            "creation_time": now_server_compatible(self._creation_time),  #  Use time_utils
             "uptime": self._get_processor_uptime(),
             "total_commands": self._total_commands,
             "successful_commands": self._successful_commands,
             "success_rate": self._get_success_rate(),
             "available_commands": self.get_available_commands(),
-            "current_time": now_server_compatible()  # ✅ Use time_utils
+            "current_time": now_server_compatible()  #  Use time_utils
         }

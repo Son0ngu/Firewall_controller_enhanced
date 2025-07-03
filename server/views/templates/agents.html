@@ -408,7 +408,7 @@ function getStatusInfo(status) {
  */
 async function loadAgents() {
     try {
-        console.log('🔄 Loading agents...');
+        console.log(' Loading agents...');
         
         const [agentsResponse, statsResponse] = await Promise.all([
             fetch('/api/agents').catch(err => ({ ok: false, statusText: err.message })),

@@ -774,7 +774,7 @@ function handleApiResponse(response) {
  */
 async function loadItems() {
     try {
-        console.log('🔄 Loading whitelist items...');
+        console.log(' Loading whitelist items...');
         
         const response = await fetch('/api/whitelist').catch(err => ({ ok: false, statusText: err.message }));
         
@@ -1044,7 +1044,7 @@ async function handleItemAction(event) {
  */
 async function toggleItem(itemId, active) {
     try {
-        console.log('🔄 Toggling item:', itemId, 'to', active);
+        console.log(' Toggling item:', itemId, 'to', active);
         
         const response = await fetch(`/api/whitelist/${itemId}`, {
             method: 'PUT',

@@ -1,7 +1,7 @@
 # Core networking and packet capture
 scapy>=2.4.5
 pydivert>=2.1.0
-
+dnspython aiodns
 # HTTP requests and web communication
 requests>=2.28.0
 urllib3>=1.26.0

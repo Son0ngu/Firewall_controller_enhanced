@@ -104,7 +104,7 @@ def get_mongo_client(config):
             
             # Test connection
             _mongo_client.admin.command('ping')
-            logger.info(f"✅ [{now_iso()}] MongoDB client created successfully")
+            logger.info(f" [{now_iso()}] MongoDB client created successfully")
             
         except Exception as e:
             logger.error(f"❌ [{now_iso()}] MongoDB connection failed: {e}")
@@ -196,7 +196,7 @@ def validate_config(config: Config = None) -> bool:
         # FIX: Call get_mongo_client with only config parameter
         client = get_mongo_client(config)
         client.admin.command('ping')
-        logger.info(f"✅ [{now_iso()}] Configuration validation successful")
+        logger.info(f" [{now_iso()}] Configuration validation successful")
         return True
     except Exception as e:
         logger.error(f"❌ [{now_iso()}] MongoDB connection test failed: {e}")

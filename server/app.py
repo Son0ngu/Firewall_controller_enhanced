@@ -113,7 +113,7 @@ def create_app():
     #  FIX: Initialize database BEFORE using it
     try:
         db = get_database(config)
-        app.logger.info(f"✅ MongoDB connected: {config.MONGO_DBNAME}")
+        app.logger.info(f" MongoDB connected: {config.MONGO_DBNAME}")
         
         #  FIX: Initialize indexes safely with proper parameters
         initialize_database_indexes(app, db)
@@ -129,7 +129,7 @@ def create_app():
         if log_service is None or agent_service is None:
             raise RuntimeError("Failed to initialize services")
             
-        app.logger.info("✅ MVC components initialized successfully")
+        app.logger.info(" MVC components initialized successfully")
         
     except Exception as e:
         app.logger.error(f"❌ Failed to initialize MVC components: {e}")
@@ -149,7 +149,7 @@ def create_app():
     #  Mark as initialized
     _app_initialized = True
     
-    app.logger.info("🚀 MVC Application initialized successfully")
+    app.logger.info(" MVC Application initialized successfully")
     return app, socketio
 
 def initialize_database_indexes(app, db):
@@ -167,7 +167,7 @@ def initialize_database_indexes(app, db):
         log_model = LogModel(db) 
         agent_model = AgentModel(db)
         
-        app.logger.info("✅ Database indexes initialized successfully")
+        app.logger.info(" Database indexes initialized successfully")
         
     except Exception as e:
         #  FIX: Use app.logger properly
@@ -186,28 +186,28 @@ def register_controllers(app, socketio, db):
         agent_model = AgentModel(db)
         log_model = LogModel(db)
         
-        logger.info("✅ Models initialized")
+        logger.info(" Models initialized")
         
         #  Initialize services
         whitelist_service = WhitelistService(whitelist_model, socketio)
         agent_service = AgentService(agent_model, socketio)
         log_service = LogService(log_model, socketio)
         
-        logger.info("✅ Services initialized")
+        logger.info(" Services initialized")
         
         #  Initialize controllers
         whitelist_controller = WhitelistController(whitelist_model, whitelist_service, socketio)
         agent_controller = AgentController(agent_model, agent_service, socketio)
         log_controller = LogController(log_model, log_service, socketio)
         
-        logger.info("✅ Controllers initialized")
+        logger.info(" Controllers initialized")
         
         #  Register blueprints with proper URL prefixes
         app.register_blueprint(whitelist_controller.blueprint, url_prefix='/api')
         app.register_blueprint(agent_controller.blueprint, url_prefix='/api')
         app.register_blueprint(log_controller.blueprint, url_prefix='/api')
         
-        logger.info("✅ All controllers registered successfully")
+        logger.info(" All controllers registered successfully")
         
         #  Debug: Log registered routes
         logger.info("📋 Registered API routes:")
@@ -366,7 +366,7 @@ if __name__ == "__main__":
         # Get configuration
         config = app.config_instance
         
-        logger.info(f"🚀 Starting MVC Firewall Controller")
+        logger.info(f" Starting MVC Firewall Controller")
         logger.info(f"🌐 Server: {config.HOST}:{config.PORT}")
         logger.info(f"🏗️  Architecture: Model-View-Controller")
         logger.info(f"🗄️  Database: {config.MONGO_DBNAME}")

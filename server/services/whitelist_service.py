@@ -263,23 +263,96 @@ class WhitelistService:
                 "server_time": now_iso()  # UTC ISO
             }
     
+    def _get_detailed_changes(self, since_naive: datetime) -> Dict:
+        """Get detailed changes since specified time - UTC ONLY"""
+        try:
+            changes = {
+                "added": [],
+                "removed": [],
+                "modified": [],
+                "active_domains": []
+            }
+            
+            # Get ALL currently active domains
+            all_active_query = {"is_active": True}
+            all_active_entries = list(self.model.collection.find(all_active_query))
+            changes["active_domains"] = [entry.get("value") for entry in all_active_entries]
+            
+            #  ADD: Debug logging
+            self.logger.debug(f"Total active domains in DB: {len(changes['active_domains'])}")
+            self.logger.debug(f"Active domains: {changes['active_domains']}")
+            
+            # Get newly added entries
+            added_query = {
+                "is_active": True,
+                "added_date": {"$gte": since_naive}
+            }
+            added_entries = list(self.model.collection.find(added_query))
+            
+            #  ADD: Debug logging
+            self.logger.debug(f"Newly added since {since_naive}: {len(added_entries)}")
+            
+            for entry in added_entries:
+                changes["added"].append({
+                    "value": entry.get("value"),
+                    "type": entry.get("type", "domain"),
+                    "category": entry.get("category", "uncategorized"),
+                    "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None,
+                    "added_by": entry.get("added_by", "system")
+                })
+            
+            # For hard deletes, we rely on active_domains comparison in agent
+            # For soft deletes (is_active = False)
+            deactivated_query = {
+                "is_active": False,
+                "updated_at": {"$gte": since_naive}
+            }
+            deactivated_entries = list(self.model.collection.find(deactivated_query))
+            
+            #  ADD: Debug logging
+            self.logger.debug(f"Deactivated since {since_naive}: {len(deactivated_entries)}")
+            
+            for entry in deactivated_entries:
+                changes["removed"].append({
+                    "value": entry.get("value"),
+                    "type": entry.get("type", "domain"),
+                    "category": entry.get("category", "uncategorized"),
+                    "removed_date": entry.get("updated_at").isoformat() if entry.get("updated_at") else None,
+                    "reason": "deactivated"
+                })
+            
+            self.logger.info(f"Change details: {len(changes['added'])} added, "
+                            f"{len(changes['removed'])} removed, "
+                            f"{len(changes['active_domains'])} total active")
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.error(f"Error getting detailed changes: {e}")
+            return {"added": [], "removed": [], "modified": [], "active_domains": []}
+    
     def get_agent_sync_data(self, since_datetime: Optional[object] = None, agent_id: str = None) -> Dict:
-        """Get whitelist data for agent synchronization - UTC ONLY"""
+        """Get whitelist data for agent synchronization with detailed changes - UTC ONLY"""
         try:
             sync_type = "full"  # Default to full sync
+            changes_details = {
+                "added": [],
+                "removed": [],
+                "modified": [],
+                "active_domains": []
+            }
             
             # Handle since parameter
             if since_datetime:
                 try:
                     sync_type = "incremental"
-                    current_time = to_utc_naive(now_utc())  # UTC naive for comparison
+                    current_time = to_utc_naive(now_utc())
                     
                     # Convert since to UTC naive
                     if isinstance(since_datetime, str):
-                        since_utc = parse_agent_timestamp(since_datetime)  # UTC parsing
+                        since_utc = parse_agent_timestamp(since_datetime)
                         since_naive = since_utc.replace(tzinfo=None)
                     else:
-                        # Convert datetime to UTC naive
                         if isinstance(since_datetime, datetime):
                             if since_datetime.tzinfo is None:
                                 since_utc = since_datetime.replace(tzinfo=timezone.utc)
@@ -296,14 +369,30 @@ class WhitelistService:
                         sync_type = "full"
                         self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
                         since_datetime = None
+                    else:
+                        #  FIX: Get detailed changes for incremental sync
+                        changes_details = self._get_detailed_changes(since_naive)
                         
                 except Exception as e:
                     self.logger.warning(f"Error processing since parameter: {e}")
                     since_datetime = None
                     sync_type = "full"
             
-            # Get entries from model
-            entries = self.model.get_entries_for_sync(since_datetime)
+            #  FIX: Logic để trả về domains cho agent
+            if sync_type == "incremental":
+                #  Cho incremental sync: trả về TẤT CẢ active domains
+                # Agent sẽ tự so sánh với domains hiện tại để detect changes
+                entries = self.model.get_entries_for_sync(None)  # Get ALL active entries
+                
+                # Log incremental sync info
+                self.logger.info(f"Incremental sync: returning {len(entries)} total active domains, "
+                               f"Added: {len(changes_details['added'])}, "
+                               f"Removed: {len(changes_details['removed'])}")
+            else:
+                # Full sync: get all entries
+                entries = self.model.get_entries_for_sync(since_datetime)
+                self.logger.info(f"Full sync: returning {len(entries)} domains")
+            
             current_time = to_utc_naive(now_utc())
             
             # Format entries for agent sync
@@ -325,26 +414,30 @@ class WhitelistService:
                 "count": len(domains),
                 "type": sync_type,
                 "success": True,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso(),
+                "changes": changes_details  # Include detailed changes for debugging
             }
             
             # Include agent_id if provided
             if agent_id:
                 response["agent_id"] = agent_id
             
-            self.logger.info(f"Agent sync response: {sync_type} sync with {len(domains)} domains for agent {agent_id or 'unknown'}")
+            # Enhanced logging
+            self.logger.info(f"Agent sync response: {sync_type} sync with {len(domains)} total domains for agent {agent_id or 'unknown'}")
+            
             return response
             
         except Exception as e:
             self.logger.error(f"Error in agent sync: {e}")
             return {
                 "domains": [],
-                "timestamp": now_iso(),  # UTC ISO
+                "timestamp": now_iso(),
                 "count": 0,
                 "type": "error",
                 "success": False,
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso(),
+                "changes": {"added": [], "removed": [], "modified": [], "active_domains": []}
             }
     
     def delete_entry(self, entry_id: str) -> bool:

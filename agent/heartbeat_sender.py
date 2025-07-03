@@ -152,7 +152,7 @@ class HeartbeatSender:
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
-                        logger.debug(f"✅ Heartbeat sent successfully to {server_url}")
+                        logger.debug(f" Heartbeat sent successfully to {server_url}")
                         return True
                     else:
                         logger.warning(f"Server rejected heartbeat: {data.get('error', 'Unknown error')}")

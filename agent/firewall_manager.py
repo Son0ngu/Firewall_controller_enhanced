@@ -92,7 +92,7 @@ class FirewallManager:
                 
                 logger.info("🎉 Whitelist firewall with Default Deny setup completed!")
                 logger.info("🔒 Windows Firewall Policy: DENY all outbound by default")
-                logger.info(f"✅ Created {len(all_allowed_ips)} ALLOW rules for whitelisted traffic")
+                logger.info(f" Created {len(all_allowed_ips)} ALLOW rules for whitelisted traffic")
                 
                 return True
             else:
@@ -153,7 +153,7 @@ class FirewallManager:
             for profile in profiles:
                 # Skip if already set to block
                 if current_policies.get(profile) == "block":
-                    logger.info(f"✅ {profile.title()} profile already set to block outbound")
+                    logger.info(f" {profile.title()} profile already set to block outbound")
                     success_count += 1
                     continue
                 
@@ -173,7 +173,7 @@ class FirewallManager:
                 )
                 
                 if result.returncode == 0:
-                    logger.info(f"✅ {profile.title()} profile set to Default Deny")
+                    logger.info(f" {profile.title()} profile set to Default Deny")
                     success_count += 1
                 else:
                     logger.error(f"❌ Failed to set {profile.title()} profile: {result.stderr}")
@@ -183,7 +183,7 @@ class FirewallManager:
                 # Verify the policy is set
                 if self._verify_default_deny_policy():
                     self.default_deny_enabled = True
-                    logger.info("✅ Default Deny policy enabled successfully")
+                    logger.info(" Default Deny policy enabled successfully")
                     logger.info("🔒 All outbound traffic will be BLOCKED unless explicitly allowed")
                     return True
                 else:
@@ -231,13 +231,13 @@ class FirewallManager:
                     elif current_profile and ("outbound connections" in line.lower() or "outbound connection" in line.lower()):
                         if "block" in line.lower():
                             profiles_verified += 1
-                            logger.debug(f"✅ Profile has outbound block: {line}")
+                            logger.debug(f" Profile has outbound block: {line}")
                         else:
                             logger.debug(f"❌ Profile allows outbound: {line}")
                 
                 #  IMPROVED: More lenient verification
                 if profiles_verified >= 1:  # At least 1 profile should have outbound blocking
-                    logger.info(f"✅ Default Deny policy verified - {profiles_verified} profiles blocking outbound")
+                    logger.info(f" Default Deny policy verified - {profiles_verified} profiles blocking outbound")
                     return True
                 else:
                     #  FALLBACK: Try alternative verification method
@@ -258,7 +258,7 @@ class FirewallManager:
             
             # Check for blockoutbound in the output
             if "blockoutbound" in output_lower:
-                logger.info("✅ Alternative verification: Found blockoutbound policy")
+                logger.info(" Alternative verification: Found blockoutbound policy")
                 return True
             
             # Check for block + outbound combination
@@ -266,7 +266,7 @@ class FirewallManager:
             outbound_count = output_lower.count("outbound")
             
             if block_count > 0 and outbound_count > 0:
-                logger.info("✅ Alternative verification: Found block + outbound indicators")
+                logger.info(" Alternative verification: Found block + outbound indicators")
                 return True
             
             logger.warning("⚠️ Alternative verification also failed")
@@ -280,7 +280,7 @@ class FirewallManager:
     def _restore_default_policy(self) -> bool:
         """Restore Windows Firewall to default policy (allow outbound)"""
         try:
-            logger.info("🔄 Restoring Windows Firewall to default policy...")
+            logger.info(" Restoring Windows Firewall to default policy...")
             
             #  Restore default policy for all profiles
             profiles = ["Domain", "Private", "Public"]
@@ -300,7 +300,7 @@ class FirewallManager:
                 )
                 
                 if result.returncode == 0:
-                    logger.info(f"✅ {profile} profile restored to default (allow outbound)")
+                    logger.info(f" {profile} profile restored to default (allow outbound)")
                 else:
                     logger.error(f"❌ Failed to restore {profile} profile: {result.stderr}")
                     return False
@@ -329,7 +329,7 @@ class FirewallManager:
                     try:
                         if self._create_simple_allow_rule(ip):
                             success_count += 1
-                            logger.debug(f"    ✅ Allow rule created for {ip}")
+                            logger.debug(f"     Allow rule created for {ip}")
                         else:
                             error_count += 1
                             logger.warning(f"    ❌ Failed to create allow rule for {ip}")
@@ -344,7 +344,7 @@ class FirewallManager:
             logger.info(f"🔓 Allow rules creation completed: {success_count} success, {error_count} errors")
             
             if success_count > 0:
-                logger.info("✅ Whitelist firewall ready - only allowed IPs can connect")
+                logger.info(" Whitelist firewall ready - only allowed IPs can connect")
                 return True
             else:
                 logger.error("❌ No allow rules created successfully")
@@ -420,7 +420,7 @@ class FirewallManager:
             success = self._create_simple_allow_rule(ip)
             
             if success:
-                logger.info(f"✅ Added {ip} to whitelist ({reason})")
+                logger.info(f" Added {ip} to whitelist ({reason})")
                 return True
             else:
                 logger.error(f"❌ Failed to add {ip} to whitelist")
@@ -441,7 +441,7 @@ class FirewallManager:
             success = self._remove_allow_rule(ip)
             
             if success:
-                logger.info(f"✅ Removed {ip} from whitelist (will be blocked by Default Deny)")
+                logger.info(f" Removed {ip} from whitelist (will be blocked by Default Deny)")
                 return True
             else:
                 logger.error(f"❌ Failed to remove {ip} from whitelist")
@@ -529,7 +529,7 @@ class FirewallManager:
                 logger.debug("No IP changes to sync")
                 return True
             
-            logger.info(f"🔄 Simple sync: +{len(added_ips)} IPs, -{len(removed_ips)} IPs")
+            logger.info(f" Simple sync: +{len(added_ips)} IPs, -{len(removed_ips)} IPs")
             
             success_count = 0
             error_count = 0
@@ -548,7 +548,7 @@ class FirewallManager:
                 else:
                     error_count += 1
             
-            logger.info(f"✅ Simple sync completed: {success_count} changes, {error_count} errors")
+            logger.info(f" Simple sync completed: {success_count} changes, {error_count} errors")
             return error_count == 0
             
         except Exception as e:
@@ -569,7 +569,7 @@ class FirewallManager:
             
             #  STEP 2: Restore ORIGINAL Windows Firewall policy
             if self._restore_original_policy():
-                logger.info("✅ Windows Firewall policy restored to original state")
+                logger.info(" Windows Firewall policy restored to original state")
             else:
                 logger.warning("⚠️ Failed to restore original policy, using defaults")
                 self._restore_default_policy()
@@ -580,7 +580,7 @@ class FirewallManager:
             self.whitelist_mode_active = False
             self.default_deny_enabled = False
             
-            logger.info("✅ Whitelist firewall cleanup completed")
+            logger.info(" Whitelist firewall cleanup completed")
             return success
         
         except Exception as e:
@@ -607,7 +607,7 @@ class FirewallManager:
             success = rules_success and policy_success
             
             if success:
-                logger.info("✅ Complete firewall cleanup successful")
+                logger.info(" Complete firewall cleanup successful")
             else:
                 logger.warning("⚠️ Some cleanup operations failed")
             
@@ -737,7 +737,7 @@ class FirewallManager:
     def validate_firewall_state(self) -> Dict[str, any]:
         """Validate current firewall state"""
         try:
-            logger.info("🔍 Validating firewall state...")
+            logger.info(" Validating firewall state...")
             
             validation_result = {
                 "whitelist_mode_active": self.whitelist_mode_active,
@@ -760,7 +760,7 @@ class FirewallManager:
             if not self.essential_ips:
                 validation_result["issues"].append("No essential IPs configured")
             
-            logger.info(f"🔍 Validation complete: {len(validation_result['issues'])} issues found")
+            logger.info(f" Validation complete: {len(validation_result['issues'])} issues found")
             
             return validation_result
             
@@ -791,7 +791,7 @@ class FirewallManager:
                                 result = sock.connect_ex((ip, port))
                                 if result == 0:
                                     results[ip] = True
-                                    logger.debug(f"    ✅ {ip}:{port} - Connected")
+                                    logger.debug(f"     {ip}:{port} - Connected")
                                     break
                                 else:
                                     logger.debug(f"    ⚠️ {ip}:{port} - Connection failed (code: {result})")
@@ -993,7 +993,7 @@ class FirewallManager:
                 logger.info("No original policy to restore, using defaults")
                 return self._restore_default_policy()
             
-            logger.info("🔄 Restoring original firewall policy...")
+            logger.info(" Restoring original firewall policy...")
             success_count = 0
             
             for profile, action in self._original_policies.items():
@@ -1007,7 +1007,7 @@ class FirewallManager:
                 result = subprocess.run(command, capture_output=True, text=True, timeout=30)
                 
                 if result.returncode == 0:
-                    logger.info(f"✅ {profile.title()} profile restored to {action} outbound")
+                    logger.info(f" {profile.title()} profile restored to {action} outbound")
                     success_count += 1
                 else:
                     logger.error(f"❌ Failed to restore {profile.title()} profile")

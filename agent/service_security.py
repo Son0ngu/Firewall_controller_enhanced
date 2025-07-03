@@ -45,15 +45,15 @@ class SecureServiceManager:
             if not self._protect_current_process():
                 logger.warning("⚠️ Failed to protect current process")
             
-            # 3. Set critical process flag
-            if not self._set_critical_process():
-                logger.warning("⚠️ Failed to set critical process flag")
+            # 3. Enable required privileges
+            if not self._enable_required_privileges():
+                logger.warning("⚠️ Failed to enable required privileges")
             
             # 4. Install process protection hooks
             if not self._install_protection_hooks():
                 logger.warning("⚠️ Failed to install protection hooks")
             
-            logger.info("✅ Security settings applied successfully")
+            logger.info(" Security settings applied successfully")
             return True
             
         except Exception as e:
@@ -123,7 +123,7 @@ class SecureServiceManager:
             win32service.CloseServiceHandle(service)
             win32service.CloseServiceHandle(sc_manager)
             
-            logger.info("✅ Service security descriptor applied")
+            logger.info(" Service security descriptor applied")
             return True
             
         except Exception as e:
@@ -199,48 +199,39 @@ class SecureServiceManager:
                 None, None, new_dacl, None
             )
             
-            logger.info("✅ Process security descriptor applied")
+            logger.info(" Process security descriptor applied")
             return True
             
         except Exception as e:
             logger.error(f"Failed to protect current process: {e}")
             return False
     
-    def _set_critical_process(self) -> bool:
+    def _enable_required_privileges(self) -> bool:
         """
-        Set process as critical - Windows sẽ BSOD nếu process bị kill
-        ⚠️ CẢNH BÁO: Chỉ dùng trong môi trường test!
+        Enable required privileges for enhanced security
         """
         try:
-            # Lấy privilege để set critical process
-            if not self._enable_privilege("SeDebugPrivilege"):
-                logger.warning("Cannot enable SeDebugPrivilege")
-                return False
+            privileges = [
+                "SeSecurityPrivilege",        # Security settings
+                "SeBackupPrivilege",          # Backup files
+                "SeRestorePrivilege",         # Restore files
+                "SeIncreaseQuotaPrivilege",   # Increase quotas
+                "SeServiceLogonRight"         # Service logon
+            ]
             
-            # Load ntdll
-            ntdll = ctypes.windll.ntdll
+            success_count = 0
+            for privilege in privileges:
+                if self._enable_privilege(privilege):
+                    success_count += 1
+                    logger.debug(f" Enabled privilege: {privilege}")
+                else:
+                    logger.debug(f"⚠️ Failed to enable privilege: {privilege}")
             
-            # Define constants
-            ProcessBreakOnTermination = 29
-            
-            # Set critical process flag
-            value = ctypes.c_ulong(1)
-            status = ntdll.NtSetInformationProcess(
-                win32api.GetCurrentProcess(),
-                ProcessBreakOnTermination,
-                ctypes.byref(value),
-                ctypes.sizeof(value)
-            )
-            
-            if status == 0:  # STATUS_SUCCESS
-                logger.info("⚠️ Process set as CRITICAL - system will BSOD if killed")
-                return True
-            else:
-                logger.warning(f"Failed to set critical process: status {status}")
-                return False
+            logger.info(f" Enabled {success_count}/{len(privileges)} privileges")
+            return success_count > 0
             
         except Exception as e:
-            logger.error(f"Failed to set critical process: {e}")
+            logger.error(f"Failed to enable required privileges: {e}")
             return False
     
     def _enable_privilege(self, privilege_name: str) -> bool:
@@ -264,28 +255,51 @@ class SecureServiceManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to enable privilege {privilege_name}: {e}")
+            logger.debug(f"Failed to enable privilege {privilege_name}: {e}")
             return False
     
     def _install_protection_hooks(self) -> bool:
         """
-        Install hooks để monitor và block attempts to terminate process
+        Install hooks để monitor attempts to terminate process
         """
         try:
-            # Hook vào TerminateProcess API
-            kernel32 = ctypes.windll.kernel32
+            # Simple monitoring approach instead of dangerous API hooking
+            import threading
             
-            # Get address of TerminateProcess
-            terminate_process_addr = kernel32.GetProcAddress(
-                kernel32.GetModuleHandleW("kernel32.dll"),
-                b"TerminateProcess"
-            )
+            def monitor_process_protection():
+                """Monitor process protection status"""
+                while True:
+                    try:
+                        # Check if our process security is still intact
+                        current_process = win32api.GetCurrentProcess()
+                        
+                        # Simple protection check - try to open our own process
+                        # with terminate access from limited context
+                        test_handle = None
+                        try:
+                            test_handle = win32api.OpenProcess(
+                                win32con.PROCESS_TERMINATE,
+                                False,
+                                win32api.GetCurrentProcessId()
+                            )
+                            if test_handle:
+                                logger.warning("⚠️ Process protection may be compromised")
+                                win32api.CloseHandle(test_handle)
+                        except:
+                            # Good - terminate access is blocked
+                            pass
+                        
+                        sleep(60)  # Check every minute
+                        
+                    except Exception as e:
+                        logger.debug(f"Protection monitor error: {e}")
+                        sleep(30)
             
-            if not terminate_process_addr:
-                logger.warning("Cannot find TerminateProcess address")
-                return False
+            # Start protection monitor thread
+            monitor_thread = threading.Thread(target=monitor_process_protection, daemon=True)
+            monitor_thread.start()
             
-            logger.info("✅ Protection hooks installed")
+            logger.info(" Process protection monitoring started")
             return True
             
         except Exception as e:

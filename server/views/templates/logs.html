@@ -714,7 +714,7 @@ async function updateStatistics() {
  */
 async function loadLogs() {
     try {
-        console.log('🔄 Loading logs with filter:', currentFilter);
+        console.log(' Loading logs with filter:', currentFilter);
         
         const params = new URLSearchParams();
         if (currentFilter.level) params.append('level', currentFilter.level);
@@ -727,13 +727,13 @@ async function loadLogs() {
         console.log('📡 Fetching from URL:', url);
         
         const response = await fetch(url);
-        console.log('📥 Response status:', response.status);
-        console.log('📥 Response headers:', response.headers.get('content-type'));
+        console.log(' Response status:', response.status);
+        console.log(' Response headers:', response.headers.get('content-type'));
         
         if (response.ok) {
             const responseText = await response.text();
-            console.log('📥 Raw response length:', responseText.length);
-            console.log('📥 Raw response start:', responseText.substring(0, 200));
+            console.log(' Raw response length:', responseText.length);
+            console.log(' Raw response start:', responseText.substring(0, 200));
             
             try {
                 const data = JSON.parse(responseText);
@@ -822,7 +822,7 @@ function renderLogs(logs) {
     logs.forEach((log, index) => {
         try {
             //  Enhanced data extraction with better fallbacks
-            console.log(`🔍 Processing log ${index}:`, log);
+            console.log(` Processing log ${index}:`, log);
             
             const timestamp = log.timestamp ? 
                 (typeof log.timestamp === 'string' ? 
@@ -1344,7 +1344,7 @@ function showNotification(type, message) {
  *  SINGLE INITIALIZATION
  */
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Initializing logs management...');
+    console.log(' Initializing logs management...');
     
     // Time filter pills
     document.querySelectorAll('.time-pill').forEach(pill => {

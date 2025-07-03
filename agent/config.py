@@ -1,7 +1,7 @@
 """
 Configuration module for the Firewall Controller Agent.
 
-✅ UPDATED: Sử dụng time_utils cho consistent time management - UTC ONLY
+ UPDATED: Sử dụng time_utils cho consistent time management - UTC ONLY
 
 This module loads and provides access to all configuration parameters needed by the agent.
 Configuration can be sourced from environment variables, a configuration file, or defaults.
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# ✅ Import time_utils - UTC ONLY
+#  Import time_utils - UTC ONLY
 from time_utils import now, now_iso
 
 # Cấu hình logging cho chính module cấu hình
@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 
 def load_config() -> Dict[str, Any]:
     """
-    ✅ UPDATED: Load configuration với UTC timestamps only
+     UPDATED: Load configuration với UTC timestamps only
     
     Load configuration from multiple sources, with the following precedence:
     1. Environment variables
@@ -153,7 +153,7 @@ def load_config() -> Dict[str, Any]:
     if env_config:
         _deep_update(config, env_config)
     
-    # ✅ Add configuration metadata với UTC timestamps only
+    #  Add configuration metadata với UTC timestamps only
     config["_metadata"] = {
         "loaded_at": now_iso(),           # UTC ISO
         "loaded_timestamp": now(),        # UTC Unix timestamp
@@ -165,14 +165,14 @@ def load_config() -> Dict[str, Any]:
     _validate_config(config)
     
     load_duration = now() - load_start_time
-    logger.info(f"✅ Configuration loaded successfully in {load_duration:.3f}s")
+    logger.info(f" Configuration loaded successfully in {load_duration:.3f}s")
     
     return config
 
 
 def _load_from_file() -> Optional[Dict[str, Any]]:
     """
-    ✅ UPDATED: Load from file với UTC timestamps only
+     UPDATED: Load from file với UTC timestamps only
     
     Returns:
         Optional[Dict]: Configuration from file, or None if no file found
@@ -195,7 +195,7 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
                     config = json.load(f)
                 
                 load_time = now() - file_load_start
-                logger.info(f"✅ Config file loaded in {load_time:.3f}s")
+                logger.info(f" Config file loaded in {load_time:.3f}s")
                 return config
                 
         except Exception as e:
@@ -207,7 +207,7 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
 
 def _load_from_env() -> Dict[str, Any]:
     """
-    ✅ UPDATED: Load from environment với basic logging
+     UPDATED: Load from environment với basic logging
     
     Returns:
         Dict: Configuration from environment variables
@@ -274,7 +274,7 @@ def _deep_update(base_dict: Dict, update_dict: Dict) -> None:
 
 def _validate_config(config: Dict) -> None:
     """
-    ✅ UPDATED: Enhanced validation với UTC timestamps only
+     UPDATED: Enhanced validation với UTC timestamps only
     """
     validation_start = now()  # UTC timestamp
     validation_issues = []
@@ -300,7 +300,7 @@ def _validate_config(config: Dict) -> None:
             config["firewall"]["mode"] = "monitor"
             config["firewall"]["enabled"] = False
     
-    # ✅ Add validation metadata với UTC timestamps only
+    #  Add validation metadata với UTC timestamps only
     config["_metadata"]["validation"] = {
         "validated_at": now_iso(),        # UTC ISO
         "validation_duration": now() - validation_start,  # Duration in seconds
@@ -313,12 +313,12 @@ def _validate_config(config: Dict) -> None:
         for issue in validation_issues:
             logger.warning(f"⚠️ Config validation: {issue}")
     else:
-        logger.info("✅ Configuration validation passed")
+        logger.info(" Configuration validation passed")
 
 
 def get_config() -> Dict[str, Any]:
     """
-    ✅ UPDATED: Get config với UTC timestamps only
+     UPDATED: Get config với UTC timestamps only
     
     Returns:
         Dict: Complete configuration dictionary
@@ -327,7 +327,7 @@ def get_config() -> Dict[str, Any]:
     if _config is None:
         _config = load_config()
     else:
-        # ✅ Update last accessed time - UTC only
+        #  Update last accessed time - UTC only
         _config["_metadata"]["last_accessed"] = now_iso()  # UTC ISO
     
     return _config
@@ -335,7 +335,7 @@ def get_config() -> Dict[str, Any]:
 
 def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
     """
-    ✅ UPDATED: Save config với UTC timestamps only
+     UPDATED: Save config với UTC timestamps only
     
     Args:
         config: Configuration dictionary to save
@@ -353,7 +353,7 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
         # Đảm bảo thư mục tồn tại
         os.makedirs(os.path.dirname(path), exist_ok=True)
         
-        # ✅ Add save metadata với UTC timestamps only
+        #  Add save metadata với UTC timestamps only
         config_to_save = config.copy()
         config_to_save["_metadata"]["saved_at"] = now_iso()      # UTC ISO
         config_to_save["_metadata"]["saved_timestamp"] = now()   # UTC Unix timestamp
@@ -363,7 +363,7 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
             json.dump(config_to_save, f, indent=2)
         
         save_duration = now() - save_start_time
-        logger.info(f"✅ Configuration saved to {path} in {save_duration:.3f}s")
+        logger.info(f" Configuration saved to {path} in {save_duration:.3f}s")
         return True
         
     except Exception as e:
@@ -374,7 +374,7 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
 
 def get_default_config() -> Dict[str, Any]:
     """
-    ✅ UPDATED: Default configuration với UTC timestamps only
+     UPDATED: Default configuration với UTC timestamps only
     """
     # Auto-detect firewall mode based on admin privileges
     firewall_mode = _detect_optimal_firewall_mode()
@@ -476,7 +476,7 @@ def get_default_config() -> Dict[str, Any]:
         }
     }
     
-    # ✅ Add creation metadata với UTC timestamps only
+    #  Add creation metadata với UTC timestamps only
     config["_metadata"] = {
         "created_at": now_iso(),          # UTC ISO
         "created_timestamp": now(),       # UTC Unix timestamp
@@ -517,7 +517,7 @@ def _has_admin_privileges() -> bool:
 
 def _get_config_source(file_config: Optional[Dict], env_config: Dict) -> str:
     """
-    ✅ Determine configuration source for metadata
+     Determine configuration source for metadata
     
     Args:
         file_config: Config loaded from file
@@ -540,7 +540,7 @@ def _get_config_source(file_config: Optional[Dict], env_config: Dict) -> str:
 
 def get_config_info() -> Dict:
     """
-    ✅ UPDATED: Get configuration metadata và info với UTC timestamps only
+     UPDATED: Get configuration metadata và info với UTC timestamps only
     
     Returns:
         Dict: Configuration metadata

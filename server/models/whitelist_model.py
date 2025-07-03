@@ -2,6 +2,7 @@
 Whitelist Model - handles whitelist data operations
 UTC ONLY - Clean and simple
 """
+import datetime
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from bson import ObjectId
@@ -69,7 +70,7 @@ class WhitelistModel:
                         self.logger.debug(f"✓ Index '{field}' already exists with correct properties (name: {existing['name']})")
                         continue
                     else:
-                        self.logger.info(f"🔄 Index '{field}' exists but with different properties - keeping existing")
+                        self.logger.info(f" Index '{field}' exists but with different properties - keeping existing")
                         continue
                 
                 #  FIX: Create index only if it doesn't exist

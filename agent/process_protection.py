@@ -43,7 +43,7 @@ class ProcessProtector:
             # 4. Hide from process list (partial)
             self._apply_stealth_techniques()
             
-            logger.info("✅ Advanced process protection activated")
+            logger.info(" Advanced process protection activated")
             return True
             
         except Exception as e:
@@ -64,7 +64,7 @@ class ProcessProtector:
             # Hook NtTerminateProcess
             self._hook_api("ntdll.dll", "NtTerminateProcess", self._hook_nt_terminate_process)
             
-            logger.info("✅ Critical APIs hooked")
+            logger.info(" Critical APIs hooked")
             
         except Exception as e:
             logger.error(f"Failed to hook APIs: {e}")
@@ -186,7 +186,7 @@ class ProcessProtector:
         self.protection_thread = threading.Thread(target=monitor_loop, daemon=True)
         self.protection_thread.start()
         
-        logger.info("✅ Protection monitoring started")
+        logger.info(" Protection monitoring started")
     
     def _check_for_threats(self):
         """
@@ -282,7 +282,7 @@ class ProcessProtector:
             # 2. Hide from basic process enumeration
             self._hide_from_enumeration()
             
-            logger.info("✅ Stealth techniques applied")
+            logger.info(" Stealth techniques applied")
             
         except Exception as e:
             logger.error(f"Error applying stealth: {e}")
@@ -326,7 +326,7 @@ class ProcessProtector:
                 # Restore original function pointers
                 logger.debug(f"Restored {api_name}")
             
-            logger.info("✅ Protection system stopped")
+            logger.info(" Protection system stopped")
             
         except Exception as e:
             logger.error(f"Error stopping protection: {e}")
