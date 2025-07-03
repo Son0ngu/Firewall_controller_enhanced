@@ -223,7 +223,7 @@ def get_time_info() -> dict:
 def debug_time_info():
     """Print time debug information - UTC only"""
     info = get_time_info()
-    print("🕐 Server Time Debug Info (UTC ONLY):")
+    print("    Server Time Debug Info (UTC ONLY):")
     print(f"   UTC Time: {info['current_utc']}")
     print(f"   Timestamp: {info['current_timestamp']}")
     print(f"   Timezone: {info['timezone']}")
@@ -244,7 +244,7 @@ if __name__ == "__main__":
     print()
     
     # Test format functions
-    print("🧪 Testing format functions:")
+    print(" Testing format functions:")
     test_dt = now_utc().replace(tzinfo=None)
     print(f"format_datetime: {format_datetime(test_dt)}")
     print(f"format_timestamp: {format_timestamp(now())}")

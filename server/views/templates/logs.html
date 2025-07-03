@@ -429,7 +429,7 @@
     <div class="d-flex align-items-center">
         <i class="fas fa-exclamation-triangle text-warning me-3 fa-2x"></i>
         <div class="flex-grow-1">
-            <h6 class="mb-1 fw-bold">⚠️ Clear Logs Warning</h6>
+            <h6 class="mb-1 fw-bold"> Clear Logs Warning</h6>
             <p class="mb-0" id="clearWarningText">
                 You are about to permanently delete logs. This action cannot be undone.
             </p>
@@ -573,7 +573,7 @@ let currentClearAction = null;
  */
 async function loadFullStatistics() {
     try {
-        console.log('📊 Loading full statistics...');
+        console.log(' Loading full statistics...');
         
         const params = new URLSearchParams();
         if (currentFilter.level) params.append('level', currentFilter.level);
@@ -582,28 +582,28 @@ async function loadFullStatistics() {
         if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
         
         const url = `/api/logs/stats?${params.toString()}`;
-        console.log('📡 Fetching statistics from:', url);
+        console.log(' Fetching statistics from:', url);
         
         const response = await fetch(url);
-        console.log('📊 Statistics response status:', response.status);
+        console.log(' Statistics response status:', response.status);
         
         if (response.ok) {
             const responseText = await response.text();
-            console.log('📊 Raw statistics response:', responseText.substring(0, 500));
+            console.log(' Raw statistics response:', responseText.substring(0, 500));
             
             try {
                 allTimeStats = JSON.parse(responseText);
                 console.log(' Statistics loaded:', allTimeStats);
                 return allTimeStats;
             } catch (parseError) {
-                console.error('❌ Statistics JSON parse error:', parseError);
-                console.log('📊 Response text:', responseText);
+                console.error(' Statistics JSON parse error:', parseError);
+                console.log(' Response text:', responseText);
             }
         } else {
-            console.error('❌ Failed to load statistics:', response.status, await response.text());
+            console.error(' Failed to load statistics:', response.status, await response.text());
         }
     } catch (error) {
-        console.error('❌ Error loading statistics:', error);
+        console.error(' Error loading statistics:', error);
     }
     
     // Fallback statistics
@@ -621,11 +621,11 @@ async function loadFullStatistics() {
  */
 async function updateStatistics() {
     try {
-        console.log('📊 Updating statistics display...');
+        console.log(' Updating statistics display...');
         
         await loadFullStatistics();
         
-        console.log('📊 Statistics data:', allTimeStats);
+        console.log(' Statistics data:', allTimeStats);
         
         if (allTimeStats && allTimeStats.success) {
             const hasFilters = currentFilter.time !== 'all' || 
@@ -633,7 +633,7 @@ async function updateStatistics() {
                               currentFilter.agent || 
                               currentFilter.search;
             
-            console.log('📊 Has filters:', hasFilters);
+            console.log(' Has filters:', hasFilters);
             
             // Update display elements
             const totalEl = document.getElementById('totalLogsCount');
@@ -684,7 +684,7 @@ async function updateStatistics() {
             }
             
         } else {
-            console.log('⚠️ Using fallback statistics calculation');
+            console.log(' Using fallback statistics calculation');
             // Fallback: calculate from current logs data
             const total = logsData.length;
             const allowed = logsData.filter(log => (log.level === 'ALLOWED' || log.action === 'ALLOWED')).length;
@@ -699,7 +699,7 @@ async function updateStatistics() {
         }
         
     } catch (error) {
-        console.error('❌ Error updating statistics:', error);
+        console.error(' Error updating statistics:', error);
         // Emergency fallback
         document.getElementById('totalLogsCount').textContent = logsData.length.toLocaleString();
         document.getElementById('allowedLogsCount').textContent = '0';
@@ -724,7 +724,7 @@ async function loadLogs() {
         params.append('limit', currentFilter.limit);
         
         const url = `/api/logs?${params.toString()}`;
-        console.log('📡 Fetching from URL:', url);
+        console.log(' Fetching from URL:', url);
         
         const response = await fetch(url);
         console.log(' Response status:', response.status);
@@ -738,7 +738,7 @@ async function loadLogs() {
             try {
                 const data = JSON.parse(responseText);
                 console.log(' Parsed JSON successfully');
-                console.log('📊 Response structure:', {
+                console.log(' Response structure:', {
                     success: data.success,
                     hasLogs: !!data.logs,
                     logsLength: data.logs ? data.logs.length : 0,
@@ -748,32 +748,32 @@ async function loadLogs() {
                 
                 if (data.logs && Array.isArray(data.logs)) {
                     logsData = data.logs;
-                    console.log('📋 Logs data assigned:', logsData.length, 'items');
+                    console.log(' Logs data assigned:', logsData.length, 'items');
                     
                     if (logsData.length > 0) {
-                        console.log('📋 First log sample:', JSON.stringify(logsData[0], null, 2));
+                        console.log(' First log sample:', JSON.stringify(logsData[0], null, 2));
                     }
                     
                     renderLogs(logsData);
                     await updateStatistics();
                 } else {
-                    console.error('❌ No valid logs array in response');
-                    console.log('📊 Full response:', data);
+                    console.error(' No valid logs array in response');
+                    console.log(' Full response:', data);
                     showError('Invalid response format - no logs array');
                 }
             } catch (parseError) {
-                console.error('❌ JSON parse error:', parseError);
-                console.log('📊 Response text:', responseText.substring(0, 500));
+                console.error(' JSON parse error:', parseError);
+                console.log(' Response text:', responseText.substring(0, 500));
                 showError('Failed to parse server response');
             }
         } else {
             const errorText = await response.text();
-            console.error('❌ Failed to load logs:', response.status, errorText);
+            console.error(' Failed to load logs:', response.status, errorText);
             showError(`Failed to load logs: ${response.status}`);
         }
         
     } catch (error) {
-        console.error('❌ Error loading logs:', error);
+        console.error(' Error loading logs:', error);
         showError('Error loading logs: ' + error.message);
         await updateStatistics();
     }
@@ -795,12 +795,12 @@ function renderLogs(logs) {
     const container = document.getElementById('logsContainer');
     
     if (!container) {
-        console.error('❌ Logs container not found');
+        console.error(' Logs container not found');
         return;
     }
     
     if (!logs || !Array.isArray(logs) || logs.length === 0) {
-        console.log('📋 No logs to render');
+        console.log(' No logs to render');
         container.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-file-alt"></i>
@@ -814,7 +814,7 @@ function renderLogs(logs) {
         return;
     }
     
-    console.log('📋 Starting to render', logs.length, 'logs');
+    console.log(' Starting to render', logs.length, 'logs');
     container.innerHTML = '';
     
     let renderedCount = 0;
@@ -933,7 +933,7 @@ function renderLogs(logs) {
             renderedCount++;
             
         } catch (error) {
-            console.error(`❌ Error rendering log ${index}:`, error, log);
+            console.error(` Error rendering log ${index}:`, error, log);
         }
     });
     
@@ -958,7 +958,7 @@ function showClearConfirmation(action, count = 0, message = '') {
     const confirmBtn = document.getElementById('modalConfirmClearBtn');
     
     if (!modalTitle || !modalMessage || !checkbox || !confirmBtn) {
-        console.error('❌ Modal elements not found');
+        console.error(' Modal elements not found');
         return;
     }
     
@@ -1049,7 +1049,7 @@ async function performClearAction() {
                 successMessage = 'Logs cleared successfully';
         }
         
-        console.log('🗑️ Clearing logs with:', requestBody);
+        console.log(' Clearing logs with:', requestBody);
         
         //  FIX: Use correct URL
         const response = await fetch('/api/logs/clear', {
@@ -1061,11 +1061,11 @@ async function performClearAction() {
             body: JSON.stringify(requestBody)
         });
         
-        console.log('🗑️ Clear response status:', response.status);
+        console.log(' Clear response status:', response.status);
         
         if (response.ok) {
             const result = await response.json();
-            console.log('🗑️ Clear result:', result);
+            console.log(' Clear result:', result);
             
             if (result.success) {
                 const actualDeleted = result.deleted_count || 0;
@@ -1093,12 +1093,12 @@ async function performClearAction() {
             }
         } else {
             const errorText = await response.text();
-            console.error('❌ Clear failed:', response.status, errorText);
+            console.error(' Clear failed:', response.status, errorText);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
     } catch (error) {
-        console.error('❌ Error clearing logs:', error);
+        console.error(' Error clearing logs:', error);
         showNotification('danger', `Failed to clear logs: ${error.message}`);
     } finally {
         confirmBtn.innerHTML = originalText;
@@ -1474,7 +1474,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Load initial data
-    console.log('📋 Loading initial data...');
+    console.log(' Loading initial data...');
     loadLogs();
     
     // Emergency fallback
@@ -1498,7 +1498,7 @@ try {
         });
         
         socket.on('new_log', function(logData) {
-            console.log('📝 New log received:', logData);
+            console.log(' New log received:', logData);
             logsData.unshift(logData);
             logsData = logsData.slice(0, currentFilter.limit);
             updateStatistics();
@@ -1506,16 +1506,16 @@ try {
         });
         
         socket.on('logs_cleared', function(data) {
-            console.log('🗑️ Logs cleared:', data);
+            console.log(' Logs cleared:', data);
             showNotification('info', `${data.count} logs were cleared`);
             loadLogs();
         });
         
     } else {
-        console.log('❌ Socket.IO not available');
+        console.log(' Socket.IO not available');
     }
 } catch (error) {
-    console.error('❌ Socket.IO error:', error);
+    console.error(' Socket.IO error:', error);
 }
 
 //  Add emergency test function
@@ -1525,33 +1525,33 @@ function emergencyTest() {
     // Test direct API call
     fetch('/api/logs?limit=5')
         .then(response => {
-            console.log('📡 Emergency test response status:', response.status);
+            console.log(' Emergency test response status:', response.status);
             return response.text();
         })
         .then(text => {
-            console.log('📡 Emergency test response text length:', text.length);
-            console.log('📡 Emergency test response start:', text.substring(0, 300));
+            console.log(' Emergency test response text length:', text.length);
+            console.log(' Emergency test response start:', text.substring(0, 300));
             
             try {
                 const data = JSON.parse(text);
-                console.log('📡 Emergency test parsed data:', data);
+                console.log(' Emergency test parsed data:', data);
                 
                 if (data.logs) {
-                    console.log('📡 Emergency test logs count:', data.logs.length);
+                    console.log(' Emergency test logs count:', data.logs.length);
                     renderLogs(data.logs);
                 }
             } catch (e) {
-                console.error('📡 Emergency test parse error:', e);
+                console.error(' Emergency test parse error:', e);
             }
         })
         .catch(error => {
-            console.error('📡 Emergency test error:', error);
+            console.error(' Emergency test error:', error);
         });
 }
 
 //  Add test render function
 function testRender() {
-    console.log('🧪 Testing render with sample data');
+    console.log(' Testing render with sample data');
     
     const sampleLogs = [
         {
@@ -1582,7 +1582,7 @@ function testRender() {
         }
     ];
     
-    console.log('🧪 Rendering sample logs:', sampleLogs);
+    console.log(' Rendering sample logs:', sampleLogs);
     renderLogs(sampleLogs);
 }
 

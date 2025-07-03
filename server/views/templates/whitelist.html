@@ -791,7 +791,7 @@ async function loadItems() {
             } else if (Array.isArray(data)) {
                 itemsData = data;
             } else {
-                console.warn('⚠️ Unexpected data format:', data);
+                console.warn(' Unexpected data format:', data);
                 itemsData = [];
             }
             
@@ -799,14 +799,14 @@ async function loadItems() {
             renderItems(itemsData);
             updateStatistics();
         } else {
-            console.error('❌ Failed to load items:', response.statusText);
+            console.error(' Failed to load items:', response.statusText);
             showError('Failed to load whitelist items');
             renderItems([]);
             updateStatistics();
         }
         
     } catch (error) {
-        console.error('❌ Error loading items:', error);
+        console.error(' Error loading items:', error);
         showError('Error loading whitelist items: ' + error.message);
         renderItems([]);
         updateStatistics();
@@ -1063,7 +1063,7 @@ async function toggleItem(itemId, active) {
         await loadItems();
         
     } catch (error) {
-        console.error('❌ Error toggling item:', error);
+        console.error(' Error toggling item:', error);
         showError('Failed to toggle item: ' + error.message);
     }
 }
@@ -1075,7 +1075,7 @@ async function removeItem(itemId) {
     if (!confirm('Are you sure you want to remove this item?')) return;
     
     try {
-        console.log('🗑️ Removing item:', itemId);
+        console.log(' Removing item:', itemId);
         
         const response = await fetch(`/api/whitelist/${itemId}`, {
             method: 'DELETE'
@@ -1090,7 +1090,7 @@ async function removeItem(itemId) {
         await loadItems();
         
     } catch (error) {
-        console.error('❌ Error removing item:', error);
+        console.error(' Error removing item:', error);
         showError('Failed to remove item: ' + error.message);
     }
 }
@@ -1121,7 +1121,7 @@ async function addItem() {
             itemData.agent_id = formData.get('agent_id');
         }
         
-        console.log('📤 Sending item data:', itemData);
+        console.log(' Sending item data:', itemData);
         
         //  FIX: Actually call the API instead of manipulating local array
         const response = await fetch('/api/whitelist', {
@@ -1145,7 +1145,7 @@ async function addItem() {
         await loadItems();
         
     } catch (error) {
-        console.error('❌ Error adding item:', error);
+        console.error(' Error adding item:', error);
         showError('Failed to add item: ' + error.message);
     } finally {
         button.innerHTML = originalText;

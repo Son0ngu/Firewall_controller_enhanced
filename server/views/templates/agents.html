@@ -421,7 +421,7 @@ async function loadAgents() {
             console.log(' Loaded agents:', agentsData);
             renderAgents(agentsData);
         } else {
-            console.error('❌ Failed to load agents:', agentsResponse.statusText);
+            console.error(' Failed to load agents:', agentsResponse.statusText);
             showError('Failed to load agents');
         }
         
@@ -433,7 +433,7 @@ async function loadAgents() {
         }
         
     } catch (error) {
-        console.error('❌ Error loading agents:', error);
+        console.error(' Error loading agents:', error);
         showError('Error loading agents');
         updateStatistics();
     }
@@ -649,7 +649,7 @@ async function pingAgent(agentId) {
                 updateStatistics();
             }
         } else {
-            showNotification('danger', `❌ Ping failed: ${data.error}`);
+            showNotification('danger', ` Ping failed: ${data.error}`);
         }
         
     } catch (error) {
@@ -771,7 +771,7 @@ try {
         });
         
         socket.on('agent_deleted', function(data) {
-            console.log('🗑️ Agent deleted:', data);
+            console.log(' Agent deleted:', data);
             
             const agentIndex = agentsData.findIndex(a => a.agent_id === data.agent_id);
             if (agentIndex >= 0) {
@@ -783,10 +783,10 @@ try {
         });
         
     } else {
-        console.log('❌ Socket.IO not available - real-time updates disabled');
+        console.log(' Socket.IO not available - real-time updates disabled');
     }
 } catch (error) {
-    console.error('❌ Socket.IO initialization error:', error);
+    console.error(' Socket.IO initialization error:', error);
 }
 
 /**

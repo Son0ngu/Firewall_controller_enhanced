@@ -115,11 +115,11 @@ class CommandProcessor:
                 "parameters_received": parameters
             }
             
-            self.logger.info("🏓 Ping command successful")
+            self.logger.info(" Ping command successful")
             return response_data
             
         except Exception as e:
-            self.logger.error(f"❌ Ping command failed: {e}")
+            self.logger.error(f" Ping command failed: {e}")
             return {
                 "success": False,
                 "error": str(e)

@@ -138,7 +138,7 @@ def load_config() -> Dict[str, Any]:
     """
     load_start_time = now()  # UTC timestamp
     
-    logger.info(f"🔧 Loading configuration at {now_iso()}")  # UTC ISO
+    logger.info(f" Loading configuration at {now_iso()}")  # UTC ISO
     
     # Khởi đầu với cấu hình mặc định
     config = DEFAULT_CONFIG.copy()
@@ -189,7 +189,7 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
         try:
             if path.exists():
                 file_load_start = now()  # UTC timestamp
-                logger.info(f"📄 Loading configuration from {path}")
+                logger.info(f" Loading configuration from {path}")
                 
                 with open(path, "r") as f:
                     config = json.load(f)
@@ -199,9 +199,9 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
                 return config
                 
         except Exception as e:
-            logger.warning(f"❌ Error reading config file {path}: {str(e)}")
+            logger.warning(f" Error reading config file {path}: {str(e)}")
     
-    logger.info("📄 No configuration file found, using defaults")
+    logger.info(" No configuration file found, using defaults")
     return None
 
 
@@ -311,7 +311,7 @@ def _validate_config(config: Dict) -> None:
     # Log validation results
     if validation_issues:
         for issue in validation_issues:
-            logger.warning(f"⚠️ Config validation: {issue}")
+            logger.warning(f" Config validation: {issue}")
     else:
         logger.info(" Configuration validation passed")
 
@@ -368,7 +368,7 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
         
     except Exception as e:
         save_duration = now() - save_start_time
-        logger.error(f"❌ Error saving configuration to {path} after {save_duration:.3f}s: {str(e)}")
+        logger.error(f" Error saving configuration to {path} after {save_duration:.3f}s: {str(e)}")
         return False
 
 

@@ -35,29 +35,29 @@ class SecureServiceManager:
         Áp dụng các thiết lập bảo mật để bảo vệ service
         """
         try:
-            logger.info("🔒 Applying enhanced security settings...")
+            logger.info(" Applying enhanced security settings...")
             
             # 1. Set service security descriptor
             if not self._set_service_security():
-                logger.warning("⚠️ Failed to set service security")
+                logger.warning(" Failed to set service security")
             
             # 2. Protect current process
             if not self._protect_current_process():
-                logger.warning("⚠️ Failed to protect current process")
+                logger.warning(" Failed to protect current process")
             
             # 3. Enable required privileges
             if not self._enable_required_privileges():
-                logger.warning("⚠️ Failed to enable required privileges")
+                logger.warning(" Failed to enable required privileges")
             
             # 4. Install process protection hooks
             if not self._install_protection_hooks():
-                logger.warning("⚠️ Failed to install protection hooks")
+                logger.warning(" Failed to install protection hooks")
             
             logger.info(" Security settings applied successfully")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error applying security settings: {e}")
+            logger.error(f" Error applying security settings: {e}")
             return False
     
     def _set_service_security(self) -> bool:
@@ -182,7 +182,7 @@ class SecureServiceManager:
                 win32con.PROCESS_QUERY_INFORMATION |
                 win32con.PROCESS_QUERY_LIMITED_INFORMATION |
                 win32con.SYNCHRONIZE
-                # ❌ KHÔNG có PROCESS_TERMINATE
+                #  KHÔNG có PROCESS_TERMINATE
             )
             
             new_dacl.AddAccessAllowedAce(
@@ -225,7 +225,7 @@ class SecureServiceManager:
                     success_count += 1
                     logger.debug(f" Enabled privilege: {privilege}")
                 else:
-                    logger.debug(f"⚠️ Failed to enable privilege: {privilege}")
+                    logger.debug(f" Failed to enable privilege: {privilege}")
             
             logger.info(f" Enabled {success_count}/{len(privileges)} privileges")
             return success_count > 0
@@ -283,7 +283,7 @@ class SecureServiceManager:
                                 win32api.GetCurrentProcessId()
                             )
                             if test_handle:
-                                logger.warning("⚠️ Process protection may be compromised")
+                                logger.warning(" Process protection may be compromised")
                                 win32api.CloseHandle(test_handle)
                         except:
                             # Good - terminate access is blocked
