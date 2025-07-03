@@ -1,5 +1,6 @@
 """
 Configuration and Database Client for Firewall Controller Server
+UTC ONLY - Clean and simple
 """
 
 import os
@@ -8,10 +9,10 @@ import logging
 from typing import Any, Optional
 from pymongo import MongoClient
 
-# ✅ Import dotenv để load .env file
+# Import dotenv để load .env file
 from dotenv import load_dotenv
 
-# ✅ Load .env file
+# Load .env file
 load_dotenv()
 
 # Setup logging
@@ -34,15 +35,20 @@ def get_env(key: str, default: Any = None) -> Any:
             return default
     return value
 
+def now_iso() -> str:
+    """Get current UTC time as ISO string - local function to avoid circular import"""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
 class Config:
-    """Configuration class for the application."""
+    """Configuration class for the application - UTC ONLY"""
     
     # Flask core settings
     SECRET_KEY = get_env('SECRET_KEY', secrets.token_hex(32))
     DEBUG = get_env('DEBUG', True)
     TESTING = get_env('TESTING', False)
     
-    # ✅ MongoDB Settings - Sẽ đọc từ .env file
+    # MongoDB Settings - Sẽ đọc từ .env file
     MONGO_URI = get_env('MONGO_URI', 'mongodb://localhost:27017/')
     MONGO_DBNAME = get_env('MONGO_DBNAME', 'Monitoring')
     
@@ -71,26 +77,26 @@ class Config:
     PORT = int(get_env('PORT', 5000))
 
 def get_mongo_client(config):
-    """Get MongoDB client with optimized settings"""
+    """Get MongoDB client with optimized settings - UTC logging"""
     global _mongo_client
     
     if _mongo_client is None:
         try:
-            logger.info(f"🔗 Connecting to MongoDB: {config.MONGO_URI}")
+            logger.info(f"🔗 [{now_iso()}] Connecting to MongoDB: {config.MONGO_URI}")
             
-            # ✅ FIX: Optimized connection settings để reduce Win32 exceptions
+            # FIX: Optimized connection settings để reduce Win32 exceptions
             _mongo_client = MongoClient(
                 config.MONGO_URI,
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=5000,
                 socketTimeoutMS=5000,
-                maxPoolSize=10,        # ✅ Reduce pool size
-                minPoolSize=1,         # ✅ Minimum connections
-                maxIdleTimeMS=30000,   # ✅ Close idle connections faster
-                heartbeatFrequencyMS=10000,  # ✅ Less frequent heartbeats
+                maxPoolSize=10,        # Reduce pool size
+                minPoolSize=1,         # Minimum connections
+                maxIdleTimeMS=30000,   # Close idle connections faster
+                heartbeatFrequencyMS=10000,  # Less frequent heartbeats
                 retryWrites=True,
                 w='majority',
-                # ✅ ADD: Windows-specific optimizations
+                # ADD: Windows-specific optimizations
                 appName="FirewallController",
                 compressors="snappy,zlib",
                 zlibCompressionLevel=6
@@ -98,22 +104,22 @@ def get_mongo_client(config):
             
             # Test connection
             _mongo_client.admin.command('ping')
-            logger.info("✅ MongoDB client created successfully")
+            logger.info(f" [{now_iso()}] MongoDB client created successfully")
             
         except Exception as e:
-            logger.error(f"❌ MongoDB connection failed: {e}")
+            logger.error(f"❌ [{now_iso()}] MongoDB connection failed: {e}")
             _mongo_client = None
             raise
     
     return _mongo_client
 
 def close_mongo_client():
-    """Close MongoDB client"""
+    """Close MongoDB client - UTC logging"""
     global _mongo_client
     if _mongo_client:
         _mongo_client.close()
         _mongo_client = None
-        logger.info("MongoDB client closed")
+        logger.info(f"🔌 [{now_iso()}] MongoDB client closed")
 
 def get_config() -> Config:
     """Get configuration instance."""
@@ -124,18 +130,18 @@ def get_database(config: Config = None):
     if config is None:
         config = get_config()
     
-    # ✅ FIX: Call get_mongo_client with only config parameter
+    # FIX: Call get_mongo_client with only config parameter
     client = get_mongo_client(config)
     return client[config.MONGO_DBNAME]
 
 # Environment-specific configurations
 class DevelopmentConfig(Config):
-    """Development configuration"""
+    """Development configuration - UTC ONLY"""
     DEBUG = True
     LOG_LEVEL = 'DEBUG'
 
 class ProductionConfig(Config):
-    """Production configuration"""
+    """Production configuration - UTC ONLY"""
     DEBUG = False
     LOG_LEVEL = 'WARNING'
     
@@ -144,7 +150,7 @@ class ProductionConfig(Config):
     MONGO_SERVER_SELECTION_TIMEOUT_MS = 3000
 
 class TestingConfig(Config):
-    """Testing configuration"""
+    """Testing configuration - UTC ONLY"""
     TESTING = True
     DEBUG = True
     MONGO_DBNAME = 'test_firewall_controller'
@@ -163,7 +169,7 @@ def get_config_by_name(config_name: str = None) -> Config:
     return configs.get(config_name, Config)()
 
 def validate_config(config: Config = None) -> bool:
-    """Validate configuration settings"""
+    """Validate configuration settings - UTC logging"""
     if config is None:
         config = get_config()
     
@@ -173,7 +179,7 @@ def validate_config(config: Config = None) -> bool:
     
     for setting in required_settings:
         if not hasattr(config, setting) or not getattr(config, setting):
-            logger.error(f"Missing required configuration: {setting}")
+            logger.error(f"❌ [{now_iso()}] Missing required configuration: {setting}")
             return False
     
     # Log current MongoDB URI (cẩn thận với credentials)
@@ -181,20 +187,64 @@ def validate_config(config: Config = None) -> bool:
     if 'mongodb+srv://' in mongo_uri:
         # Mask credentials in log
         masked_uri = mongo_uri.split('@')[1] if '@' in mongo_uri else mongo_uri
-        logger.info(f"Using MongoDB Atlas: {masked_uri}")
+        logger.info(f"🌐 [{now_iso()}] Using MongoDB Atlas: {masked_uri}")
     else:
-        logger.info(f"Using MongoDB: {mongo_uri}")
+        logger.info(f"🗄️ [{now_iso()}] Using MongoDB: {mongo_uri}")
     
     # Test MongoDB connection
     try:
-        # ✅ FIX: Call get_mongo_client with only config parameter
+        # FIX: Call get_mongo_client with only config parameter
         client = get_mongo_client(config)
         client.admin.command('ping')
-        logger.info("✅ Configuration validation successful")
+        logger.info(f" [{now_iso()}] Configuration validation successful")
         return True
     except Exception as e:
-        logger.error(f"❌ MongoDB connection test failed: {e}")
+        logger.error(f"❌ [{now_iso()}] MongoDB connection test failed: {e}")
         return False
+
+def get_connection_info() -> dict:
+    """Get MongoDB connection information with UTC timestamp"""
+    try:
+        if _mongo_client is None:
+            return {
+                "connected": False,
+                "error": "No MongoDB client instance",
+                "timestamp": now_iso()
+            }
+        
+        # Test connection
+        server_info = _mongo_client.server_info()
+        
+        return {
+            "connected": True,
+            "server_version": server_info.get("version"),
+            "uptime": server_info.get("uptimeMillis"),
+            "timestamp": now_iso()
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "timestamp": now_iso()
+        }
+
+def log_config_status(config: Config = None):
+    """Log current configuration status with UTC timestamps"""
+    if config is None:
+        config = get_config()
+    
+    logger.info(f"📊 [{now_iso()}] Configuration Status:")
+    logger.info(f"   Database: {config.MONGO_DBNAME}")
+    logger.info(f"   Debug Mode: {config.DEBUG}")
+    logger.info(f"   Log Level: {config.LOG_LEVEL}")
+    logger.info(f"   Host: {config.HOST}:{config.PORT}")
+    
+    # Connection info
+    conn_info = get_connection_info()
+    if conn_info["connected"]:
+        logger.info(f"   MongoDB: Connected (v{conn_info.get('server_version', 'unknown')})")
+    else:
+        logger.warning(f"   MongoDB: Disconnected - {conn_info.get('error', 'unknown')}")
 
 # Export main functions
 __all__ = [
@@ -207,5 +257,7 @@ __all__ = [
     'get_mongo_client',
     'close_mongo_client',
     'get_database',
-    'validate_config'
+    'validate_config',
+    'get_connection_info',
+    'log_config_status'
 ]
