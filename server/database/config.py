@@ -107,7 +107,7 @@ def get_mongo_client(config):
             logger.info(f" [{now_iso()}] MongoDB client created successfully")
             
         except Exception as e:
-            logger.error(f"❌ [{now_iso()}] MongoDB connection failed: {e}")
+            logger.error(f" [{now_iso()}] MongoDB connection failed: {e}")
             _mongo_client = None
             raise
     
@@ -179,7 +179,7 @@ def validate_config(config: Config = None) -> bool:
     
     for setting in required_settings:
         if not hasattr(config, setting) or not getattr(config, setting):
-            logger.error(f"❌ [{now_iso()}] Missing required configuration: {setting}")
+            logger.error(f" [{now_iso()}] Missing required configuration: {setting}")
             return False
     
     # Log current MongoDB URI (cẩn thận với credentials)
@@ -187,7 +187,7 @@ def validate_config(config: Config = None) -> bool:
     if 'mongodb+srv://' in mongo_uri:
         # Mask credentials in log
         masked_uri = mongo_uri.split('@')[1] if '@' in mongo_uri else mongo_uri
-        logger.info(f"🌐 [{now_iso()}] Using MongoDB Atlas: {masked_uri}")
+        logger.info(f" [{now_iso()}] Using MongoDB Atlas: {masked_uri}")
     else:
         logger.info(f"🗄️ [{now_iso()}] Using MongoDB: {mongo_uri}")
     
@@ -199,7 +199,7 @@ def validate_config(config: Config = None) -> bool:
         logger.info(f" [{now_iso()}] Configuration validation successful")
         return True
     except Exception as e:
-        logger.error(f"❌ [{now_iso()}] MongoDB connection test failed: {e}")
+        logger.error(f" [{now_iso()}] MongoDB connection test failed: {e}")
         return False
 
 def get_connection_info() -> dict:
@@ -233,7 +233,7 @@ def log_config_status(config: Config = None):
     if config is None:
         config = get_config()
     
-    logger.info(f"📊 [{now_iso()}] Configuration Status:")
+    logger.info(f" [{now_iso()}] Configuration Status:")
     logger.info(f"   Database: {config.MONGO_DBNAME}")
     logger.info(f"   Debug Mode: {config.DEBUG}")
     logger.info(f"   Log Level: {config.LOG_LEVEL}")

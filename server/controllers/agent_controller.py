@@ -177,13 +177,13 @@ class AgentController:
     def list_agents(self):
         """List all agents with filtering - COMPLETE VERSION - UTC only"""
         try:
-            self.logger.info("📊 List agents called")
+            self.logger.info(" List agents called")
             
             pagination = self._get_pagination_params()
             filters = self._get_filter_params(['status', 'hostname'])
             
             agents_with_status = self.service.get_agents_with_status()
-            self.logger.info(f"📊 Found {len(agents_with_status)} agents")
+            self.logger.info(f" Found {len(agents_with_status)} agents")
             
             # Apply filters
             filtered_agents = agents_with_status
@@ -484,7 +484,7 @@ class AgentController:
         try:
             #  CRITICAL: Use calculate_statistics method
             stats = self.service.calculate_statistics()
-            self.logger.info(f"📊 Statistics calculated: {stats}")
+            self.logger.info(f" Statistics calculated: {stats}")
             return self._success_response(stats)
         except Exception as e:
             self.logger.error(f"Error getting statistics: {e}")
@@ -493,7 +493,7 @@ class AgentController:
     def debug_direct_call(self):
         """Debug endpoint - direct service call"""
         try:
-            self.logger.info("🔧 DEBUG: Direct get_agents_with_status call")
+            self.logger.info(" DEBUG: Direct get_agents_with_status call")
             
             # Call service method directly
             agents = self.service.get_agents_with_status()
@@ -541,7 +541,7 @@ class AgentController:
     def ping_agent(self, agent_id: str):
         """Ping agent to check connectivity"""
         try:
-            self.logger.info(f"📡 Ping request for agent: {agent_id}")
+            self.logger.info(f" Ping request for agent: {agent_id}")
             
             # Call service method
             result = self.service.ping_agent(agent_id)
