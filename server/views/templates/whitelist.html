@@ -584,6 +584,12 @@
                                   placeholder="Optional description for this item"></textarea>
                     </div>
                     
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Notes</label>
+                        <textarea class="form-control" name="notes" rows="2" 
+                                  placeholder="Optional notes for this item"></textarea>
+                    </div>
+                    
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="active" id="activeCheck" checked>
                         <label class="form-check-label" for="activeCheck">
@@ -748,29 +754,61 @@ const typeConfigs = {
 };
 
 /**
- * Load items from API
+ * Enhanced error handling for API responses
+ */
+function handleApiResponse(response) {
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json().then(data => {
+        //  FIX: Handle different response formats
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        return data;
+    });
+}
+
+/**
+ * Load items from API with better error handling
  */
 async function loadItems() {
     try {
-        console.log('🔄 Loading whitelist items...');
+        console.log(' Loading whitelist items...');
         
         const response = await fetch('/api/whitelist').catch(err => ({ ok: false, statusText: err.message }));
         
         if (response.ok) {
-            const data = await response.json();
-            // Handle different response formats
-            itemsData = data.domains || data.items || data.whitelist || [];
-            console.log('✅ Loaded items:', itemsData);
+            const data = await handleApiResponse(response);
+            
+            //  FIX: Handle different response formats
+            if (data.domains && Array.isArray(data.domains)) {
+                itemsData = data.domains;
+            } else if (data.items && Array.isArray(data.items)) {
+                itemsData = data.items;
+            } else if (data.whitelist && Array.isArray(data.whitelist)) {
+                itemsData = data.whitelist;
+            } else if (Array.isArray(data)) {
+                itemsData = data;
+            } else {
+                console.warn('⚠️ Unexpected data format:', data);
+                itemsData = [];
+            }
+            
+            console.log(' Loaded items:', itemsData.length);
             renderItems(itemsData);
             updateStatistics();
         } else {
             console.error('❌ Failed to load items:', response.statusText);
             showError('Failed to load whitelist items');
+            renderItems([]);
+            updateStatistics();
         }
         
     } catch (error) {
         console.error('❌ Error loading items:', error);
-        showError('Error loading whitelist items');
+        showError('Error loading whitelist items: ' + error.message);
+        renderItems([]);
         updateStatistics();
     }
 }
@@ -831,6 +869,9 @@ function renderItems(items) {
         const itemType = item.type || 'domain';
         const value = item.value || item.domain || item.ip || item.url || item.port || item.process;
         
+        //  FIX: Use proper item ID from server response
+        const itemId = item.id || item._id || value; // fallback to value if no ID
+        
         const statusInfo = isActive ? 
             { class: 'active', text: 'Active', icon: 'check-circle' } :
             { class: 'inactive', text: 'Inactive', icon: 'times-circle' };
@@ -849,7 +890,7 @@ function renderItems(items) {
                 <div class="col-md-1">
                     <div class="form-check">
                         <input class="form-check-input item-checkbox" type="checkbox" 
-                               value="${item.id || value}">
+                               value="${itemId}">
                     </div>
                 </div>
                 <div class="col-md-7">
@@ -890,41 +931,40 @@ function renderItems(items) {
                                     </div>
                                 ` : ''}
                             </div>
-                            ${(item.description || item.notes) ? `
-                                <div class="mt-1">
+                            ${item.notes ? `
+                                <div class="mt-2">
                                     <small class="text-muted">
-                                        <i class="fas fa-info-circle me-1"></i>
-                                        ${item.description || item.notes}
+                                        <i class="fas fa-sticky-note me-1"></i>
+                                        ${item.notes}
                                     </small>
                                 </div>
                             ` : ''}
                         </div>
                     </div>
                 </div>
-                
-                <div class="col-md-4 text-md-end">
-                    <div class="btn-group btn-group-sm" role="group">
-                        ${isActive ? 
-                            `<button type="button" class="btn btn-outline-warning btn-action" 
-                                    data-action="toggle" data-item-id="${item.id || value}" data-active="false"
-                                    title="Deactivate Item">
-                                <i class="fas fa-pause"></i>
-                            </button>` :
-                            `<button type="button" class="btn btn-outline-success btn-action" 
-                                    data-action="toggle" data-item-id="${item.id || value}" data-active="true"
-                                    title="Activate Item">
-                                <i class="fas fa-play"></i>
-                            </button>`
-                        }
-                        <button type="button" class="btn btn-outline-primary btn-action" 
-                                data-action="edit" data-item-id="${item.id || value}"
-                                title="Edit Item">
-                            <i class="fas fa-edit"></i>
+                <div class="col-md-4 text-end">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-${isActive ? 'warning' : 'success'} btn-action" 
+                                data-action="toggle" 
+                                data-item-id="${itemId}"
+                                data-active="${isActive}"
+                                title="${isActive ? 'Deactivate' : 'Activate'}">
+                            <i class="fas fa-${isActive ? 'pause' : 'play'} me-1"></i>
+                            ${isActive ? 'Pause' : 'Activate'}
                         </button>
-                        <button type="button" class="btn btn-outline-danger btn-action" 
-                                data-action="remove" data-item-id="${item.id || value}"
-                                title="Remove Item">
-                            <i class="fas fa-trash"></i>
+                        <button class="btn btn-outline-primary btn-action" 
+                                data-action="edit" 
+                                data-item-id="${itemId}"
+                                title="Edit">
+                            <i class="fas fa-edit me-1"></i>
+                            Edit
+                        </button>
+                        <button class="btn btn-outline-danger btn-action" 
+                                data-action="remove" 
+                                data-item-id="${itemId}"
+                                title="Remove">
+                            <i class="fas fa-trash me-1"></i>
+                            Remove
                         </button>
                     </div>
                 </div>
@@ -977,28 +1017,86 @@ function showBulkImportModal() {
 }
 
 /**
- * Handle item actions
+ * Handle item actions -  FIXED to call actual APIs
  */
-function handleItemAction(event) {
+async function handleItemAction(event) {
     const action = event.currentTarget.dataset.action;
     const itemId = event.currentTarget.dataset.itemId;
     const active = event.currentTarget.dataset.active === 'true';
     
+    console.log('🎯 Item action:', { action, itemId, active });
+    
     switch (action) {
         case 'toggle':
-            toggleItem(itemId, active);
+            await toggleItem(itemId, !active);
             break;
         case 'edit':
             editItem(itemId);
             break;
         case 'remove':
-            removeItem(itemId);
+            await removeItem(itemId);
             break;
     }
 }
 
 /**
- * Add new item
+ * Toggle item active status -  FIXED to call API
+ */
+async function toggleItem(itemId, active) {
+    try {
+        console.log(' Toggling item:', itemId, 'to', active);
+        
+        const response = await fetch(`/api/whitelist/${itemId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ active: active })
+        });
+        
+        const result = await handleApiResponse(response);
+        console.log(' Toggle result:', result);
+        
+        showSuccess(`Item ${active ? 'activated' : 'deactivated'} successfully`);
+        
+        // Reload data from server
+        await loadItems();
+        
+    } catch (error) {
+        console.error('❌ Error toggling item:', error);
+        showError('Failed to toggle item: ' + error.message);
+    }
+}
+
+/**
+ * Remove item -  FIXED to call API
+ */
+async function removeItem(itemId) {
+    if (!confirm('Are you sure you want to remove this item?')) return;
+    
+    try {
+        console.log('🗑️ Removing item:', itemId);
+        
+        const response = await fetch(`/api/whitelist/${itemId}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await handleApiResponse(response);
+        console.log(' Remove result:', result);
+        
+        showSuccess(result.message || 'Item removed successfully');
+        
+        // Reload data from server
+        await loadItems();
+        
+    } catch (error) {
+        console.error('❌ Error removing item:', error);
+        showError('Failed to remove item: ' + error.message);
+    }
+}
+
+/**
+ * Add new item -  FIXED to actually call API
  */
 async function addItem() {
     const form = document.getElementById('addItemForm');
@@ -1015,6 +1113,7 @@ async function addItem() {
             value: formData.get('value'),
             scope: formData.get('scope') || 'global',
             description: formData.get('description'),
+            notes: formData.get('notes') || '',
             active: formData.get('active') === 'on'
         };
         
@@ -1022,30 +1121,84 @@ async function addItem() {
             itemData.agent_id = formData.get('agent_id');
         }
         
-        // Add to local data for immediate feedback
-        itemsData.push({
-            id: Date.now().toString(),
-            ...itemData,
-            added_date: new Date().toISOString()
+        console.log('📤 Sending item data:', itemData);
+        
+        //  FIX: Actually call the API instead of manipulating local array
+        const response = await fetch('/api/whitelist', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(itemData)
         });
         
-        showNotification('success', `${itemData.type.toUpperCase()} ${itemData.value} added successfully!`);
+        const result = await handleApiResponse(response);
+        console.log(' API response:', result);
+        
+        showSuccess(result.message || `${itemData.type.toUpperCase()} ${itemData.value} added successfully!`);
         
         // Reset form and close modal
         form.reset();
         bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
         
-        // Update display
-        updateStatistics();
-        renderItems(itemsData);
+        //  FIX: Reload data from server instead of manipulating local array
+        await loadItems();
         
     } catch (error) {
-        console.error('Error adding item:', error);
-        showNotification('danger', `Failed to add item: ${error.message}`);
+        console.error('❌ Error adding item:', error);
+        showError('Failed to add item: ' + error.message);
     } finally {
         button.innerHTML = originalText;
         button.disabled = false;
     }
+}
+
+/**
+ * Show error message
+ */
+function showError(message) {
+    // Create error notification
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+    errorDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+    errorDiv.innerHTML = `
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(errorDiv);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (errorDiv.parentNode) {
+            errorDiv.remove();
+        }
+    }, 5000);
+}
+
+/**
+ * Show success message
+ */
+function showSuccess(message) {
+    // Create success notification
+    const successDiv = document.createElement('div');
+    successDiv.className = 'alert alert-success alert-dismissible fade show position-fixed';
+    successDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+    successDiv.innerHTML = `
+        <i class="fas fa-check-circle me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(successDiv);
+    
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+        if (successDiv.parentNode) {
+            successDiv.remove();
+        }
+    }, 3000);
 }
 
 /**
@@ -1054,32 +1207,6 @@ async function addItem() {
 async function loadAgentsForSelect() {
     // Placeholder for loading agents
     console.log('Loading agents for selection...');
-}
-
-function toggleItem(itemId, active) {
-    const item = itemsData.find(i => (i.id || i.value) === itemId);
-    if (item) {
-        item.active = active;
-        updateStatistics();
-        renderItems(itemsData);
-        showNotification('success', `Item ${active ? 'activated' : 'deactivated'} successfully`);
-    }
-}
-
-function removeItem(itemId) {
-    if (!confirm('Are you sure you want to remove this item?')) return;
-    
-    const itemIndex = itemsData.findIndex(i => (i.id || i.value) === itemId);
-    if (itemIndex >= 0) {
-        itemsData.splice(itemIndex, 1);
-        updateStatistics();
-        renderItems(itemsData);
-        showNotification('success', 'Item removed successfully');
-    }
-}
-
-function editItem(itemId) {
-    showNotification('info', 'Edit functionality - Coming soon!');
 }
 
 function refreshItems() {
@@ -1131,20 +1258,6 @@ function filterItems() {
             row.style.display = 'none';
         }
     });
-}
-
-function showError(message) {
-    const container = document.getElementById('itemsContainer');
-    container.innerHTML = `
-        <div class="text-center py-5">
-            <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-            <h5 class="text-danger">Error Loading Items</h5>
-            <p class="text-muted">${message}</p>
-            <button class="btn btn-success" onclick="refreshItems()">
-                <i class="fas fa-redo me-2"></i>Try Again
-            </button>
-        </div>
-    `;
 }
 
 /**
@@ -1208,7 +1321,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-refresh every 60 seconds
     setInterval(loadItems, 60000);
     
-    console.log('✅ Enhanced whitelist management initialized');
+    console.log(' Enhanced whitelist management initialized');
 });
 </script>
 {% endblock %}

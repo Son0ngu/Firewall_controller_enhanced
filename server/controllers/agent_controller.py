@@ -1,13 +1,16 @@
 """
 Agent Controller - handles agent HTTP requests
+UTC ONLY - Clean and simple
 """
 
 import logging
-from datetime import datetime, timezone, timedelta  # ✅ Add timedelta import
 from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.agent_model import AgentModel
 from services.agent_service import AgentService
+
+# Import time utilities - UTC ONLY
+from time_utils import now_utc, now_iso
 
 class AgentController:
     """Controller for agent operations"""
@@ -18,35 +21,34 @@ class AgentController:
         self.service = agent_service
         self.socketio = socketio
         self.blueprint = Blueprint('agents', __name__)
-        
-        # ✅ THÊM: Dùng cùng timezone với service
-        self.server_timezone = self.service.server_timezone
         self._register_routes()
     
     def _register_routes(self):
         """Register routes for this controller"""
-        # ✅ CORE API endpoints - KEEP THESE
-        self.blueprint.add_url_rule('/register', 'register_agent', self.register_agent, methods=['POST'])
-        self.blueprint.add_url_rule('/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])
-        self.blueprint.add_url_rule('', 'list_agents', self.list_agents, methods=['GET'])
-        self.blueprint.add_url_rule('/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
-        self.blueprint.add_url_rule('/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
+        #  FIX: Add missing '/agents' prefix to routes
         
-        # ✅ STATISTICS endpoint - KEEP THIS
-        self.blueprint.add_url_rule('/statistics', 'get_statistics', self.get_statistics, methods=['GET'])
+        # Core agent management routes
+        self.blueprint.add_url_rule('/agents/register', 'register_agent', self.register_agent, methods=['POST'])
+        self.blueprint.add_url_rule('/agents/heartbeat', 'heartbeat', self.heartbeat, methods=['POST'])
+        self.blueprint.add_url_rule('/agents', 'list_agents', self.list_agents, methods=['GET'])  #  FIX: Add this route
+        self.blueprint.add_url_rule('/agents/statistics', 'get_statistics', self.get_statistics, methods=['GET'])  #  FIX: Add agents prefix
         
-        # ✅ COMMANDS endpoints - KEEP THESE (for future use)
-        self.blueprint.add_url_rule('/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
-        self.blueprint.add_url_rule('/commands', 'get_commands', self.get_commands, methods=['GET'])
-        self.blueprint.add_url_rule('/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
+        # Individual agent routes
+        self.blueprint.add_url_rule('/agents/<agent_id>', 'get_agent', self.get_agent, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/<agent_id>', 'delete_agent', self.delete_agent, methods=['DELETE'])
         
-        # ✅ REMOVE: Debug endpoints (comment out for production)
-        # self.blueprint.add_url_rule('/debug/direct', 'debug_direct_call', self.debug_direct_call, methods=['GET'])
-        # self.blueprint.add_url_rule('/debug/status', 'debug_status', self.debug_status, methods=['GET'])
-        # self.blueprint.add_url_rule('/debug/timezone', 'debug_timezone_issue', self.debug_timezone_issue, methods=['GET'])
-
-        # ✅ ADD: Ping agent endpoint
-        self.blueprint.add_url_rule('/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
+        # Agent command routes
+        self.blueprint.add_url_rule('/agents/<agent_id>/command', 'send_command', self.send_command, methods=['POST'])
+        self.blueprint.add_url_rule('/agents/commands', 'list_commands', self.list_commands, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/command/result', 'update_command_result', self.update_command_result, methods=['POST'])
+        self.blueprint.add_url_rule('/agents/<agent_id>/commands', 'get_agent_commands', self.get_agent_commands, methods=['GET'])
+        
+        # Utility routes
+        self.blueprint.add_url_rule('/agents/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
+        
+        #  DEBUG: Add debug routes (optional - remove in production)
+        self.blueprint.add_url_rule('/agents/debug/status', 'debug_status', self.debug_status, methods=['GET'])
+        self.blueprint.add_url_rule('/agents/debug/direct', 'debug_direct_call', self.debug_direct_call, methods=['GET'])
 
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
@@ -128,10 +130,6 @@ class AgentController:
             self.logger.error(f"Error registering agent: {e}")
             return self._error_response("Failed to register agent", 500)
     
-    def _now_local(self) -> datetime:
-        """Lấy thời gian hiện tại theo múi giờ của server"""
-        return datetime.now(self.server_timezone)
-    
     def heartbeat(self):
         """Process agent heartbeat"""
         try:
@@ -146,23 +144,23 @@ class AgentController:
                 client_ip
             )
             
-            # ✅ IMPROVED: Enhanced SocketIO broadcast với detailed info
+            #  IMPROVED: Enhanced SocketIO broadcast với detailed info - UTC only
             if self.socketio:
                 agent = self.model.find_by_agent_id(data['agent_id'])
                 
-                # ✅ THÊM: Calculate time since last heartbeat for broadcast
-                current_time = self._now_local()
+                #  THÊM: Calculate time since last heartbeat for broadcast
+                current_time = now_iso()
                 time_since_last = 0  # Just received
                 
                 self.socketio.emit("agent_heartbeat", {
                     "agent_id": data['agent_id'],
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "status": "active",
-                    "last_heartbeat": current_time.isoformat(),
+                    "last_heartbeat": current_time,
                     "time_since_heartbeat": time_since_last,
                     "metrics": data.get("metrics", {}),
                     "client_ip": client_ip,
-                    "timestamp": current_time.isoformat(),
+                    "timestamp": current_time,
                     "agent_version": data.get("agent_version"),
                     "platform": data.get("platform")
                 })
@@ -177,15 +175,13 @@ class AgentController:
             return self._error_response("Failed to process heartbeat", 500)
     
     def list_agents(self):
-        """List all agents with filtering - SIMPLIFIED"""
+        """List all agents with filtering - COMPLETE VERSION - UTC only"""
         try:
             self.logger.info("📊 List agents called")
             
-            # Get pagination and filters from request
             pagination = self._get_pagination_params()
             filters = self._get_filter_params(['status', 'hostname'])
             
-            # ✅ SIMPLIFIED: Direct call to get_agents_with_status
             agents_with_status = self.service.get_agents_with_status()
             self.logger.info(f"📊 Found {len(agents_with_status)} agents")
             
@@ -203,10 +199,9 @@ class AgentController:
             total_count = len(filtered_agents)
             agents_list = filtered_agents[pagination['skip']:pagination['skip']+pagination['limit']]
             
-            # ✅ SIMPLIFIED: Format for API response
+            # Format for API response - UTC only
             formatted_agents = []
             for agent in agents_list:
-                # Simple timestamp formatting
                 last_heartbeat_iso = None
                 if agent.get("last_heartbeat"):
                     if isinstance(agent["last_heartbeat"], str):
@@ -270,21 +265,21 @@ class AgentController:
     def delete_agent(self, agent_id: str):
         """Delete an agent"""
         try:
-            # ✅ THÊM: Get agent info trước khi delete
+            #  THÊM: Get agent info trước khi delete
             agent = self.model.find_by_agent_id(agent_id)
             if not agent:
                 return self._error_response("Agent not found", 404)
             
-            # ✅ SỬA: Gọi service để delete
+            #  SỬA: Gọi service để delete
             success = self.service.delete_agent(agent_id)
             
             if success:
-                # ✅ THÊM: Broadcast deletion qua SocketIO
+                #  THÊM: Broadcast deletion qua SocketIO - UTC only
                 if self.socketio:
                     self.socketio.emit("agent_deleted", {
                         "agent_id": agent_id,
                         "hostname": agent.get("hostname"),
-                        "timestamp": self._now_local().isoformat()
+                        "timestamp": now_iso()
                     })
                 
                 return self._success_response(
@@ -307,7 +302,7 @@ class AgentController:
             # Call service method
             command_id = self.service.send_command(agent_id, data, "admin")
             
-            # Broadcast command creation via SocketIO
+            # Broadcast command creation via SocketIO - UTC only
             if self.socketio:
                 agent = self.model.find_by_agent_id(agent_id)
                 self.socketio.emit("command_created", {
@@ -316,7 +311,7 @@ class AgentController:
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "command_type": data["command_type"],
                     "created_by": "admin",
-                    "created_at": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
+                    "created_at": now_iso()
                 })
             
             return self._success_response({
@@ -352,7 +347,7 @@ class AgentController:
             return self._error_response("Failed to retrieve commands", 500)
     
     def list_commands(self):
-        """List commands (admin endpoint)"""
+        """List all commands (admin endpoint)"""
         try:
             # Get filters and pagination
             agent_id = request.args.get('agent_id')
@@ -389,6 +384,30 @@ class AgentController:
             self.logger.error(f"Error listing commands: {e}")
             return self._error_response("Failed to list commands", 500)
     
+    def get_agent_commands(self, agent_id: str):
+        """Get commands for specific agent (admin endpoint)"""
+        try:
+            # Get filters and pagination
+            status = request.args.get('status')
+            pagination = self._get_pagination_params()
+            
+            filters = {"agent_id": agent_id}
+            if status:
+                filters["status"] = status
+            
+            # Call service method
+            result = self.service.list_commands(
+                filters=filters,
+                limit=pagination['limit'],
+                skip=pagination['skip']
+            )
+            
+            return self._success_response(result)
+            
+        except Exception as e:
+            self.logger.error(f"Error getting commands for agent {agent_id}: {e}")
+            return self._error_response("Failed to get agent commands", 500)
+    
     def update_command_result(self):
         """Update command execution result"""
         try:
@@ -404,7 +423,7 @@ class AgentController:
                 data.get('execution_time')
             )
             
-            # Broadcast update via SocketIO
+            # Broadcast update via SocketIO - UTC only
             if self.socketio:
                 agent = self.model.find_by_agent_id(data['agent_id'])
                 self.socketio.emit("command_status_update", {
@@ -412,7 +431,7 @@ class AgentController:
                     "agent_id": data['agent_id'],
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "status": data["status"],
-                    "completed_at": self._now_local().isoformat()  # ✅ SỬA: Dùng local time
+                    "completed_at": now_iso()
                 })
             
             return self._success_response(message="Command result updated")
@@ -422,9 +441,9 @@ class AgentController:
             return self._error_response("Failed to update command result", 500)
 
     def debug_status(self):
-        """Debug endpoint để kiểm tra status calculation"""
+        """Debug endpoint để kiểm tra status calculation - UTC only"""
         try:
-            current_time = self._now_local()
+            current_time = now_utc()
             agents = self.model.get_all_agents({}, limit=100)
             
             debug_info = {
@@ -440,20 +459,19 @@ class AgentController:
                 last_heartbeat = agent.get("last_heartbeat")
                 if last_heartbeat:
                     if last_heartbeat.tzinfo is None:
-                        last_heartbeat = last_heartbeat.replace(tzinfo=self.server_timezone)
+                        last_heartbeat_tz = last_heartbeat.replace(tzinfo=current_time.tzinfo)
+                    else:
+                        last_heartbeat_tz = last_heartbeat.astimezone(current_time.tzinfo)
                     
-                    time_diff = (current_time - last_heartbeat).total_seconds() / 60
-                    calculated_status = self.service._calculate_agent_status(agent, current_time)
+                    time_diff = (current_time - last_heartbeat_tz).total_seconds()
                     
-                    agent_debug = {
-                        "agent_id": agent.get("agent_id"),
+                    debug_info["agents"].append({
                         "hostname": agent.get("hostname"),
                         "last_heartbeat": last_heartbeat.isoformat(),
-                        "time_since_heartbeat": round(time_diff, 2),
-                        "calculated_status": calculated_status,
-                        "stored_status": agent.get("status", "unknown")
-                    }
-                    debug_info["agents"].append(agent_debug)
+                        "time_since_heartbeat": time_diff,
+                        "status": "active" if time_diff < self.service.active_threshold else 
+                                 "inactive" if time_diff < self.service.inactive_threshold else "offline"
+                    })
             
             return self._success_response(debug_info)
             
@@ -464,7 +482,7 @@ class AgentController:
     def get_statistics(self):
         """Get agent statistics"""
         try:
-            # ✅ CRITICAL: Use calculate_statistics method
+            #  CRITICAL: Use calculate_statistics method
             stats = self.service.calculate_statistics()
             self.logger.info(f"📊 Statistics calculated: {stats}")
             return self._success_response(stats)
@@ -507,7 +525,7 @@ class AgentController:
 
     # Add method:
     def debug_timezone_issue(self):
-        """Debug timezone calculation issue"""
+        """Debug timezone calculation issue - now UTC only"""
         try:
             debug_result = self.service.debug_timezone_issue()
             return jsonify({
@@ -528,7 +546,7 @@ class AgentController:
             # Call service method
             result = self.service.ping_agent(agent_id)
             
-            # Broadcast ping result via SocketIO
+            # Broadcast ping result via SocketIO - UTC only
             if self.socketio:
                 agent = self.model.find_by_agent_id(agent_id)
                 self.socketio.emit("agent_ping_result", {
@@ -536,7 +554,7 @@ class AgentController:
                     "hostname": agent.get("hostname") if agent else "Unknown",
                     "ping_successful": result.get("success", False),
                     "response_time": result.get("response_time"),
-                    "timestamp": self._now_local().isoformat()
+                    "timestamp": now_iso()
                 })
             
             if result.get("success"):

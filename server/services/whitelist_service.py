@@ -1,47 +1,38 @@
 """
 Whitelist Service - Business logic for whitelist operations
+UTC ONLY - Clean and simple
 """
 
 import logging
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from datetime import datetime, timedelta, timezone
 from models.whitelist_model import WhitelistModel
+
+# Import time utilities - UTC ONLY
+from time_utils import now_utc, to_utc_naive, now_iso, parse_agent_timestamp
 
 logger = logging.getLogger(__name__)
 
 class WhitelistService:
-    """Service class for whitelist business logic"""
+    """Service class for whitelist business logic - UTC ONLY"""
     
     def __init__(self, whitelist_model: WhitelistModel, socketio=None):
         """Initialize WhitelistService with model and socketio"""
         self.model = whitelist_model
         self.socketio = socketio
+        self.logger = logging.getLogger(self.__class__.__name__)
         
-        # ✅ FIXED: Use the same timezone as model
-        self.server_timezone = self.model.timezone
-        
-        # ✅ ADD: Debug timezone info
-        logger.info(f"WhitelistService initialized with timezone: {self.server_timezone}")
-    
-    def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone"""
-        # ✅ FIX: Use model's method directly - no need to duplicate
-        return self.model._now_local()
-    
-    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
-        """Ensure datetime is timezone-aware"""
-        # ✅ FIX: Use model's method directly - no need to duplicate
-        return self.model._ensure_timezone_aware(dt)
+        self.logger.info("WhitelistService initialized with UTC timezone support")
     
     def get_all_entries(self, filters: Dict = None) -> Dict:
-        """Get all whitelist entries with optional filtering"""
+        """Get all whitelist entries with optional filtering - UTC ONLY"""
         query = {}
         if filters:
             query = self.model.build_query_from_filters(filters)
         
         entries = self.model.find_all_entries(query)
         
-        # ✅ FIX: Proper timezone handling - entries are already converted by model
+        # Format entries for response
         formatted_entries = []
         for entry in entries:
             formatted_entry = {
@@ -52,11 +43,10 @@ class WhitelistService:
                 "category": entry.get("category"),
                 "priority": entry.get("priority", "normal"),
                 "added_by": entry.get("added_by"),
-                # ✅ FIX: Entries from model are already in UTC+7, just format them
                 "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None
             }
             
-            # ✅ CONDITIONAL: Only add optional fields if they exist
+            # Add optional fields if they exist
             if entry.get("notes"):
                 formatted_entry["notes"] = entry.get("notes")
             if entry.get("expiry_date"):
@@ -68,21 +58,16 @@ class WhitelistService:
             if entry.get("dns_config"):
                 formatted_entry["dns_config"] = entry.get("dns_config")
             
-            # ✅ ADD: Include timezone info for debugging
-            if entry.get("timezone"):
-                formatted_entry["timezone"] = entry.get("timezone")
-            if entry.get("local_added_date"):
-                formatted_entry["local_added_date"] = entry.get("local_added_date")
-            
             formatted_entries.append(formatted_entry)
         
         return {
             "domains": formatted_entries,
-            "success": True
+            "success": True,
+            "server_time": now_iso()  # UTC ISO
         }
     
     def add_entry(self, entry_data: Dict, client_ip: str) -> Dict:
-        """Add new entry to whitelist"""
+        """Add new entry to whitelist - UTC ONLY"""
         entry_type = entry_data.get("type", "domain")
         value = entry_data.get("value", "").strip().lower()
         
@@ -99,11 +84,11 @@ class WhitelistService:
         if existing:
             raise ValueError("Entry already exists")
         
-        # ✅ FIX: Get current time
-        current_time = self._now_local()
-        logger.info(f"Adding entry with timestamp: {current_time}")
+        # Use UTC time for timestamps - UTC naive for MongoDB
+        current_time = to_utc_naive(now_utc())
+        logger.info(f"Adding entry with UTC timestamp: {current_time}")
         
-        # ✅ FIX: Minimal entry data
+        # Create processed entry
         processed_entry = {
             "type": entry_type,
             "value": value,
@@ -114,20 +99,17 @@ class WhitelistService:
             "is_active": True
         }
         
-        # ✅ CONDITIONAL: Only add optional fields if specified
+        # Add optional fields if specified
         if entry_data.get("notes"):
             processed_entry["notes"] = entry_data.get("notes")
         
         if entry_data.get("expiry_date"):
             try:
-                expiry_str = entry_data["expiry_date"]
-                if expiry_str.endswith('Z'):
-                    expiry_str = expiry_str[:-1] + '+00:00'
+                # Parse expiry date using UTC parsing
+                expiry_utc = parse_agent_timestamp(entry_data["expiry_date"])
+                processed_entry["expiry_date"] = expiry_utc.replace(tzinfo=None)  # UTC naive for MongoDB
                 
-                parsed_date = datetime.fromisoformat(expiry_str)
-                processed_entry["expiry_date"] = self._ensure_timezone_aware(parsed_date)
-                
-            except (ValueError, AttributeError) as e:
+            except Exception as e:
                 logger.warning(f"Invalid expiry date format: {e}")
                 raise ValueError("Invalid expiry date format")
                 
@@ -158,54 +140,308 @@ class WhitelistService:
             logger.error(f"Failed to insert entry: {e}")
             raise
         
-        # Broadcast notification via SocketIO
+        # Broadcast notification via SocketIO - UTC only
         if self.socketio:
             self.socketio.emit("whitelist_added", {
                 "type": entry_type,
                 "value": value,
                 "category": processed_entry["category"],
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()
+                "timestamp": now_iso()  # UTC ISO
             })
         
         return {
             "id": entry_id,
             "message": f"{entry_type.capitalize()} added to whitelist",
-            "timestamp": current_time.isoformat()
+            "timestamp": now_iso(),  # UTC ISO
+            "server_time": now_iso()  # UTC ISO
         }
     
-    def get_agent_sync_data(self, since: str = None, agent_id: str = None) -> Dict:
-        """Get whitelist data for agent synchronization"""
-        since_date = None
-        if since:
-            try:
-                since_str = since
-                if since_str.endswith('Z'):
-                    since_str = since_str[:-1] + '+00:00'
+    def test_entry(self, entry_data: Dict) -> Dict:
+        """Test an entry before adding it - UTC ONLY"""
+        try:
+            entry_type = entry_data.get("type", "domain")
+            value = entry_data.get("value", "").strip().lower()
+            
+            if not value:
+                return {"valid": False, "message": "Value is required"}
+            
+            # Validate entry using model
+            validation_result = self.model.validate_entry_value(entry_type, value)
+            
+            if not validation_result["valid"]:
+                return validation_result
+            
+            # Check for duplicates
+            existing = self.model.find_entry_by_value(value)
+            if existing:
+                return {"valid": False, "message": "Entry already exists"}
+            
+            # Additional tests based on type
+            if entry_type == "domain":
+                try:
+                    # Test DNS resolution
+                    import socket
+                    socket.getaddrinfo(value, None, socket.AF_INET)
+                    dns_info = f"DNS resolution successful"
+                except Exception as e:
+                    dns_info = f"DNS resolution failed: {str(e)}"
                 
-                since_date = datetime.fromisoformat(since_str)
-                since_date = self._ensure_timezone_aware(since_date)
+                return {
+                    "valid": True,
+                    "message": "Entry is valid",
+                    "dns_info": dns_info,
+                    "server_time": now_iso()  # UTC ISO
+                }
+            
+            return {
+                "valid": True, 
+                "message": "Entry is valid",
+                "server_time": now_iso()  # UTC ISO
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error testing entry: {e}")
+            return {
+                "valid": False, 
+                "message": f"Test failed: {str(e)}",
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def test_dns(self, domain: str) -> Dict:
+        """Test DNS resolution for a domain - UTC ONLY"""
+        try:
+            if not domain:
+                return {
+                    "valid": False, 
+                    "message": "Domain is required",
+                    "server_time": now_iso()  # UTC ISO
+                }
+            
+            domain = domain.strip().lower()
+            
+            # Validate domain format first
+            validation_result = self.model.validate_entry_value("domain", domain)
+            if not validation_result["valid"]:
+                return {
+                    **validation_result,
+                    "server_time": now_iso()  # UTC ISO
+                }
+            
+            # Test DNS resolution
+            import socket
+            try:
+                results = socket.getaddrinfo(domain, None, socket.AF_INET)
+                ips = []
+                for result in results:
+                    ip = result[4][0]
+                    if ip not in ips:
+                        ips.append(ip)
+                
+                return {
+                    "valid": True,
+                    "message": f"DNS resolution successful",
+                    "domain": domain,
+                    "ips": ips,
+                    "count": len(ips),
+                    "server_time": now_iso()  # UTC ISO
+                }
+                
+            except Exception as e:
+                return {
+                    "valid": False,
+                    "message": f"DNS resolution failed: {str(e)}",
+                    "domain": domain,
+                    "server_time": now_iso()  # UTC ISO
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error testing DNS: {e}")
+            return {
+                "valid": False, 
+                "message": f"DNS test failed: {str(e)}",
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def _get_detailed_changes(self, since_naive: datetime) -> Dict:
+        """Get detailed changes since specified time - UTC ONLY"""
+        try:
+            changes = {
+                "added": [],
+                "removed": [],
+                "modified": [],
+                "active_domains": []
+            }
+            
+            # Get ALL currently active domains
+            all_active_query = {"is_active": True}
+            all_active_entries = list(self.model.collection.find(all_active_query))
+            changes["active_domains"] = [entry.get("value") for entry in all_active_entries]
+            
+            #  ADD: Debug logging
+            self.logger.debug(f"Total active domains in DB: {len(changes['active_domains'])}")
+            self.logger.debug(f"Active domains: {changes['active_domains']}")
+            
+            # Get newly added entries
+            added_query = {
+                "is_active": True,
+                "added_date": {"$gte": since_naive}
+            }
+            added_entries = list(self.model.collection.find(added_query))
+            
+            #  ADD: Debug logging
+            self.logger.debug(f"Newly added since {since_naive}: {len(added_entries)}")
+            
+            for entry in added_entries:
+                changes["added"].append({
+                    "value": entry.get("value"),
+                    "type": entry.get("type", "domain"),
+                    "category": entry.get("category", "uncategorized"),
+                    "added_date": entry.get("added_date").isoformat() if entry.get("added_date") else None,
+                    "added_by": entry.get("added_by", "system")
+                })
+            
+            # For hard deletes, we rely on active_domains comparison in agent
+            # For soft deletes (is_active = False)
+            deactivated_query = {
+                "is_active": False,
+                "updated_at": {"$gte": since_naive}
+            }
+            deactivated_entries = list(self.model.collection.find(deactivated_query))
+            
+            #  ADD: Debug logging
+            self.logger.debug(f"Deactivated since {since_naive}: {len(deactivated_entries)}")
+            
+            for entry in deactivated_entries:
+                changes["removed"].append({
+                    "value": entry.get("value"),
+                    "type": entry.get("type", "domain"),
+                    "category": entry.get("category", "uncategorized"),
+                    "removed_date": entry.get("updated_at").isoformat() if entry.get("updated_at") else None,
+                    "reason": "deactivated"
+                })
+            
+            self.logger.info(f"Change details: {len(changes['added'])} added, "
+                            f"{len(changes['removed'])} removed, "
+                            f"{len(changes['active_domains'])} total active")
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.error(f"Error getting detailed changes: {e}")
+            return {"added": [], "removed": [], "modified": [], "active_domains": []}
+    
+    def get_agent_sync_data(self, since_datetime: Optional[object] = None, agent_id: str = None) -> Dict:
+        """Get whitelist data for agent synchronization with detailed changes - UTC ONLY"""
+        try:
+            sync_type = "full"  # Default to full sync
+            changes_details = {
+                "added": [],
+                "removed": [],
+                "modified": [],
+                "active_domains": []
+            }
+            
+            # Handle since parameter
+            if since_datetime:
+                try:
+                    sync_type = "incremental"
+                    current_time = to_utc_naive(now_utc())
                     
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Invalid since date format '{since}': {e}")
-                since_date = None
-        
-        # Get domains from model
-        domains = self.model.get_entries_for_sync(since_date)
-        current_time = self._now_local()
-        
-        response = {
-            "domains": domains,
-            "timestamp": current_time.isoformat(),
-            "count": len(domains),
-            "type": "incremental" if since_date else "full"
-        }
-        
-        logger.info(f"Agent sync response: {response['type']} sync with {len(domains)} domains")
-        return response
+                    # Convert since to UTC naive
+                    if isinstance(since_datetime, str):
+                        since_utc = parse_agent_timestamp(since_datetime)
+                        since_naive = since_utc.replace(tzinfo=None)
+                    else:
+                        if isinstance(since_datetime, datetime):
+                            if since_datetime.tzinfo is None:
+                                since_utc = since_datetime.replace(tzinfo=timezone.utc)
+                            else:
+                                since_utc = since_datetime.astimezone(timezone.utc)
+                            since_naive = since_utc.replace(tzinfo=None)
+                        else:
+                            since_naive = to_utc_naive(now_utc())
+                    
+                    # Check if since is too old (more than 24 hours)
+                    hours_ago = (current_time - since_naive).total_seconds() / 3600
+                    
+                    if hours_ago > 24:  # More than 24 hours ago
+                        sync_type = "full"
+                        self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
+                        since_datetime = None
+                    else:
+                        #  FIX: Get detailed changes for incremental sync
+                        changes_details = self._get_detailed_changes(since_naive)
+                        
+                except Exception as e:
+                    self.logger.warning(f"Error processing since parameter: {e}")
+                    since_datetime = None
+                    sync_type = "full"
+            
+            #  FIX: Logic để trả về domains cho agent
+            if sync_type == "incremental":
+                #  Cho incremental sync: trả về TẤT CẢ active domains
+                # Agent sẽ tự so sánh với domains hiện tại để detect changes
+                entries = self.model.get_entries_for_sync(None)  # Get ALL active entries
+                
+                # Log incremental sync info
+                self.logger.info(f"Incremental sync: returning {len(entries)} total active domains, "
+                               f"Added: {len(changes_details['added'])}, "
+                               f"Removed: {len(changes_details['removed'])}")
+            else:
+                # Full sync: get all entries
+                entries = self.model.get_entries_for_sync(since_datetime)
+                self.logger.info(f"Full sync: returning {len(entries)} domains")
+            
+            current_time = to_utc_naive(now_utc())
+            
+            # Format entries for agent sync
+            domains = []
+            for entry in entries:
+                domain_entry = {
+                    "value": entry.get("value"),
+                    "type": entry.get("type", "domain"),
+                    "added_date": entry.get("added_date"),
+                    "priority": entry.get("priority", "normal"),
+                    "category": entry.get("category", "uncategorized"),
+                    "is_active": entry.get("is_active", True)
+                }
+                domains.append(domain_entry)
+            
+            response = {
+                "domains": domains,
+                "timestamp": current_time.isoformat(),
+                "count": len(domains),
+                "type": sync_type,
+                "success": True,
+                "server_time": now_iso(),
+                "changes": changes_details  # Include detailed changes for debugging
+            }
+            
+            # Include agent_id if provided
+            if agent_id:
+                response["agent_id"] = agent_id
+            
+            # Enhanced logging
+            self.logger.info(f"Agent sync response: {sync_type} sync with {len(domains)} total domains for agent {agent_id or 'unknown'}")
+            
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Error in agent sync: {e}")
+            return {
+                "domains": [],
+                "timestamp": now_iso(),
+                "count": 0,
+                "type": "error",
+                "success": False,
+                "error": str(e),
+                "server_time": now_iso(),
+                "changes": {"added": [], "removed": [], "modified": [], "active_domains": []}
+            }
     
     def delete_entry(self, entry_id: str) -> bool:
-        """Delete an entry"""
+        """Delete an entry - UTC ONLY"""
         entry = self.model.find_entry_by_id(entry_id)
         if not entry:
             raise ValueError("Entry not found")
@@ -217,20 +453,20 @@ class WhitelistService:
                 "id": entry_id,
                 "value": entry.get("value"),
                 "type": entry.get("type", "domain"),
-                "timestamp": self._now_local().isoformat()
+                "timestamp": now_iso()  # UTC ISO
             })
         
         return success
     
     def bulk_add_entries(self, entries_data: List[Dict], client_ip: str) -> Dict:
-        """Bulk add entries to whitelist"""
+        """Bulk add entries to whitelist - UTC ONLY"""
         if not entries_data:
             raise ValueError("No entries provided")
         
         if len(entries_data) > 1000:
             raise ValueError("Maximum 1000 entries allowed per bulk operation")
         
-        current_time = self._now_local()
+        current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
         processed_entries = []
         errors = []
         
@@ -281,16 +517,316 @@ class WhitelistService:
             self.socketio.emit("whitelist_bulk_added", {
                 "count": len(inserted_ids),
                 "added_by": client_ip,
-                "timestamp": current_time.isoformat()
+                "timestamp": now_iso()  # UTC ISO
             })
         
         return {
             "inserted_count": len(inserted_ids),
             "error_count": len(errors),
             "errors": errors[:10],
-            "success": len(inserted_ids) > 0
+            "success": len(inserted_ids) > 0,
+            "server_time": now_iso()  # UTC ISO
         }
     
     def get_statistics(self) -> Dict:
-        """Get whitelist statistics"""
-        return self.model.get_statistics()
+        """Get whitelist statistics - UTC ONLY"""
+        try:
+            stats = self.model.get_statistics()
+            stats["server_time"] = now_iso()  # UTC ISO
+            return stats
+        except Exception as e:
+            self.logger.error(f"Error getting statistics: {e}")
+            return {
+                "total": 0,
+                "active": 0,
+                "inactive": 0,
+                "by_type": {},
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def update_entry(self, entry_id: str, update_data: Dict) -> bool:
+        """Update an entry - UTC ONLY"""
+        entry = self.model.find_entry_by_id(entry_id)
+        if not entry:
+            raise ValueError("Entry not found")
+        
+        # Validate update data
+        if 'value' in update_data:
+            value = update_data['value'].strip().lower()
+            entry_type = update_data.get('type', entry.get('type', 'domain'))
+            
+            validation_result = self.model.validate_entry_value(entry_type, value)
+            if not validation_result["valid"]:
+                raise ValueError(validation_result["message"])
+            
+            update_data['value'] = value
+        
+        # Update timestamp - UTC naive for MongoDB
+        update_data['updated_at'] = to_utc_naive(now_utc())
+        
+        success = self.model.update_entry(entry_id, update_data)
+        
+        if success and self.socketio:
+            self.socketio.emit("whitelist_updated", {
+                "id": entry_id,
+                "value": update_data.get('value', entry.get('value')),
+                "type": update_data.get('type', entry.get('type', 'domain')),
+                "timestamp": now_iso()  # UTC ISO
+            })
+        
+        return success
+    
+    def sync_for_agent(self, agent_id: str, token: str, since_datetime: datetime = None) -> Dict:
+        """Sync whitelist for agent - UTC ONLY"""
+        try:
+            # Get entries for sync
+            domains = self.model.get_entries_for_sync(since_datetime)
+            
+            self.logger.info(f"Syncing {len(domains)} domains for agent {agent_id}")
+            
+            return {
+                "success": True,
+                "domains": domains,
+                "count": len(domains),
+                "agent_id": agent_id,
+                "server_time": now_iso(),  # UTC ISO
+                "since": since_datetime.isoformat() if since_datetime else None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error syncing for agent {agent_id}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "domains": [],
+                "count": 0,
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def get_all_domains(self, limit: int = 100, offset: int = 0, search: str = None) -> Dict:
+        """Get all domains with pagination - UTC ONLY"""
+        try:
+            # Build query
+            query = {}
+            if search:
+                query["$or"] = [
+                    {"value": {"$regex": search, "$options": "i"}},
+                    {"category": {"$regex": search, "$options": "i"}}
+                ]
+            
+            # Get domains
+            domains = self.model.find_all_entries(query)
+            
+            # Apply pagination
+            total_count = len(domains)
+            paginated_domains = domains[offset:offset + limit]
+            
+            return {
+                "success": True,
+                "domains": paginated_domains,
+                "total": total_count,
+                "limit": limit,
+                "offset": offset,
+                "server_time": now_iso()  # UTC ISO
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting all domains: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "domains": [],
+                "total": 0,
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def add_domain(self, domain_value: str, category: str = "general") -> Dict:
+        """Add new domain to whitelist - UTC ONLY"""
+        try:
+            # Check if domain already exists
+            existing = self.model.find_entry_by_value(domain_value)
+            if existing:
+                return {
+                    "success": False,
+                    "error": "Domain already exists in whitelist",
+                    "existing_entry": existing,
+                    "server_time": now_iso()  # UTC ISO
+                }
+            
+            # Validate domain
+            validation = self.model.validate_entry_value("domain", domain_value)
+            if not validation.get("valid"):
+                return {
+                    "success": False,
+                    "error": validation.get("message", "Invalid domain"),
+                    "server_time": now_iso()  # UTC ISO
+                }
+            
+            # Create entry data
+            entry_data = {
+                "value": domain_value.strip().lower(),
+                "type": "domain",
+                "category": category,
+                "is_active": True,
+                "priority": "normal",
+                "added_by": "admin"
+            }
+            
+            # Insert domain
+            entry_id = self.model.insert_entry(entry_data)
+            
+            return {
+                "success": True,
+                "entry_id": entry_id,
+                "domain": domain_value,
+                "category": category,
+                "server_time": now_iso()  # UTC ISO
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error adding domain {domain_value}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def delete_domain(self, domain_id: str) -> Dict:
+        """Delete domain from whitelist - UTC ONLY"""
+        try:
+            # Check if domain exists
+            existing = self.model.find_entry_by_id(domain_id)
+            if not existing:
+                return {
+                    "success": False,
+                    "error": "Domain not found",
+                    "server_time": now_iso()  # UTC ISO
+                }
+            
+            # Delete domain
+            success = self.model.delete_entry(domain_id)
+            
+            if success:
+                return {
+                    "success": True,
+                    "domain_id": domain_id,
+                    "domain_value": existing.get("value"),
+                    "server_time": now_iso()  # UTC ISO
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to delete domain",
+                    "server_time": now_iso()  # UTC ISO
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error deleting domain {domain_id}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def import_domains(self, domains: List[str], category: str = "imported") -> Dict:
+        """Import multiple domains - UTC ONLY"""
+        try:
+            added_count = 0
+            duplicate_count = 0
+            error_count = 0
+            errors = []
+            
+            for domain in domains:
+                try:
+                    domain = domain.strip().lower()
+                    if not domain:
+                        continue
+                    
+                    # Check if already exists
+                    if self.model.find_entry_by_value(domain):
+                        duplicate_count += 1
+                        continue
+                    
+                    # Validate domain
+                    validation = self.model.validate_entry_value("domain", domain)
+                    if not validation.get("valid"):
+                        error_count += 1
+                        errors.append(f"{domain}: {validation.get('message')}")
+                        continue
+                    
+                    # Create entry
+                    entry_data = {
+                        "value": domain,
+                        "type": "domain",
+                        "category": category,
+                        "is_active": True,
+                        "priority": "normal",
+                        "added_by": "import"
+                    }
+                    
+                    self.model.insert_entry(entry_data)
+                    added_count += 1
+                    
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"{domain}: {str(e)}")
+            
+            return {
+                "success": True,
+                "added_count": added_count,
+                "duplicate_count": duplicate_count,
+                "error_count": error_count,
+                "errors": errors[:10],  # Limit error list
+                "total_processed": len(domains),
+                "server_time": now_iso()  # UTC ISO
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error importing domains: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def export_domains(self, format: str = "json", category: str = None) -> Dict:
+        """Export domains in specified format - UTC ONLY"""
+        try:
+            # Build query
+            query = {}
+            if category:
+                query["category"] = category
+            
+            # Get domains
+            domains = self.model.find_all_entries(query)
+            
+            if format == "txt":
+                # Text format - one domain per line
+                domain_list = [domain["value"] for domain in domains]
+                text_data = "\n".join(domain_list)
+                
+                return {
+                    "success": True,
+                    "data": text_data,
+                    "count": len(domain_list),
+                    "format": format,
+                    "server_time": now_iso()  # UTC ISO
+                }
+            else:
+                # JSON format
+                return {
+                    "success": True,
+                    "data": domains,
+                    "count": len(domains),
+                    "format": format,
+                    "server_time": now_iso()  # UTC ISO
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error exporting domains: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }

@@ -422,7 +422,7 @@
         const socket = io();
         
         socket.on('connect', function() {
-            console.log('✅ Connected to server for real-time updates');
+            console.log(' Connected to server for real-time updates');
             
             // Update connection status indicator
             const statusDot = document.querySelector('.pulse-dot');
@@ -441,7 +441,7 @@
             }
         });
         
-        // ✅ Real-time statistics updates
+        //  Real-time statistics updates
         socket.on('stats_update', function(statsData) {
             // Update statistics in real-time
             updateDashboardStats(statsData);
