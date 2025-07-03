@@ -1,14 +1,18 @@
 # Import các thư viện cần thiết
 import logging  # Thư viện ghi log để theo dõi hoạt động của module
 import threading  # Thư viện hỗ trợ đa luồng để chạy bắt gói tin trong luồng riêng
-import time  # Thư viện xử lý thời gian, dùng cho việc tạm dừng
-from datetime import datetime  # Thư viện xử lý ngày giờ để gắn thời gian cho các sự kiện
+import re  #  ADD: Missing import for regex validation
 from typing import Callable, Dict, Optional  # Thư viện hỗ trợ kiểu dữ liệu tĩnh
+
+# Import time utilities - UTC ONLY
+from time_utils import now_iso, sleep
 
 # Import các module từ thư viện Scapy để bắt và phân tích gói tin mạng
 from scapy.all import sniff  # Hàm sniff để bắt gói tin mạng
 from scapy.layers.http import HTTPRequest  # Lớp xử lý gói tin HTTP Request
-from scapy.layers.inet import IP, TCP  # Lớp xử lý gói tin IP và TCP
+from scapy.layers.inet import IP, TCP, UDP  #  ADD: Missing UDP import
+from scapy.layers.dns import DNS  #  ADD: Missing DNS import
+from scapy.packet import Raw  #  ADD: Missing Raw import
 from scapy.layers.tls.extensions import ServerName  # Lớp xử lý phần mở rộng ServerName trong TLS
 from scapy.layers.tls.handshake import TLSClientHello  # Lớp xử lý bản tin ClientHello trong TLS
 from scapy.packet import Packet  # Lớp cơ sở cho các gói tin trong Scapy
@@ -97,9 +101,8 @@ class PacketSniffer:
         while self.running and retry_count < max_retries:
             try:
                 # Xây dựng bộ lọc BPF (Berkeley Packet Filter) cho gói tin
-                # Chỉ bắt gói tin TCP đi ra và có cổng đích là 80 (HTTP) hoặc 443 (HTTPS)
-                # BPF là định dạng lọc gói tin chuẩn được sử dụng bởi nhiều công cụ bắt gói tin
-                filter_str = "tcp and (dst port 80 or dst port 443)"
+                #  FIX: Enhanced filter để bắt nhiều traffic hơn
+                filter_str = "tcp and (dst port 80 or dst port 443 or dst port 53) or udp and dst port 53"
                 
                 # Ghi log thông tin về bộ lọc đang sử dụng
                 logger.info("Started packet capture with filter: %s", filter_str)
@@ -124,7 +127,7 @@ class PacketSniffer:
                 
                 if retry_count < max_retries and self.running:
                     logger.info(f"Retrying packet capture in 5 seconds...")
-                    time.sleep(5)
+                    sleep(5)
                 else:
                     logger.error("Failed to start packet capture after all retries")
                     break
@@ -137,46 +140,64 @@ class PacketSniffer:
             packet: The Scapy packet object
         """
         try:
-            # Kiểm tra xem gói tin có chứa lớp IP và TCP không
-            # Chỉ quan tâm đến gói TCP/IP
-            if not packet.haslayer(IP) or not packet.haslayer(TCP):
+            #  FIX: Enhanced packet processing với better logic
+            if not packet.haslayer(IP):
                 return
             
             # Trích xuất thông tin cơ bản từ gói tin
-            ip_layer = packet[IP]  # Lấy lớp IP từ gói tin
-            tcp_layer = packet[TCP]  # Lấy lớp TCP từ gói tin
+            ip_layer = packet[IP]
+            src_ip = ip_layer.src
+            dst_ip = ip_layer.dst
             
-            # Lấy địa chỉ IP đích và cổng đích
-            dst_ip = ip_layer.dst  # Địa chỉ IP đích
-            dst_port = tcp_layer.dport  # Cổng đích
-            
-            # Xác định giao thức dựa vào cổng đích
-            # Cổng 80 thường là HTTP, 443 là HTTPS
-            protocol = "HTTP" if dst_port == 80 else "HTTPS" if dst_port == 443 else "Unknown"
-            
-            # Biến để lưu tên miền được trích xuất
+            #  FIX: Handle both TCP and UDP
             domain = None
+            protocol = "unknown"
+            dst_port = None
+            src_port = None
             
-            # Trích xuất tên miền dựa vào giao thức
-            if dst_port == 80 and packet.haslayer(HTTPRequest):
-                # Với HTTP, trích xuất từ header Host
-                domain = self._extract_http_host(packet)
-            elif dst_port == 443:
-                # Với HTTPS, trích xuất từ SNI (Server Name Indication) trong TLS
-                domain = self._extract_https_sni(packet)
+            if packet.haslayer(TCP):
+                tcp_layer = packet[TCP]
+                src_port = tcp_layer.sport
+                dst_port = tcp_layer.dport
+                
+                # Xác định giao thức dựa vào cổng đích
+                if dst_port == 80:
+                    protocol = "HTTP"
+                    domain = self._extract_http_host(packet)
+                elif dst_port == 443:
+                    protocol = "HTTPS"
+                    domain = self._extract_https_sni(packet)
+                else:
+                    protocol = f"TCP/{dst_port}"
+                    
+            elif packet.haslayer(UDP):
+                udp_layer = packet[UDP]
+                src_port = udp_layer.sport
+                dst_port = udp_layer.dport
+                
+                if dst_port == 53:
+                    protocol = "DNS"
+                    domain = self._extract_dns_query(packet)
+                else:
+                    protocol = f"UDP/{dst_port}"
             
-            # Nếu tìm thấy tên miền, tạo bản ghi và gọi callback
-            if domain:
-                # Tạo từ điển chứa thông tin về kết nối
+            #  FIX: Nếu tìm thấy tên miền hoặc có kết nối đáng chú ý, tạo record
+            if domain or dst_port in [80, 443, 53]:
+                #  FIX: Create complete record with all required fields - UTC only
                 record = {
-                    "timestamp": datetime.now().astimezone().isoformat(),  # ✅ SỬA: Thêm múi giờ
-                    "domain": domain,  # Tên miền đã trích xuất
-                    "dest_ip": dst_ip,  # IP đích
-                    "dest_port": dst_port,  # Cổng đích
-                    "protocol": protocol  # Giao thức (HTTP/HTTPS)
+                    "timestamp": now_iso(),  # UTC ISO timestamp
+                    "domain": domain,
+                    "src_ip": src_ip,
+                    "dest_ip": dst_ip,
+                    "src_port": src_port,
+                    "port": dst_port,  #  FIX: Use dest_port as main port
+                    "dest_port": dst_port,
+                    "protocol": protocol,
+                    "packet_size": len(packet),
+                    "connection_direction": "outbound"
                 }
                 
-                # Gọi hàm callback với bản ghi đã tạo
+                #  FIX: Call callback with complete record
                 self.callback(record)
     
         except Exception as e:
@@ -194,14 +215,12 @@ class PacketSniffer:
         """
         try:
             # Cách 1: Sử dụng lớp HTTPRequest có sẵn của Scapy
-            # Kiểm tra nếu gói tin có lớp HTTPRequest và có trường Host
             if packet.haslayer(HTTPRequest):
                 if hasattr(packet[HTTPRequest], 'Host'):
                     # Giải mã giá trị Host từ bytes sang chuỗi UTF-8
                     return packet[HTTPRequest].Host.decode('utf-8', errors='ignore')
             
             # Cách 2 (backup): Nếu cách 1 không thành công, thử trích xuất thủ công
-            # Đôi khi Scapy không phân tích đúng gói HTTP
             if packet.haslayer(TCP) and packet[TCP].payload:
                 # Lấy nội dung payload của gói TCP
                 payload = bytes(packet[TCP].payload)
@@ -240,31 +259,28 @@ class PacketSniffer:
         """
         try:
             # Cách 1: Sử dụng lớp TLS của Scapy để trích xuất SNI
-            # SNI (Server Name Indication) là phần mở rộng trong TLS ClientHello
-            # chứa tên máy chủ mà client muốn kết nối tới
             if packet.haslayer(TLSClientHello):
                 client_hello = packet[TLSClientHello]
                 
                 # Duyệt qua các phần mở rộng (extensions) trong ClientHello
-                for extension in client_hello.ext:
-                    # Kiểm tra nếu là phần mở rộng ServerName
-                    if isinstance(extension, ServerName):
-                        # Kiểm tra nếu có tên server trong extension
-                        if extension.servernames:
-                            # Giải mã tên server từ bytes sang chuỗi UTF-8
-                            servername = extension.servernames[0].servername.decode('utf-8', errors='ignore')
-                            # Xác thực tên miền trước khi trả về
-                            if self._is_valid_hostname(servername):
-                                return servername
+                if hasattr(client_hello, 'ext') and client_hello.ext:
+                    for extension in client_hello.ext:
+                        # Kiểm tra nếu là phần mở rộng ServerName
+                        if isinstance(extension, ServerName):
+                            # Kiểm tra nếu có tên server trong extension
+                            if hasattr(extension, 'servernames') and extension.servernames:
+                                # Giải mã tên server từ bytes sang chuỗi UTF-8
+                                servername = extension.servernames[0].servername.decode('utf-8', errors='ignore')
+                                # Xác thực tên miền trước khi trả về
+                                if self._is_valid_hostname(servername):
+                                    return servername
             
             # Cách 2: Phân tích thủ công nếu lớp TLS của Scapy không hoạt động đúng
-            # Đây là cách phân tích bản tin TLS ClientHello cấp thấp
             if packet.haslayer(TCP) and packet[TCP].payload:
                 # Lấy nội dung payload của gói TCP
                 payload = bytes(packet[TCP].payload)
                 
                 # Kiểm tra độ dài tối thiểu cho TLS handshake
-                # TLS handshake cần ít nhất 43 bytes
                 if len(payload) < 43:
                     return None
                     
@@ -276,7 +292,7 @@ class PacketSniffer:
                 if len(payload) <= 5 or payload[5] != 0x01:
                     return None
 
-                # Phương pháp phân tích đáng tin cậy hơn cho phần mở rộng TLS
+                #  FIX: Enhanced SNI extraction với better error handling
                 try:
                     # Bỏ qua header bản ghi (5 bytes) và header handshake (4 bytes)
                     pos = 9
@@ -340,6 +356,8 @@ class PacketSniffer:
                         # Kiểm tra nếu là phần mở rộng SNI (loại 0)
                         if ext_type == 0 and ext_length > 2:
                             # Bỏ qua độ dài danh sách tên server
+                            if pos + 2 > extensions_end:
+                                break
                             sni_list_length = (payload[pos] << 8) | payload[pos + 1]
                             pos += 2
                             
@@ -381,6 +399,30 @@ class PacketSniffer:
             logger.error("Error extracting HTTPS SNI: %s", str(e))
             return None
 
+    def _extract_dns_query(self, packet) -> Optional[str]:
+        """
+        Extract domain from DNS query packet.
+        
+        Args:
+            packet: The Scapy packet
+            
+        Returns:
+            str: The queried domain, or None if not found
+        """
+        try:
+            if packet.haslayer(DNS):
+                dns_layer = packet[DNS]
+                # Kiểm tra nếu có DNS query
+                if hasattr(dns_layer, 'qd') and dns_layer.qd:
+                    # Lấy tên miền từ query
+                    domain = dns_layer.qd.qname.decode('utf-8', errors='ignore').rstrip('.')
+                    if self._is_valid_hostname(domain):
+                        return domain
+            return None
+        except Exception as e:
+            logger.error("Error extracting DNS query: %s", str(e))
+            return None
+
     def _is_valid_hostname(self, hostname: str) -> bool:
         """
         Validates if a string is a plausible hostname.
@@ -392,29 +434,42 @@ class PacketSniffer:
             bool: True if the hostname appears valid
         """
         # Kiểm tra độ dài hostname
-        # Hostname không được trống và không được dài quá 253 ký tự theo chuẩn DNS
         if not hostname or len(hostname) > 253:
             return False
             
         # Kiểm tra ký tự hợp lệ (chữ cái, số, dấu chấm, dấu gạch ngang)
-        # Sử dụng biểu thức chính quy để kiểm tra
-        import re
         if not re.match(r'^[a-zA-Z0-9.-]+$', hostname):
             return False
             
         # Kiểm tra ít nhất có một dấu chấm (tên miền phải có ít nhất một cấp)
-        # Ví dụ: example.com
         if '.' not in hostname:
             return False
             
         # Kiểm tra từng phần của tên miền
-        # - Không được bắt đầu hoặc kết thúc bằng dấu gạch ngang
-        # - Không được rỗng
         parts = hostname.split('.')
         for part in parts:
             if not part or part.startswith('-') or part.endswith('-'):
                 return False
                 
-        # Nếu vượt qua tất cả kiểm tra, hostname được coi là hợp lệ
         return True
+
+    def _is_ip_address(self, address: str) -> bool:
+        """Check if string is an IP address (IPv4 or IPv6)"""
+        try:
+            # Try IPv4
+            parts = address.split('.')
+            if len(parts) == 4:
+                return all(0 <= int(part) <= 255 for part in parts)
+        except:
+            pass
+        
+        try:
+            # Try IPv6
+            import ipaddress
+            ipaddress.ip_address(address)
+            return True
+        except:
+            pass
+        
+        return False
 

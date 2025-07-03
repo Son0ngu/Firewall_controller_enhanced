@@ -9,3 +9,4 @@ bcrypt
 email_validator
 eventlet
 tzdata
+python-snappy

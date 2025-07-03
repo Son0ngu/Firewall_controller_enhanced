@@ -1,433 +1,621 @@
 """
 Log Service - Business logic for log operations
+UTC ONLY - Clean and simple
 """
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
-from models.log_model import LogModel
-import logging
 
-logger = logging.getLogger(__name__)
+import logging
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from models.log_model import LogModel
+
+# Import time utilities - UTC ONLY
+from time_utils import now_utc, to_utc_naive, parse_agent_timestamp, now_iso
 
 class LogService:
-    """Service class for log business logic"""
+    """Service class for log business logic - UTC ONLY"""
     
     def __init__(self, log_model: LogModel, socketio=None):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.model = log_model
         self.socketio = socketio
-        
-        # ✅ FIX: Use Vietnam timezone consistently
-        self.vietnam_timezone = timezone(timedelta(hours=7), name="UTC+7")
-        
-        logger.info(f"LogService initialized with Vietnam timezone: {self.vietnam_timezone}")
-    
-    def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone"""
-        utc_now = datetime.now(timezone.utc)
-        return utc_now.astimezone(self.vietnam_timezone)
-    
-    def _ensure_vietnam_timezone(self, dt: datetime) -> datetime:
-        """Ensure datetime is in Vietnam timezone"""
-        if dt is None:
-            return None
-            
-        if dt.tzinfo is None:
-            # Naive datetime - assume it's Vietnam time
-            return dt.replace(tzinfo=self.vietnam_timezone)
-        else:
-            # Convert to Vietnam timezone
-            return dt.astimezone(self.vietnam_timezone)
     
     def receive_logs(self, logs_data: Dict, agent_id: str = None) -> Dict:
-        """Process logs received from agent"""
+        """Receive and process logs from agents - UTC ONLY"""
         try:
-            logs = logs_data.get("logs", [])
+            # Extract logs from data
+            logs = logs_data.get('logs', [])
             if not logs:
                 return {"success": False, "error": "No logs provided"}
             
-            current_time = self._now_local()
+            # Use UTC time for server processing
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
             
+            # Process each log entry
             valid_logs = []
             for log in logs:
                 try:
-                    # ✅ FIX: Timestamp processing for Vietnam timezone
-                    if 'timestamp' not in log:
-                        # No timestamp from agent -> use server time
-                        log['timestamp'] = current_time
-                        log['timestamp_source'] = 'server'
+                    # Enhanced protocol processing
+                    protocol = log.get("protocol", "unknown")
+                    port = log.get("port", "unknown")
+                    
+                    # Smart protocol detection
+                    if protocol == "unknown" and port != "unknown":
+                        if str(port) == "443":
+                            protocol = "HTTPS"
+                        elif str(port) == "80":
+                            protocol = "HTTP"
+                        elif str(port) == "53":
+                            protocol = "DNS"
+                        else:
+                            protocol = f"TCP/{port}"
+                    
+                    # Enhanced source IP processing
+                    source_ip = log.get("source_ip") or log.get("src_ip") or log.get("local_ip") or "unknown"
+                    
+                    # Enhanced destination processing
+                    destination = (
+                        log.get("destination") or 
+                        log.get("domain") or 
+                        log.get("url") or 
+                        log.get("dest_ip") or 
+                        log.get("ip") or 
+                        "unknown"
+                    )
+                    
+                    # Create processed log entry
+                    processed_log = {
+                        "agent_id": agent_id or log.get("agent_id", "unknown"),
+                        "level": log.get("level", "INFO"),
+                        "action": log.get("action", "UNKNOWN"),
+                        "domain": log.get("domain", "unknown"),
+                        "destination": destination,
+                        "source_ip": source_ip,
+                        "dest_ip": log.get("dest_ip") or log.get("ip") or "unknown",
+                        "protocol": protocol,
+                        "port": str(port) if port != "unknown" else "unknown",
+                        "message": log.get("message", "Log entry"),
+                        "source": log.get("source", "agent"),
+                        "connection_type": log.get("connection_type", "outbound"),
+                        "service_type": log.get("service_type", "unknown"),
+                        "process_name": log.get("process_name"),
+                        "process_pid": log.get("process_pid")
+                    }
+                    
+                    # Format display fields
+                    if protocol != "unknown" and port != "unknown":
+                        processed_log["protocol_display"] = f"{protocol}:{port}"
                     else:
+                        processed_log["protocol_display"] = protocol
+                    
+                    processed_log["source_display"] = source_ip if source_ip != "unknown" else "Local"
+                    
+                    # Timestamp processing - UTC ONLY
+                    if 'timestamp' in log and log['timestamp']:
                         try:
-                            # Parse agent timestamp
+                            # Parse agent timestamp using UTC parsing
                             if isinstance(log['timestamp'], str):
-                                agent_time = datetime.fromisoformat(log['timestamp'].replace('Z', '+00:00'))
+                                agent_time = parse_agent_timestamp(log['timestamp'])  # UTC parsing
                             else:
-                                agent_time = log['timestamp']
+                                # Convert to UTC
+                                from datetime import datetime, timezone
+                                if isinstance(log['timestamp'], datetime):
+                                    if log['timestamp'].tzinfo is None:
+                                        agent_time = log['timestamp'].replace(tzinfo=timezone.utc)
+                                    else:
+                                        agent_time = log['timestamp'].astimezone(timezone.utc)
+                                else:
+                                    agent_time = now_utc()
                             
-                            # Convert to Vietnam timezone
-                            log['timestamp'] = self._ensure_vietnam_timezone(agent_time)
-                            log['timestamp_source'] = 'agent'
+                            # Convert to naive for MongoDB storage
+                            processed_log['timestamp'] = agent_time.replace(tzinfo=None)
+                            processed_log['timestamp_source'] = 'agent'
                             
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Invalid timestamp format '{log.get('timestamp')}': {e}")
-                            log['timestamp'] = current_time
-                            log['timestamp_source'] = 'server_fallback'
+                        except Exception as e:
+                            self.logger.warning(f"Invalid timestamp format '{log.get('timestamp')}': {e}")
+                            processed_log['timestamp'] = current_time
+                            processed_log['timestamp_source'] = 'server_fallback'
+                    else:
+                        processed_log['timestamp'] = current_time
+                        processed_log['timestamp_source'] = 'server'
                     
-                    # ✅ ADD: Server received timestamp in Vietnam timezone
-                    log['server_received_at'] = current_time
+                    # Add server received timestamp
+                    processed_log['server_received_at'] = current_time
                     
-                    # ✅ ADD: Agent info
-                    if agent_id:
-                        log['agent_id'] = agent_id
+                    # Copy additional fields if they exist
+                    optional_fields = ['reason', 'firewall_mode', 'handled_by_firewall', 
+                                     'domain_check', 'ip_check', 'url', 'ip']
+                    for field in optional_fields:
+                        if field in log and log[field] is not None:
+                            processed_log[field] = log[field]
                     
-                    # ✅ FIX: Normalize fields
-                    if 'url' in log and 'domain' not in log:
-                        log['domain'] = log['url']
+                    # Normalize action values
+                    action = processed_log['action'].upper()
+                    if action in ['ALLOW', 'ALLOWED']:
+                        processed_log['action'] = 'ALLOWED'
+                        if processed_log['level'] == 'INFO':
+                            processed_log['level'] = 'ALLOWED'
+                    elif action in ['BLOCK', 'BLOCKED', 'DENY', 'DENIED']:
+                        processed_log['action'] = 'BLOCKED'
+                        if processed_log['level'] in ['INFO', 'WARNING']:
+                            processed_log['level'] = 'BLOCKED'
                     
-                    if 'action' not in log:
-                        log['action'] = 'unknown'
-                    
-                    # ✅ ADD: Log level
-                    if 'level' not in log:
-                        log['level'] = 'info'
-                    
-                    valid_logs.append(log)
+                    valid_logs.append(processed_log)
                     
                 except Exception as e:
-                    logger.warning(f"Error processing log entry: {e}")
+                    self.logger.warning(f"Error processing log entry: {e}")
+                    # Create fallback log
+                    fallback_log = {
+                        "timestamp": current_time,
+                        "server_received_at": current_time,
+                        "agent_id": agent_id or "unknown",
+                        "level": "ERROR",
+                        "action": "ERROR",
+                        "domain": "processing_error",
+                        "destination": "processing_error",
+                        "source_ip": "unknown",
+                        "dest_ip": "unknown",
+                        "protocol": "unknown",
+                        "port": "unknown",
+                        "message": f"Failed to process log: {str(e)}",
+                        "source": "log_processing_error",
+                        "original_data": str(log)[:200] + "..." if len(str(log)) > 200 else str(log),
+                        "processing_error": str(e),
+                        "timestamp_source": "server"
+                    }
+                    valid_logs.append(fallback_log)
                     continue
             
+            # Check if we have valid logs
             if not valid_logs:
                 return {"success": False, "error": "No valid logs to process"}
             
             # Store in database
             inserted_ids = self.model.insert_logs(valid_logs)
             
-            # ✅ Real-time broadcast via Socket.IO
+            # Real-time broadcast via Socket.IO - UTC only
             if self.socketio:
-                for log in valid_logs[-5:]:  # Broadcast last 5 logs to avoid flooding
+                for log in valid_logs[-5:]:  # Broadcast last 5 logs
                     # Format for frontend
                     broadcast_log = {
-                        'timestamp': log['timestamp'].isoformat() if isinstance(log['timestamp'], datetime) else log['timestamp'],
-                        'display_time': log['timestamp'].strftime('%H:%M:%S') if isinstance(log['timestamp'], datetime) else log['timestamp'],
-                        'domain': log.get('domain', 'Unknown'),
-                        'action': log.get('action', 'unknown'),
-                        'agent_id': log.get('agent_id', 'Unknown'),
-                        'level': log.get('level', 'info')
+                        'timestamp': log['timestamp'].isoformat() if hasattr(log['timestamp'], 'isoformat') else str(log['timestamp']),
+                        'display_time': log['timestamp'].strftime('%H:%M:%S') if hasattr(log['timestamp'], 'strftime') else str(log['timestamp'])[:8],
+                        'domain': log.get('domain', 'unknown'),
+                        'destination': log.get('destination', 'unknown'),
+                        'action': log.get('action', 'UNKNOWN'),
+                        'level': log.get('level', 'INFO'),
+                        'agent_id': log.get('agent_id', 'unknown'),
+                        'source_ip': log.get('source_ip', 'unknown'),
+                        'dest_ip': log.get('dest_ip', 'unknown'),
+                        'protocol': log.get('protocol', 'unknown'),
+                        'port': str(log.get('port', 'unknown')),
+                        'message': log.get('message', 'Log entry')
                     }
                     self.socketio.emit('new_log', broadcast_log)
             
-            logger.info(f"Successfully processed {len(valid_logs)} logs from agent {agent_id}")
+            self.logger.info(f"Successfully processed {len(valid_logs)} logs from agent {agent_id}")
             
             return {
                 "success": True,
                 "message": f"Successfully processed {len(valid_logs)} logs",
                 "inserted_ids": inserted_ids,
                 "processed_count": len(valid_logs),
-                "timestamp": current_time.isoformat(),
-                "timezone": "UTC+7"
+                "server_time": now_iso()  # UTC ISO
             }
             
         except Exception as e:
-            logger.error(f"Error receiving logs: {e}")
-            return {"success": False, "error": str(e)}
+            self.logger.error(f"Error receiving logs: {e}")
+            return {
+                "success": False, 
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }
     
-    def get_logs(self, filters: Dict = None, page: int = 1, per_page: int = 50) -> Dict:
-        """Get logs with filtering and pagination"""
+    def get_all_logs(self, filters: Dict = None, limit: int = 100, offset: int = 0) -> Dict:
+        """Get all logs with filtering - UTC ONLY"""
         try:
-            # ✅ FIX: Process date filters for Vietnam timezone
+            # Build query from filters
+            query = {}
+            
             if filters:
+                if filters.get('level'):
+                    query['level'] = filters['level']
+                
+                if filters.get('action'):
+                    query['action'] = filters['action']
+                
+                if filters.get('agent_id'):
+                    query['agent_id'] = filters['agent_id']
+                
+                if filters.get('search'):
+                    search_term = filters['search']
+                    query['$or'] = [
+                        {'domain': {'$regex': search_term, '$options': 'i'}},
+                        {'destination': {'$regex': search_term, '$options': 'i'}},
+                        {'source_ip': {'$regex': search_term, '$options': 'i'}},
+                        {'dest_ip': {'$regex': search_term, '$options': 'i'}},
+                        {'message': {'$regex': search_term, '$options': 'i'}}
+                    ]
+                
+                # Time range filter - UTC
+                if filters.get('time_range'):
+                    time_range = filters['time_range']
+                    current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+                    
+                    if time_range == "1h":
+                        since_time = current_time - timedelta(hours=1)
+                    elif time_range == "24h":
+                        since_time = current_time - timedelta(hours=24)
+                    elif time_range == "7d":
+                        since_time = current_time - timedelta(days=7)
+                    elif time_range == "30d":
+                        since_time = current_time - timedelta(days=30)
+                    else:
+                        since_time = None
+                    
+                    if since_time:
+                        query["timestamp"] = {"$gte": since_time}
+                
+                # Date range filters - UTC
                 if filters.get('start_date'):
-                    filters['start_date'] = self._parse_date_filter(filters['start_date'])
+                    try:
+                        start_date = parse_agent_timestamp(filters['start_date'])
+                        query['timestamp'] = query.get('timestamp', {})
+                        query['timestamp']['$gte'] = to_utc_naive(start_date)
+                    except Exception as e:
+                        self.logger.warning(f"Invalid start_date filter: {e}")
+                
                 if filters.get('end_date'):
-                    filters['end_date'] = self._parse_date_filter(filters['end_date'])
-                if filters.get('since'):
-                    filters['since'] = self._parse_date_filter(filters['since'])
-                if filters.get('until'):
-                    filters['until'] = self._parse_date_filter(filters['until'])
+                    try:
+                        end_date = parse_agent_timestamp(filters['end_date'])
+                        query['timestamp'] = query.get('timestamp', {})
+                        query['timestamp']['$lte'] = to_utc_naive(end_date)
+                    except Exception as e:
+                        self.logger.warning(f"Invalid end_date filter: {e}")
             
-            result = self.model.get_logs(filters, page, per_page)
+            self.logger.info(f"Getting logs with query: {query}, limit: {limit}, offset: {offset}")
             
-            # ✅ ADD: Current time info
-            result['current_time'] = self._now_local().isoformat()
-            result['timezone'] = 'UTC+7'
+            # Get logs and total count
+            logs = self.model.find_all_logs(query, limit=limit, offset=offset)
+            total_count = self.model.count_logs(query)
             
+            self.logger.info(f"Found {len(logs)} logs, total count: {total_count}")
+            
+            # Format for response
+            formatted_logs = []
+            for log in logs:
+                try:
+                    formatted_log = {
+                        "id": str(log.get("_id", "")),
+                        "timestamp": log.get("timestamp"),
+                        "agent_id": log.get("agent_id", "unknown"),
+                        "level": log.get("level", "INFO"),
+                        "action": log.get("action", "UNKNOWN"),
+                        "domain": log.get("domain", "unknown"),
+                        "destination": log.get("destination", "unknown"),
+                        "source_ip": log.get("source_ip", "unknown"),
+                        "dest_ip": log.get("dest_ip", "unknown"),
+                        "protocol": log.get("protocol", "unknown"),
+                        "port": str(log.get("port", "unknown")),
+                        "message": log.get("message", "Log entry"),
+                        "source": log.get("source", "agent")
+                    }
+                    
+                    # Handle timestamps - UTC only
+                    if log.get("timestamp"):
+                        try:
+                            timestamp = log["timestamp"]
+                            if hasattr(timestamp, 'isoformat'):
+                                # Convert to UTC if needed
+                                if timestamp.tzinfo is None:
+                                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                                else:
+                                    timestamp = timestamp.astimezone(timezone.utc)
+                                formatted_log["timestamp"] = timestamp.isoformat()
+                            elif isinstance(timestamp, str):
+                                formatted_log["timestamp"] = timestamp
+                            else:
+                                formatted_log["timestamp"] = str(timestamp)
+                        except Exception as e:
+                            self.logger.warning(f"Error formatting timestamp: {e}")
+                            formatted_log["timestamp"] = now_iso()
+                    
+                    # Add optional fields
+                    for field in ["reason", "firewall_mode", "handled_by_firewall", "display_time"]:
+                        if log.get(field):
+                            formatted_log[field] = log[field]
+                    
+                    formatted_logs.append(formatted_log)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error formatting log entry: {e}")
+                    continue
+            
+            result = {
+                "logs": formatted_logs,
+                "total": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + limit < total_count,
+                "success": True,
+                "server_time": now_iso()  # UTC ISO
+            }
+            
+            self.logger.info(f"Returning {len(formatted_logs)} formatted logs")
             return result
             
         except Exception as e:
-            logger.error(f"Error getting logs: {e}")
+            self.logger.error(f"Error getting logs: {e}")
+            import traceback
+            traceback.print_exc()
             return {
-                "logs": [],
+                "success": False, 
+                "error": str(e), 
+                "logs": [], 
                 "total": 0,
-                "page": page,
-                "per_page": per_page,
-                "pages": 0,
-                "error": str(e),
-                "timezone": "UTC+7"
+                "server_time": now_iso()  # UTC ISO
             }
     
-    # ✅ ADD: Alternative method with limit parameter for backward compatibility
-    def find_logs(self, filters: Dict = None, limit: int = 50, offset: int = 0) -> List[Dict]:
-        """Find logs with simple limit/offset - for backward compatibility"""
+    def clear_logs(self, filters: Dict = None) -> Dict:
+        """Clear logs with optional filters - UTC ONLY"""
         try:
-            page = (offset // limit) + 1
-            result = self.get_logs(filters, page, limit)
-            return result.get('logs', [])
+            query = {}
+            
+            if filters:
+                if filters.get('level'):
+                    query['level'] = filters['level']
+                
+                if filters.get('action'):
+                    query['action'] = filters['action']
+                
+                if filters.get('agent_id'):
+                    query['agent_id'] = filters['agent_id']
+                
+                # Handle ObjectId filters for specific log deletion
+                if filters.get('_id'):
+                    query['_id'] = filters['_id']
+            
+            deleted_count = self.model.delete_logs(query)
+            
+            self.logger.info(f"Cleared {deleted_count} logs with filters: {filters}")
+            
+            return {
+                "success": True,
+                "message": f"Deleted {deleted_count} logs",
+                "deleted_count": deleted_count,
+                "server_time": now_iso()  # UTC ISO
+            }
+            
         except Exception as e:
-            logger.error(f"Error finding logs: {e}")
-            return []
+            self.logger.error(f"Error clearing logs: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "deleted_count": 0,
+                "server_time": now_iso()  # UTC ISO
+            }
     
-    def _parse_date_filter(self, date_str: str) -> datetime:
-        """Parse date filter string to Vietnam timezone"""
+    def export_logs(self, filters: Dict = None, format: str = 'json') -> Dict:
+        """Export logs in specified format - UTC ONLY"""
         try:
-            if isinstance(date_str, datetime):
-                return self._ensure_vietnam_timezone(date_str)
+            # Get all logs matching filters (no pagination for export)
+            result = self.get_all_logs(filters, limit=10000, offset=0)
             
-            # Parse various date formats
-            if 'T' in date_str:
-                # ISO format
-                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            else:
-                # Date only - assume start of day in Vietnam
-                dt = datetime.strptime(date_str, '%Y-%m-%d')
-                dt = dt.replace(tzinfo=self.vietnam_timezone)
+            if not result.get('success'):
+                return result
             
-            return self._ensure_vietnam_timezone(dt)
+            logs = result['logs']
             
-        except (ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse date filter '{date_str}': {e}")
-            return None
-    
-    def get_log_by_id(self, log_id: str) -> Dict:
-        """Get single log by ID"""
-        return self.model.get_log_by_id(log_id)
-    
-    def delete_log(self, log_id: str) -> bool:
-        """Delete log by ID"""
-        return self.model.delete_log(log_id)
-    
-    def clear_logs(self, filters: Dict = None) -> int:
-        """Clear logs with optional filters"""
-        return self.model.clear_logs(filters)
-    
-    # ✅ ADD: Missing get_logs_summary method
-    def get_logs_summary(self, period: str = "day") -> Dict:
-        """Get logs summary for different time periods"""
-        current_time = self._now_local()
-        
-        if period == "hour":
-            since = current_time - timedelta(hours=1)
-        elif period == "day":
-            since = current_time - timedelta(days=1)
-        elif period == "week":
-            since = current_time - timedelta(weeks=1)
-        elif period == "month":
-            since = current_time - timedelta(days=30)
-        else:
-            since = current_time - timedelta(days=1)
-        
-        summary = self.model.get_logs_summary(since)
-        
-        # ✅ ADD: Time period info
-        summary['period'] = period
-        summary['period_start'] = since.isoformat()
-        summary['period_end'] = current_time.isoformat()
-        summary['timezone'] = 'UTC+7'
-        
-        return summary
-    
-    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
-        """Get recent logs"""
-        return self.model.get_recent_logs(limit)
-    
-    def get_hourly_stats(self, hours: int = 24) -> List[Dict]:
-        """Get hourly statistics"""
-        return self.model.get_hourly_stats(hours)
-    
-    def search_logs(self, search_term: str, limit: int = 100) -> List[Dict]:
-        """Search logs by domain or other criteria"""
-        filters = {}
-        
-        # Search in domain field
-        if search_term:
-            filters['domain'] = search_term
-        
-        return self.model.find_logs(
-            query=self.model.build_query_from_filters(filters),
-            limit=limit
-        )
-    
-    # ✅ REMOVE DUPLICATE get_recent_logs method - only keep one version
-    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
-        """Get recent logs with Vietnam timezone"""
-        try:
-            logs = self.model.get_recent_logs(limit)
-            
-            # ✅ ADD: Additional Vietnam timezone formatting
-            for log in logs:
-                if 'timestamp' in log:
-                    # Parse timestamp if it's a string
-                    if isinstance(log['timestamp'], str):
-                        try:
-                            timestamp = datetime.fromisoformat(log['timestamp'].replace('Z', '+00:00'))
-                            vn_time = self._ensure_vietnam_timezone(timestamp)
-                        except:
-                            vn_time = self._now_local()
-                    else:
-                        vn_time = self._ensure_vietnam_timezone(log['timestamp'])
+            if format == 'csv':
+                import csv
+                import io
+                
+                output = io.StringIO()
+                if logs:
+                    fieldnames = logs[0].keys()
+                    writer = csv.DictWriter(output, fieldnames=fieldnames)
+                    writer.writeheader()
                     
-                    # Add formatted times
-                    log['vn_timestamp'] = vn_time.isoformat()
-                    log['vn_display_time'] = vn_time.strftime('%Y-%m-%d %H:%M:%S')
-                    log['vn_time_short'] = vn_time.strftime('%H:%M:%S')
-                    log['vn_date'] = vn_time.strftime('%Y-%m-%d')
-            
-            return logs
-            
-        except Exception as e:
-            logger.error(f"Error getting recent logs: {e}")
-            return []
-    
-    # ✅ ADD: Comprehensive timezone info method
-    def get_timezone_info(self) -> Dict:
-        """Get comprehensive timezone information"""
-        current_time = self._now_local()
-        utc_time = datetime.now(timezone.utc)
-        
-        return {
-            "timezone": "UTC+7",
-            "timezone_name": "Asia/Ho_Chi_Minh",
-            "timezone_offset": "+07:00",
-            "current_vn_time": current_time.isoformat(),
-            "current_utc_time": utc_time.isoformat(),
-            "display_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
-            "time_format": "24-hour",
-            "date_format": "YYYY-MM-DD",
-            "offset_hours": 7,
-            "dst_active": False,  # Vietnam doesn't use DST
-            "country": "Vietnam"
-        }
-    
-    # ✅ ADD: Batch operations with timezone
-    def insert_multiple_logs(self, logs_list: List[Dict], agent_id: str = None) -> Dict:
-        """Insert multiple logs with Vietnam timezone processing"""
-        try:
-            current_time = self._now_local()
-            processed_logs = []
-            
-            for log_data in logs_list:
-                # Process timestamp
-                if 'timestamp' not in log_data:
-                    log_data['timestamp'] = current_time
-                else:
-                    log_data['timestamp'] = self._parse_date_filter(log_data['timestamp'])
+                    for log in logs:
+                        # Convert datetime objects to strings for CSV
+                        csv_log = {}
+                        for key, value in log.items():
+                            if isinstance(value, datetime):
+                                csv_log[key] = value.isoformat()
+                            else:
+                                csv_log[key] = str(value) if value is not None else ''
+                        writer.writerow(csv_log)
                 
-                # Add metadata
-                log_data['server_received_at'] = current_time
-                if agent_id:
-                    log_data['agent_id'] = agent_id
-                
-                processed_logs.append(log_data)
-            
-            # Insert to database
-            inserted_ids = self.model.insert_logs(processed_logs)
-            
-            return {
-                "success": True,
-                "inserted_count": len(inserted_ids),
-                "inserted_ids": inserted_ids,
-                "timezone": "UTC+7",
-                "timestamp": current_time.isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Error inserting multiple logs: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "timezone": "UTC+7"
-            }
-    
-    # ✅ ADD: Statistics with time periods
-    def get_detailed_stats(self, hours: int = 24) -> Dict:
-        """Get detailed statistics for specified hours"""
-        try:
-            current_time = self._now_local()
-            start_time = current_time - timedelta(hours=hours)
-            
-            # Basic stats
-            summary = self.model.get_logs_summary(start_time)
-            
-            # Hourly breakdown
-            hourly_stats = self.model.get_hourly_stats(hours)
-            
-            # Top domains/agents
-            filters = {
-                'since': start_time.isoformat(),
-                'until': current_time.isoformat()
-            }
-            
-            return {
-                **summary,
-                "hourly_breakdown": hourly_stats,
-                "period_hours": hours,
-                "period_start": start_time.isoformat(),
-                "period_end": current_time.isoformat(),
-                "timezone": "UTC+7",
-                "last_updated": current_time.isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting detailed stats: {e}")
-            return {
-                "error": str(e),
-                "timezone": "UTC+7"
-            }
-    
-    # ✅ ADD: Export logs with timezone
-    def export_logs(self, filters: Dict = None, format: str = "json") -> Dict:
-        """Export logs with Vietnam timezone formatting"""
-        try:
-            # Get all matching logs (no pagination)
-            all_logs = []
-            page = 1
-            per_page = 1000
-            
-            while True:
-                result = self.get_logs(filters, page, per_page)
-                logs = result.get('logs', [])
-                
-                if not logs:
-                    break
-                
-                all_logs.extend(logs)
-                
-                if len(logs) < per_page:
-                    break
-                
-                page += 1
-            
-            # Format for export
-            export_data = {
-                "export_info": {
-                    "total_logs": len(all_logs),
-                    "exported_at": self._now_local().isoformat(),
-                    "timezone": "UTC+7",
+                return {
+                    "success": True,
+                    "data": output.getvalue(),
+                    "count": len(logs),
                     "format": format,
-                    "filters": filters or {}
-                },
-                "logs": all_logs
-            }
-            
-            return {
-                "success": True,
-                "data": export_data,
-                "count": len(all_logs),
-                "timezone": "UTC+7"
-            }
-            
+                    "server_time": now_iso()  # UTC ISO
+                }
+            else:
+                # JSON format
+                return {
+                    "success": True,
+                    "data": logs,
+                    "count": len(logs),
+                    "format": format,
+                    "server_time": now_iso()  # UTC ISO
+                }
+                
         except Exception as e:
-            logger.error(f"Error exporting logs: {e}")
+            self.logger.error(f"Error exporting logs: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "timezone": "UTC+7"
+                "server_time": now_iso()  # UTC ISO
             }
+    
+    def get_comprehensive_statistics(self, filters: Dict = None) -> Dict:
+        """Get comprehensive log statistics - UTC ONLY"""
+        try:
+            self.logger.info(f"Calculating comprehensive statistics with filters: {filters}")
+            
+            # Check if we have any filters
+            has_filters = bool(filters and any(filters.values()))
+            
+            # Get total counts (no filters)
+            total_stats = {
+                "total": self.model.count_logs({}),
+                "allowed": self.model.count_logs({"action": "ALLOWED"}),
+                "blocked": self.model.count_logs({"action": "BLOCKED"}),
+                "warnings": self.model.count_logs({"level": "WARNING"})
+            }
+            
+            # Get filtered counts if filters exist
+            filtered_stats = {}
+            if has_filters:
+                query = self._build_query_from_filters(filters)
+                self.logger.info(f"Filter query: {query}")
+                
+                filtered_stats = {
+                    "filtered_total": self.model.count_logs(query),
+                    "filtered_allowed": self.model.count_logs({**query, "action": "ALLOWED"}),
+                    "filtered_blocked": self.model.count_logs({**query, "action": "BLOCKED"}),
+                    "filtered_warnings": self.model.count_logs({**query, "level": "WARNING"})
+                }
+            
+            # Combine results
+            result = {
+                **total_stats,
+                **filtered_stats,
+                "has_filters": has_filters,
+                "server_time": now_iso()  # UTC ISO
+            }
+            
+            self.logger.info(f"Statistics result: {result}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error getting comprehensive statistics: {e}")
+            return {
+                "total": 0,
+                "allowed": 0,
+                "blocked": 0,
+                "warnings": 0,
+                "has_filters": False,
+                "error": str(e),
+                "server_time": now_iso()  # UTC ISO
+            }
+    
+    def _build_query_from_filters(self, filters: Dict) -> Dict:
+        """Build MongoDB query from filters - UTC ONLY"""
+        query = {}
+        
+        if filters.get("level"):
+            query["level"] = filters["level"]
+        
+        if filters.get("action"):
+            query["action"] = filters["action"]
+        
+        if filters.get("agent_id"):
+            query["agent_id"] = filters["agent_id"]
+        
+        if filters.get("search"):
+            search_term = filters["search"]
+            query["$or"] = [
+                {"domain": {"$regex": search_term, "$options": "i"}},
+                {"destination": {"$regex": search_term, "$options": "i"}},
+                {"source_ip": {"$regex": search_term, "$options": "i"}},
+                {"dest_ip": {"$regex": search_term, "$options": "i"}},
+                {"message": {"$regex": search_term, "$options": "i"}}
+            ]
+        
+        # Time range filter - UTC
+        if filters.get("time_range"):
+            time_range = filters["time_range"]
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+            
+            if time_range == "1h":
+                since_time = current_time - timedelta(hours=1)
+            elif time_range == "24h":
+                since_time = current_time - timedelta(hours=24)
+            elif time_range == "7d":
+                since_time = current_time - timedelta(days=7)
+            elif time_range == "30d":
+                since_time = current_time - timedelta(days=30)
+            else:
+                since_time = None
+            
+            if since_time:
+                query["timestamp"] = {"$gte": since_time}
+        
+        # Date range filter - UTC
+        if filters.get("start_date") or filters.get("end_date"):
+            date_query = {}
+            if filters.get("start_date"):
+                try:
+                    start_dt = parse_agent_timestamp(filters["start_date"])
+                    # Convert to naive for MongoDB query
+                    date_query["$gte"] = start_dt.replace(tzinfo=None)
+                except Exception:
+                    pass
+            
+            if filters.get("end_date"):
+                try:
+                    end_dt = parse_agent_timestamp(filters["end_date"])
+                    # Convert to naive for MongoDB query
+                    date_query["$lte"] = end_dt.replace(tzinfo=None)
+                except Exception:
+                    pass
+            
+            if date_query:
+                query["timestamp"] = date_query
+        
+        self.logger.debug(f"Built query from filters {filters}: {query}")
+        return query
+    
+    def get_total_count(self) -> int:
+        """Get total log count"""
+        try:
+            return self.model.count_logs({})
+        except Exception as e:
+            self.logger.error(f"Error getting total count: {e}")
+            return 0
+    
+    def get_count_by_action(self, action: str) -> int:
+        """Get count by action type"""
+        try:
+            query = {"action": action.upper()}
+            return self.model.count_logs(query)
+        except Exception as e:
+            self.logger.error(f"Error getting count by action: {e}")
+            return 0
+    
+    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
+        """Get recent logs - UTC ONLY"""
+        try:
+            logs = self.model.find_all_logs({}, limit=limit, offset=0)
+            
+            # Format for display
+            formatted_logs = []
+            for log in logs:
+                formatted_log = {
+                    "timestamp": log.get("timestamp"),
+                    "domain": log.get("domain", "unknown"),
+                    "action": log.get("action", "UNKNOWN"),
+                    "agent_id": log.get("agent_id", "unknown"),
+                    "level": log.get("level", "INFO")
+                }
+                
+                # Format timestamp for display - UTC
+                if log.get("timestamp"):
+                    try:
+                        if hasattr(log["timestamp"], 'strftime'):
+                            formatted_log["display_time"] = log["timestamp"].strftime("%H:%M:%S")
+                        else:
+                            formatted_log["display_time"] = str(log["timestamp"])[:8]
+                    except:
+                        formatted_log["display_time"] = "00:00:00"
+                
+                formatted_logs.append(formatted_log)
+            
+            return formatted_logs
+            
+        except Exception as e:
+            self.logger.error(f"Error getting recent logs: {e}")
+            return []

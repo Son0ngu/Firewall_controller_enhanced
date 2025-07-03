@@ -1,11 +1,8 @@
 """
 Whitelist Model - handles whitelist data operations
+UTC ONLY - Clean and simple
 """
-
-import re
-import socket
-import ipaddress
-from datetime import datetime, timedelta, timezone  # ✅ ADD: Import timezone
+import datetime
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from bson import ObjectId
@@ -13,138 +10,171 @@ from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 import logging
+import re
+
+# Import time utilities - UTC ONLY
+from time_utils import now_utc, to_utc_naive, parse_agent_timestamp
 
 class WhitelistModel:
-    """Model for whitelist data operations"""
+    """Model for whitelist data operations - UTC ONLY"""
     
     def __init__(self, db: Database):
-        self.db = db
-        self.collection: Collection = self.db.whitelist
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.db = db
+        self.collection: Collection = db.whitelist
         
-        # ✅ FIXED: Better timezone setup
-        self.timezone = self._get_timezone()
-        self._setup_indexes()
+        # Create indexes for better performance
+        self._create_indexes()
     
-    def _get_timezone(self):
-        """Get Vietnam timezone consistently"""
+    def _create_indexes(self):
+        """Create necessary indexes with enhanced conflict handling"""
         try:
-            from zoneinfo import ZoneInfo
-            return ZoneInfo("Asia/Ho_Chi_Minh")
-        except ImportError:
-            # ✅ FIX: Fallback should be more accurate
-            from datetime import timezone, timedelta
-            # Vietnam is UTC+7 (no DST since 1979)
-            return timezone(timedelta(hours=7), name="Asia/Ho_Chi_Minh")
-    
-    def _now_local(self) -> datetime:
-        """Get current time in Vietnam timezone"""
-        utc_now = datetime.now(timezone.utc)
-        local_now = utc_now.astimezone(self.timezone)
-        self.logger.debug(f"Current time: UTC {utc_now.strftime('%H:%M:%S')} -> VN {local_now.strftime('%H:%M:%S')}")
-        return local_now
-    
-    def _ensure_timezone_aware(self, dt: datetime) -> datetime:
-        """Ensure datetime is timezone-aware with Vietnam timezone"""
-        if dt is None:
-            return None
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=self.timezone)
-        return dt.astimezone(self.timezone)
-    
-    def _setup_indexes(self):
-        """Setup indexes for whitelist collection"""
-        try:
-            # ✅ FIX: Better index management
-            existing_indexes = self.collection.list_indexes()
-            index_names = [idx['name'] for idx in existing_indexes]
+            #  FIX: Get detailed existing indexes information
+            existing_indexes = list(self.collection.list_indexes())
             
-            # Clean up invalid documents first
-            cleanup_result = self.collection.delete_many({
-                "$or": [
-                    {"value": None},
-                    {"value": ""},
-                    {"value": {"$exists": False}},
-                    {"value": {"$type": "null"}}
-                ]
-            })
+            #  FIX: Create mapping of field -> existing index info
+            existing_fields = {}
+            for idx in existing_indexes:
+                if 'key' in idx:
+                    for field, direction in idx['key'].items():
+                        if field != '_id':  # Skip default _id index
+                            existing_fields[field] = {
+                                'name': idx['name'],
+                                'direction': direction,
+                                'sparse': idx.get('sparse', False)
+                            }
             
-            if cleanup_result.deleted_count > 0:
-                self.logger.info(f"Cleaned up {cleanup_result.deleted_count} invalid whitelist entries")
+            self.logger.debug(f"Existing field indexes: {existing_fields}")
             
-            # Drop problematic unique index if exists
-            if "value_1" in index_names:
-                try:
-                    self.collection.drop_index("value_1")
-                    self.logger.info("Dropped existing value_1 index")
-                except Exception as e:
-                    self.logger.warning(f"Could not drop value_1 index: {e}")
-            
-            # Create new indexes
-            indexes_to_create = [
-                ([("value", 1)], {"unique": True, "sparse": True, "name": "value_unique_sparse"}),
-                ([("type", 1)], {"name": "type_index"}),
-                ([("category", 1)], {"name": "category_index"}),
-                ([("added_date", -1)], {"name": "added_date_desc"}),
-                ([("is_active", 1)], {"name": "is_active_index"})
+            #  FIX: Define desired indexes with all properties
+            desired_indexes = [
+                {"field": "value", "direction": 1, "sparse": False},
+                {"field": "type", "direction": 1, "sparse": False},
+                {"field": "added_date", "direction": -1, "sparse": False},
+                {"field": "is_active", "direction": 1, "sparse": False},
+                {"field": "expiry_date", "direction": 1, "sparse": True}
             ]
             
-            for index_spec, options in indexes_to_create:
+            #  FIX: Check and create indexes only if needed
+            for idx_spec in desired_indexes:
+                field = idx_spec["field"]
+                direction = idx_spec["direction"]
+                sparse = idx_spec["sparse"]
+                
+                if field in existing_fields:
+                    existing = existing_fields[field]
+                    
+                    #  FIX: Check if existing index matches our requirements
+                    if (existing['direction'] == direction and 
+                        existing.get('sparse', False) == sparse):
+                        self.logger.debug(f"✓ Index '{field}' already exists with correct properties (name: {existing['name']})")
+                        continue
+                    else:
+                        self.logger.info(f" Index '{field}' exists but with different properties - keeping existing")
+                        continue
+                
+                #  FIX: Create index only if it doesn't exist
                 try:
-                    if options["name"] not in index_names:
-                        self.collection.create_index(index_spec, **options)
-                        self.logger.debug(f"Created index: {options['name']}")
+                    if sparse:
+                        self.collection.create_index([(field, direction)], sparse=True)
+                        self.logger.debug(f"✓ Created sparse index: {field}")
+                    else:
+                        self.collection.create_index([(field, direction)])
+                        self.logger.debug(f"✓ Created index: {field}")
+                        
                 except Exception as e:
-                    self.logger.warning(f"Could not create index {options['name']}: {e}")
+                    #  FIX: More detailed error handling
+                    if "already exists" in str(e).lower():
+                        self.logger.debug(f"⏭️ Index '{field}' already exists (concurrent creation)")
+                    else:
+                        self.logger.warning(f"Failed to create index '{field}': {e}")
+            
+            #  FIX: Handle compound index separately
+            try:
+                compound_index_name = "whitelist_compound_idx"
+                compound_exists = False
+                
+                # Check if compound index exists by examining all indexes
+                for idx in existing_indexes:
+                    if len(idx.get('key', {})) > 1:  # Multi-field index
+                        # Check if it matches our compound pattern
+                        key = idx['key']
+                        if ('value' in key and 'type' in key and 'is_active' in key):
+                            compound_exists = True
+                            self.logger.debug(f"✓ Compound index already exists as '{idx['name']}'")
+                            break
+                
+                if not compound_exists:
+                    self.collection.create_index([
+                        ("value", 1), 
+                        ("type", 1), 
+                        ("is_active", 1)
+                    ], name=compound_index_name)
+                    self.logger.debug(f"✓ Created compound index: {compound_index_name}")
+                else:
+                    self.logger.debug(f"⏭️ Compound index already exists")
+                    
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    self.logger.debug("⏭️ Compound index already exists (concurrent creation)")
+                else:
+                    self.logger.warning(f"Failed to create compound index: {e}")
+            
+            self.logger.info("✓ Index setup completed (with enhanced conflict handling)")
             
         except Exception as e:
-            self.logger.error(f"Error setting up indexes: {e}")
-            # Continue without indexes if creation fails
-
+            self.logger.warning(f"Index creation process failed: {e}")
+            # Continue anyway - indexes are not critical for basic functionality
+    
     def insert_entry(self, entry_data: Dict) -> str:
-        """Insert a new whitelist entry"""
+        """Insert a new whitelist entry - UTC ONLY"""
         try:
-            # ✅ FIX: Get current time in UTC+7
-            current_time = self._now_local()
-            self.logger.info(f"Inserting entry at: {current_time} (timezone: {current_time.tzinfo})")
+            # Use UTC time for all timestamps - UTC naive for MongoDB storage
+            current_time = to_utc_naive(now_utc())
             
-            # ✅ FIX: Convert to UTC before storing in MongoDB
-            current_time_utc = current_time.astimezone(timezone.utc)
+            # Store all timestamps as naive datetime in MongoDB
+            entry_data["added_date"] = current_time
+            entry_data["created_at"] = current_time
+            entry_data["updated_at"] = current_time
             
-            # Store timestamps as UTC (MongoDB standard)
-            entry_data["added_date"] = current_time_utc
-            entry_data["created_at"] = current_time_utc
-            entry_data["updated_at"] = current_time_utc
-            
-            # Store original timezone for reference
-            entry_data["timezone"] = "UTC+7"
-            entry_data["local_added_date"] = current_time.isoformat()  # Store as string for reference
-            
-            # Set essential defaults
+            #  FIX: Set essential defaults BEFORE validation
             entry_data.setdefault("is_active", True)
+            entry_data.setdefault("type", "domain")
             
-            # Validate value field
+            #  FIX: Validate value field early
             if not entry_data.get("value"):
                 raise ValueError("Value field is required")
             
-            # Log the data being inserted
-            self.logger.debug(f"Entry data to insert (UTC): {entry_data}")
+            #  FIX: Ensure value is lowercase and trimmed
+            entry_data["value"] = entry_data["value"].strip().lower()
+            
+            self.logger.info(f"Inserting entry: {entry_data['value']} at {current_time.isoformat()}")
             
             result = self.collection.insert_one(entry_data)
-            self.logger.info(f"Successfully inserted whitelist entry: {entry_data.get('value')} with ID: {result.inserted_id}")
-            return str(result.inserted_id)
             
+            if result.inserted_id:
+                self.logger.info(f"✓ Successfully inserted: {entry_data['value']} with ID: {result.inserted_id}")
+                return str(result.inserted_id)
+            else:
+                raise Exception("Insert operation returned no ID")
+                
         except Exception as e:
-            self.logger.error(f"Error inserting entry: {e}")
+            self.logger.error(f"❌ Error inserting entry: {e}")
             raise
-
+    
     def find_all_entries(self, query: Dict = None, sort_field: str = "added_date", 
                         sort_order: int = DESCENDING) -> List[Dict]:
-        """Find all whitelist entries"""
+        """Find all whitelist entries with proper sorting - UTC ONLY"""
         query = query or {}
+        
+        #  FIX: Add active filter by default
+        if "is_active" not in query:
+            query["is_active"] = True
         
         # Clean up expired entries first
         self.cleanup_expired_entries()
+        
+        self.logger.debug(f"Query: {query}")
         
         cursor = self.collection.find(query).sort(sort_field, sort_order)
         
@@ -152,223 +182,287 @@ class WhitelistModel:
         for entry in cursor:
             entry["_id"] = str(entry["_id"])
             
-            # ✅ FIX: Use helper method
+            # Convert entry timezones for display - UTC ONLY
             entry = self._convert_entry_timezones(entry)
+            
+            #  FIX: Ensure all required fields exist
+            entry.setdefault("type", "domain")
+            entry.setdefault("category", "uncategorized")
+            entry.setdefault("is_active", True)
+            entry.setdefault("priority", "normal")
+            
             entries.append(entry)
         
+        self.logger.debug(f"Retrieved {len(entries)} entries from database")
         return entries
     
-    def find_entry_by_value(self, value: str) -> Optional[Dict]:
-        """Find entry by value"""
-        entry = self.collection.find_one({"value": value})
-        if entry:
-            entry["_id"] = str(entry["_id"])
-            # ✅ FIX: Use helper method
-            entry = self._convert_entry_timezones(entry)
-        return entry
-    
-    def find_entry_by_id(self, entry_id: str) -> Optional[Dict]:
-        """Find entry by ID"""
-        try:
-            object_id = ObjectId(entry_id)
-            entry = self.collection.find_one({"_id": object_id})
-            if entry:
-                entry["_id"] = str(entry["_id"])
-                # ✅ FIX: Use helper method
-                entry = self._convert_entry_timezones(entry)
-            return entry
-        except:
-            return None
-    
-    # ✅ ADD: Helper method to avoid code duplication
     def _convert_entry_timezones(self, entry: Dict) -> Dict:
-        """Convert entry datetime fields from UTC to local timezone"""
+        """Convert entry datetime fields for display - UTC ONLY"""
         if not entry:
             return entry
             
         for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
             if date_field in entry and entry[date_field]:
-                utc_time = entry[date_field]
-                
-                # Ensure it's timezone-aware UTC
-                if utc_time.tzinfo is None:
-                    utc_time = utc_time.replace(tzinfo=timezone.utc)
-                
-                # Convert to Vietnam timezone for display
-                local_time = utc_time.astimezone(self.timezone)
-                entry[date_field] = local_time
-                
+                try:
+                    # Since we store as UTC naive datetime, convert to UTC timezone for display
+                    if hasattr(entry[date_field], 'strftime'):
+                        # Convert naive datetime to UTC timezone
+                        from datetime import timezone
+                        utc_dt = entry[date_field].replace(tzinfo=timezone.utc)
+                        
+                        entry[f"{date_field}_formatted"] = utc_dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+                        entry[f"{date_field}_iso"] = utc_dt.isoformat()
+                        
+                except Exception as e:
+                    self.logger.warning(f"Timezone conversion error for {date_field}: {e}")
+                    
         return entry
     
-    def update_entry(self, entry_id: str, update_data: Dict) -> bool:
-        """Update an entry"""
+    def find_entry_by_value(self, value: str) -> Optional[Dict]:
+        """Find entry by value (case-insensitive)"""
         try:
-            object_id = ObjectId(entry_id)
-            
-            # ✅ FIX: Convert updated_at to UTC
-            local_time = self._now_local()
-            update_data["updated_at"] = local_time.astimezone(timezone.utc)
-            update_data["timezone"] = "UTC+7"
-            
-            result = self.collection.update_one(
-                {"_id": object_id},
-                {"$set": update_data}
-            )
-            return result.modified_count > 0
-        except:
-            return False
-    
-    def delete_entry(self, entry_id: str) -> bool:
-        """Delete an entry"""
-        try:
-            object_id = ObjectId(entry_id)
-            result = self.collection.delete_one({"_id": object_id})
-            return result.deleted_count > 0
-        except:
-            return False
-    
-    def delete_entry_by_value(self, value: str) -> bool:
-        """Delete entry by value"""
-        result = self.collection.delete_one({"value": value})
-        return result.deleted_count > 0
-    
-    def bulk_insert_entries(self, entries: List[Dict]) -> List[str]:
-        """Bulk insert entries"""
-        if not entries:
-            return []
-        
-        # ✅ FIX: Convert timestamps to UTC before bulk insert
-        current_time = self._now_local()
-        current_time_utc = current_time.astimezone(timezone.utc)
-        
-        for entry in entries:
-            entry["added_date"] = current_time_utc
-            entry["created_at"] = current_time_utc
-            entry["updated_at"] = current_time_utc
-            entry["timezone"] = "UTC+7"
-            entry["local_added_date"] = current_time.isoformat()
-            entry.setdefault("is_active", True)
-        
-        try:
-            result = self.collection.insert_many(entries, ordered=False)
-            return [str(id) for id in result.inserted_ids]
-        except Exception as e:
-            self.logger.error(f"Error bulk inserting entries: {e}")
-            return []
-    
-    def count_entries(self, query: Dict = None) -> int:
-        """Count entries matching query"""
-        query = query or {}
-        return self.collection.count_documents(query)
-    
-    def cleanup_expired_entries(self) -> int:
-        """Remove expired entries"""
-        try:
-            # ✅ FIX: Compare with UTC time
-            current_time = self._now_local()
-            current_time_utc = current_time.astimezone(timezone.utc)
-            
-            result = self.collection.delete_many({
-                "expiry_date": {"$lt": current_time_utc}
+            entry = self.collection.find_one({
+                "value": value.lower().strip(),
+                "is_active": True
             })
             
-            if result.deleted_count > 0:
+            if entry:
+                entry["_id"] = str(entry["_id"])
+                entry = self._convert_entry_timezones(entry)
+                
+            return entry
+            
+        except Exception as e:
+            self.logger.error(f"Error finding entry by value: {e}")
+            return None
+    
+    def cleanup_expired_entries(self) -> int:
+        """Remove expired entries - UTC ONLY"""
+        try:
+            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB comparison
+            
+            #  ADD: Debug log before cleanup
+            expired_query = {"expiry_date": {"$lt": current_time}}
+            expired_count = self.collection.count_documents(expired_query)
+            
+            if expired_count > 0:
+                self.logger.info(f"Found {expired_count} expired entries to clean up")
+                result = self.collection.delete_many(expired_query)
                 self.logger.info(f"Cleaned up {result.deleted_count} expired entries")
-            
-            return result.deleted_count
-            
+                return result.deleted_count
+            else:
+                self.logger.debug("No expired entries found")
+                return 0
+                
         except Exception as e:
             self.logger.error(f"Error cleaning up expired entries: {e}")
             return 0
     
-    def get_entries_for_sync(self, since: datetime = None) -> List[str]:
-        """Get entries for agent sync (values only)"""
+    def validate_entry_value(self, entry_type: str, value: str) -> Dict:
+        """Validate entry value based on type"""
+        try:
+            value = value.strip().lower()
+            
+            if not value:
+                return {"valid": False, "message": "Value cannot be empty"}
+            
+            if entry_type == "domain":
+                return self._validate_domain(value)
+            elif entry_type == "ip":
+                return self._validate_ip(value)
+            elif entry_type == "url":
+                return self._validate_url(value)
+            else:
+                return {"valid": False, "message": f"Unknown entry type: {entry_type}"}
+                
+        except Exception as e:
+            return {"valid": False, "message": f"Validation error: {str(e)}"}
+    
+    def _validate_domain(self, domain: str) -> Dict:
+        """Validate domain format"""
+        # Basic domain validation regex
+        domain_pattern = r'^([a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$'
+        
+        if re.match(domain_pattern, domain):
+            return {"valid": True, "message": "Valid domain"}
+        else:
+            return {"valid": False, "message": "Invalid domain format"}
+    
+    def _validate_ip(self, ip: str) -> Dict:
+        """Validate IP address format"""
+        import socket
+        try:
+            socket.inet_aton(ip)
+            return {"valid": True, "message": "Valid IP address"}
+        except socket.error:
+            return {"valid": False, "message": "Invalid IP address format"}
+    
+    def _validate_url(self, url: str) -> Dict:
+        """Validate URL format"""
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme and parsed.netloc:
+                return {"valid": True, "message": "Valid URL"}
+            else:
+                return {"valid": False, "message": "Invalid URL format"}
+        except Exception:
+            return {"valid": False, "message": "Invalid URL format"}
+    
+    def delete_entry(self, entry_id: str) -> bool:
+        """Delete entry by ID"""
+        try:
+            result = self.collection.delete_one({"_id": ObjectId(entry_id)})
+            if result.deleted_count > 0:
+                self.logger.info(f"Deleted entry: {entry_id}")
+                return True
+            else:
+                self.logger.warning(f"Entry not found for deletion: {entry_id}")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error deleting entry: {e}")
+            return False
+    
+    def update_entry(self, entry_id: str, update_data: Dict) -> bool:
+        """Update entry by ID - UTC ONLY"""
+        try:
+            # Add updated timestamp - UTC naive for MongoDB
+            update_data["updated_at"] = to_utc_naive(now_utc())
+            
+            result = self.collection.update_one(
+                {"_id": ObjectId(entry_id)},
+                {"$set": update_data}
+            )
+            
+            if result.modified_count > 0:
+                self.logger.info(f"Updated entry: {entry_id}")
+                return True
+            else:
+                self.logger.warning(f"No changes made to entry: {entry_id}")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error updating entry: {e}")
+            return False
+    
+    def get_statistics(self) -> Dict:
+        """Get whitelist statistics"""
+        try:
+            total = self.collection.count_documents({})
+            active = self.collection.count_documents({"is_active": True})
+            
+            # Count by type
+            pipeline = [
+                {"$match": {"is_active": True}},
+                {"$group": {"_id": "$type", "count": {"$sum": 1}}}
+            ]
+            
+            type_counts = {}
+            for result in self.collection.aggregate(pipeline):
+                type_counts[result["_id"]] = result["count"]
+            
+            return {
+                "total": total,
+                "active": active,
+                "inactive": total - active,
+                "by_type": type_counts
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting statistics: {e}")
+            return {"total": 0, "active": 0, "inactive": 0, "by_type": {}}
+    
+    def find_entry_by_id(self, entry_id: str) -> Optional[Dict]:
+        """Find entry by ID"""
+        try:
+            entry = self.collection.find_one({"_id": ObjectId(entry_id)})
+            
+            if entry:
+                entry["_id"] = str(entry["_id"])
+                entry = self._convert_entry_timezones(entry)
+                
+            return entry
+            
+        except Exception as e:
+            self.logger.error(f"Error finding entry by ID: {e}")
+            return None
+
+    def get_entries_for_sync(self, since_date=None) -> List[Dict]:
+        """Get entries for agent synchronization - UTC ONLY"""
         try:
             query = {"is_active": True}
             
-            if since:
-                # ✅ FIX: Convert since to UTC for comparison
-                if since.tzinfo is None:
-                    since = since.replace(tzinfo=self.timezone)
+            if since_date:
+                # Parse and convert to UTC naive for database query
+                if isinstance(since_date, str):
+                    since_utc = parse_agent_timestamp(since_date)  # UTC parsing
+                    since_naive = since_utc.replace(tzinfo=None)  # UTC naive for MongoDB
+                else:
+                    # Convert datetime to UTC naive
+                    from datetime import timezone
+                    if isinstance(since_date, datetime):
+                        if since_date.tzinfo is None:
+                            since_utc = since_date.replace(tzinfo=timezone.utc)
+                        else:
+                            since_utc = since_date.astimezone(timezone.utc)
+                        since_naive = since_utc.replace(tzinfo=None)
+                    else:
+                        since_naive = to_utc_naive(now_utc())
                 
-                # Convert to UTC for database comparison
-                since_utc = since.astimezone(timezone.utc)
+                query["added_date"] = {"$gte": since_naive}
+            
+            entries = list(self.collection.find(query).sort("added_date", ASCENDING))
+            
+            # Format entries for sync
+            sync_entries = []
+            for entry in entries:
+                sync_entry = {
+                    "value": entry.get("value"),
+                    "type": entry.get("type", "domain"),
+                    "priority": entry.get("priority", "normal"),
+                    "category": entry.get("category", "uncategorized")
+                }
                 
-                query["$or"] = [
-                    {"added_date": {"$gte": since_utc}},
-                    {"updated_at": {"$gte": since_utc}},
-                    {"created_at": {"$gte": since_utc}}
-                ]
+                # Add timestamp for sync - UTC ISO format
+                if entry.get("added_date"):
+                    # Convert naive datetime to UTC timezone for ISO format
+                    from datetime import timezone
+                    utc_dt = entry["added_date"].replace(tzinfo=timezone.utc)
+                    sync_entry["added_date"] = utc_dt.isoformat()
                 
-                self.logger.debug(f"Sync query with since UTC: {since_utc.isoformat()}")
-            else:
-                self.logger.debug("Full sync - no since parameter")
+                sync_entries.append(sync_entry)
             
-            # Clean up expired entries first
-            expired_count = self.cleanup_expired_entries()
-            if expired_count > 0:
-                self.logger.info(f"Cleaned up {expired_count} expired entries before sync")
-            
-            cursor = self.collection.find(
-                query, 
-                {"value": 1, "_id": 0, "added_date": 1, "updated_at": 1}
-            ).sort("added_date", -1)
-            
-            values = []
-            processed_count = 0
-            
-            for entry in cursor:
-                processed_count += 1
-                value = entry.get("value")
-                if value and isinstance(value, str) and value.strip():
-                    clean_value = value.strip().lower()
-                    if clean_value not in values:  # Prevent duplicates
-                        values.append(clean_value)
-            
-            self.logger.info(f"Sync query processed {processed_count} entries, returning {len(values)} unique values")
-            
-            if since:
-                self.logger.debug(f"Incremental sync since {since.isoformat()}: found {len(values)} entries")
-            else:
-                self.logger.debug(f"Full sync: returning {len(values)} total entries")
-            
-            return values
+            return sync_entries
             
         except Exception as e:
-            self.logger.error(f"Error getting entries for sync: {e}", exc_info=True)
+            self.logger.error(f"Error getting entries for sync: {e}")
             return []
 
-    def get_statistics(self) -> Dict:
-        """Get whitelist statistics"""
-        total = self.collection.count_documents({})
-        active = self.collection.count_documents({"is_active": True})
+    def bulk_insert_entries(self, entries: List[Dict]) -> List[str]:
+        """Bulk insert multiple entries - UTC ONLY"""
+        if not entries:
+            return []
         
-        # Count by type
-        type_stats = {}
-        type_pipeline = [
-            {"$group": {"_id": "$type", "count": {"$sum": 1}}}
-        ]
-        for result in self.collection.aggregate(type_pipeline):
-            type_stats[result["_id"]] = result["count"]
-        
-        # Count by category
-        category_stats = {}
-        category_pipeline = [
-            {"$group": {"_id": "$category", "count": {"$sum": 1}}}
-        ]
-        for result in self.collection.aggregate(category_pipeline):
-            category_stats[result["_id"]] = result["count"]
-        
-        return {
-            "total": total,
-            "active": active,
-            "inactive": total - active,
-            "by_type": type_stats,
-            "by_category": category_stats
-        }
-    
+        try:
+            # Set timestamps for all entries - UTC naive for MongoDB
+            current_time = to_utc_naive(now_utc())
+            
+            for entry in entries:
+                entry["added_date"] = current_time
+                entry["created_at"] = current_time
+                entry["updated_at"] = current_time
+                entry.setdefault("is_active", True)
+                entry.setdefault("type", "domain")
+            
+            result = self.collection.insert_many(entries)
+            
+            self.logger.info(f"Bulk inserted {len(result.inserted_ids)} entries")
+            return [str(id) for id in result.inserted_ids]
+            
+        except Exception as e:
+            self.logger.error(f"Error bulk inserting entries: {e}")
+            return []
+
     def build_query_from_filters(self, filters: Dict) -> Dict:
-        """Build MongoDB query from filter parameters"""
+        """Build MongoDB query from filters"""
         query = {}
         
         if filters.get("type"):
@@ -377,6 +471,9 @@ class WhitelistModel:
         if filters.get("category"):
             query["category"] = filters["category"]
         
+        if filters.get("added_by"):
+            query["added_by"] = filters["added_by"]
+        
         if filters.get("search"):
             search_term = filters["search"]
             query["$or"] = [
@@ -384,122 +481,37 @@ class WhitelistModel:
                 {"notes": {"$regex": search_term, "$options": "i"}}
             ]
         
-        if filters.get("added_by"):
-            query["added_by"] = filters["added_by"]
-        
-        if filters.get("is_active") is not None:
-            query["is_active"] = filters["is_active"]
+        # Default to active entries only
+        if "is_active" not in query:
+            query["is_active"] = True
         
         return query
-    
-    def validate_entry_value(self, entry_type: str, value: str) -> Dict:
-        """Validate entry value based on type"""
-        try:
-            if entry_type == "domain":
-                # Remove wildcard for validation
-                domain_to_check = value.replace("*.", "")
-                # Enhanced domain validation - allow hyphens and longer domains
-                domain_regex = re.compile(
-                    r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$',
-                    re.IGNORECASE
-                )
-                
-                # Additional checks
-                if len(domain_to_check) > 253:
-                    return {"valid": False, "message": "Domain name too long (max 253 characters)"}
-                if not domain_regex.match(domain_to_check):
-                    return {"valid": False, "message": "Invalid domain format"}
-                if '..' in domain_to_check:
-                    return {"valid": False, "message": "Domain cannot contain consecutive dots"}
-                    
-            elif entry_type == "ip":
-                # Extract IP and port
-                if ':' in value and not value.startswith('['):
-                    # IPv4 with port
-                    parts = value.rsplit(':', 1)
-                    ip_part = parts[0]
-                    try:
-                        port = int(parts[1])
-                        if not (1 <= port <= 65535):
-                            return {"valid": False, "message": "Port must be between 1 and 65535"}
-                    except ValueError:
-                        return {"valid": False, "message": "Invalid port number"}
-                else:
-                    ip_part = value
-                    
-                # Validate IP address (supports CIDR)
-                try:
-                    if '/' in ip_part:
-                        ipaddress.ip_network(ip_part, strict=False)
-                    else:
-                        ipaddress.ip_address(ip_part)
-                except ValueError:
-                    return {"valid": False, "message": "Invalid IP address format"}
-                
-            elif entry_type == "url":
-                try:
-                    # More flexible URL validation
-                    if not (value.startswith('http://') or value.startswith('https://')):
-                        return {"valid": False, "message": "URL must start with http:// or https://"}
-                    
-                    # Handle wildcards by replacing them temporarily
-                    test_value = value.replace('*', 'test')
-                    parsed = urlparse(test_value)
-                    
-                    if not parsed.scheme or not parsed.netloc:
-                        return {"valid": False, "message": "Invalid URL format"}
-                        
-                    # Additional URL validation
-                    if len(value) > 2048:
-                        return {"valid": False, "message": "URL too long (max 2048 characters)"}
-                        
-                except Exception:
-                    return {"valid": False, "message": "Invalid URL format"}
-                
-            elif entry_type == "pattern":
-                if len(value.strip()) < 1:
-                    return {"valid": False, "message": "Pattern cannot be empty"}
-                if len(value) > 255:
-                    return {"valid": False, "message": "Pattern too long (max 255 characters)"}
-                
-            return {"valid": True, "message": "Valid"}
-            
-        except Exception as e:
-            return {"valid": False, "message": f"Validation error: {str(e)}"}
-    
+
     def verify_dns(self, domain: str) -> Dict:
         """Verify DNS resolution for a domain"""
         try:
-            # Remove wildcard prefix
-            domain_to_check = domain.replace("*.", "")
+            import socket
+            results = socket.getaddrinfo(domain, None, socket.AF_INET)
             
-            result = {"valid": True, "info": []}
+            ips = []
+            for result in results:
+                ip = result[4][0]
+                if ip not in ips:
+                    ips.append(ip)
             
-            # IPv4 resolution
-            try:
-                ipv4_addresses = socket.getaddrinfo(domain_to_check, None, socket.AF_INET)
-                ipv4_list = list(set([addr[4][0] for addr in ipv4_addresses]))
-                if ipv4_list:
-                    result["ipv4"] = ipv4_list
-                    result["info"].extend([f"IPv4: {ip}" for ip in ipv4_list])
-            except socket.gaierror:
-                pass
-                
-            # IPv6 resolution
-            try:
-                ipv6_addresses = socket.getaddrinfo(domain_to_check, None, socket.AF_INET6)
-                ipv6_list = list(set([addr[4][0] for addr in ipv6_addresses]))
-                if ipv6_list:
-                    result["ipv6"] = ipv6_list
-                    result["info"].extend([f"IPv6: {ip}" for ip in ipv6_list])
-            except socket.gaierror:
-                pass
-                
-            if not result["info"]:
-                result["valid"] = False
-                result["message"] = "No DNS records found"
-                
-            return result
+            return {
+                "valid": True,
+                "message": "DNS resolution successful",
+                "info": {
+                    "domain": domain,
+                    "ips": ips,
+                    "count": len(ips)
+                }
+            }
             
         except Exception as e:
-            return {"valid": False, "message": f"DNS verification failed: {str(e)}"}
+            return {
+                "valid": False,
+                "message": f"DNS resolution failed: {str(e)}",
+                "info": {"domain": domain, "error": str(e)}
+            }

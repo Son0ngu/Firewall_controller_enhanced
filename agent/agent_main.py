@@ -1,523 +1,1031 @@
 """
-Firewall Controller Agent - Module Chính
+Firewall Controller Agent - Module Chính (Refactored)
 
-Đây là điểm khởi đầu cho ứng dụng agent. Nó khởi tạo và quản lý tất cả các thành phần:
-- Bắt và kiểm tra gói tin mạng
-- Quản lý danh sách trắng (whitelist) các tên miền
-- Điều khiển tường lửa
-- Thu thập và gửi nhật ký (log)
-
-Agent có thể chạy như một tiến trình thông thường hoặc đăng ký như một dịch vụ Windows.
+Đây là điểm khởi đầu cho ứng dụng agent được tối ưu hóa và làm sạch:
+- Configuration validation at startup
+- Consolidated IP detection logic
+- Enhanced error handling in critical paths
+- Streamlined component initialization
+- UTC ONLY - No timezone confusion
 """
 
-# Import các thư viện cần thiết
-import logging  # Thư viện để ghi log
-import signal  # Xử lý tín hiệu hệ thống (để bắt sự kiện khi người dùng dừng chương trình)
-import sys  # Để làm việc với môi trường hệ thống
-import time  # Để xử lý thời gian, tạm dừng
-from typing import Dict  # Hỗ trợ gợi ý kiểu dữ liệu cho dictionary
+# ========================================
+# IMPORTS - UTC ONLY
+# ========================================
+
+# Core system libraries
+import logging
+import signal
+import sys
+import threading
+import json
+from typing import Dict, Optional, Set
+
+# Network & system utilities
 import socket
 import platform
 import requests
+import psutil
+import netifaces 
 
-# Import các module tự định nghĩa từ package agent
-from config import get_config  # Đọc cấu hình từ file
-from firewall_manager import FirewallManager  # Quản lý tường lửa
-from log_sender import LogSender  # Gửi log tới server
-from packet_sniffer import PacketSniffer  # Bắt gói tin mạng
-from whitelist import WhitelistManager  # Quản lý danh sách tên miền cho phép
-from heartbeat_sender import HeartbeatSender  # ✅ THÊM import
-from command_processor import CommandProcessor  # ✅ ADD import
+# Custom modules
+from config import get_config
+from firewall_manager import FirewallManager
+from whitelist import WhitelistManager
+from packet_sniffer import PacketSniffer
+from log_sender import LogSender
+from heartbeat_sender import HeartbeatSender
+from command_processor import CommandProcessor
 
-# Cấu hình hệ thống ghi log
-# - level=logging.INFO: Chỉ ghi những thông báo từ mức INFO trở lên
-# - format: Định dạng log gồm thời gian, tên module, mức log và nội dung
+# UPDATED: Clean time utilities - UTC only
+from time_utils import (
+    now, now_iso, now_server_compatible,
+    uptime, uptime_string, sleep,
+    is_cache_valid, cache_age,
+    debug_time_info 
+)
+
+# ========================================
+# LOGGING CONFIGURATION
+# ========================================
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("agent_main")  # Tạo logger cho module này
+logger = logging.getLogger("agent_main")
 
-# Khai báo biến toàn cục để lưu trữ các thành phần của agent
-# Các biến này sẽ được khởi tạo trong hàm initialize_components()
-config = None  # Cấu hình của agent
-firewall = None  # Quản lý tường lửa
-whitelist = None  # Quản lý danh sách tên miền được phép
-log_sender = None  # Gửi log đến server
-packet_sniffer = None  # Bắt gói tin mạng
-heartbeat_sender = None  # ✅ THÊM global variable
-command_processor = None  # ✅ ADD global variable
-running = True  # Điều khiển vòng lặp chính, khi False thì agent sẽ dừng
+# ========================================
+# GLOBAL VARIABLES & STATE
+# ========================================
 
-def handle_domain_detection(record: Dict):
+# Component instances - được khởi tạo trong initialize_components()
+config = None
+firewall = None
+whitelist = None
+log_sender = None
+packet_sniffer = None
+heartbeat_sender = None
+command_processor = None
+
+# Agent state tracking
+running = True
+agent_state = {
+    "startup_completed": False,
+    "registration_completed": False,
+    "components_initialized": False,
+    "admin_privileges": False,
+    "local_ip": None,
+    "agent_id": None
+}
+
+# ========================================
+# CONFIGURATION VALIDATION
+# ========================================
+
+def validate_configuration(config: Dict) -> bool:
     """
-    Hàm callback khi phát hiện kết nối đến một tên miền trong lưu lượng mạng.
-    Kiểm tra tên miền với whitelist và thực hiện hành động phù hợp.
+    REQUIRED: Validate configuration at startup
     
-    Tham số:
-        record: Dictionary chứa chi tiết kết nối mạng (tên miền, IP, v.v.)
+    Kiểm tra tính hợp lệ của cấu hình trước khi khởi động agent.
+    Bao gồm kiểm tra server URLs, firewall mode, logging settings, v.v.
+    
+    Args:
+        config: Dictionary cấu hình cần kiểm tra
+        
+    Returns:
+        bool: True nếu cấu hình hợp lệ, False nếu có lỗi critical
     """
+    logger.info("Validating configuration...")
+    errors = []     # Lỗi critical - Agent sẽ không khởi động nếu có lỗi này
+    warnings = []   # Agent vẫn chạy được nhưng có thể hoạt động không tối ưu
+    
     try:
-        # Lấy thông tin tên miền và IP đích từ bản ghi
-        domain = record.get("domain")
-        dest_ip = record.get("dest_ip")
+        # 1. Server configuration validation
+        server_config = config.get("server", {})
+        if not server_config.get("url") and not server_config.get("urls"):
+            errors.append("Server URL is required (either 'url' or 'urls')")
         
-        # Kiểm tra tính hợp lệ của dữ liệu
-        if not domain or not dest_ip:
-            logger.warning("Nhận được bản ghi kết nối không đầy đủ")
-            return
+        # Validate URLs format
+        urls_to_check = server_config.get("urls", [])
+        if server_config.get("url"):
+            urls_to_check.append(server_config["url"])
         
-        # Kiểm tra xem tên miền có trong danh sách cho phép không
-        allowed = whitelist.is_allowed(domain)
+        for url in urls_to_check:
+            if not url.startswith(("http://", "https://")):
+                warnings.append(f"URL should start with http:// or https://: {url}")
         
-        # Thêm thông tin hành động vào bản ghi
-        record["action"] = "allow" if allowed else "block"
+        # 2. Firewall mode validation
+        firewall_config = config.get("firewall", {})
+        valid_modes = ["block", "warn", "monitor", "whitelist_only"]
+        current_mode = firewall_config.get("mode", "monitor")
         
-        # Đưa log vào hàng đợi để gửi đến server
-        log_sender.queue_log(record)
+        if current_mode not in valid_modes:
+            errors.append(f"Invalid firewall mode: {current_mode}. Valid modes: {valid_modes}")
         
-        # Thực hiện hành động dựa trên cấu hình và kết quả kiểm tra whitelist
-        if not allowed:
-            # Nếu tên miền không được phép và cấu hình cho phép chặn
-            if firewall and config["firewall"]["enabled"] and config["firewall"]["mode"] == "block":
-                # Chặn IP đích tương ứng với tên miền không được phép
-                firewall.block_ip(dest_ip, domain)
-                logger.info(f"Đã chặn kết nối đến {domain} ({dest_ip})")
-            else:
-                # Chỉ ghi log cảnh báo nếu đang ở chế độ giám sát (không chặn)
-                logger.warning(f"Phát hiện kết nối đến tên miền không nằm trong whitelist: {domain} ({dest_ip})")
-    
+        # 3. Admin privileges check for firewall modes
+        admin_required_modes = ["block", "whitelist_only"]
+        if current_mode in admin_required_modes:
+            if not check_admin_privileges():
+                warnings.append(f"Mode '{current_mode}' requires admin privileges - will auto-switch to 'monitor'")
+        
+        # 4. Logging configuration validation
+        logging_config = config.get("logging", {})
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        log_level = logging_config.get("level", "INFO")
+        
+        if log_level not in valid_levels:
+            warnings.append(f"Invalid log level: {log_level}. Using INFO instead")
+            config["logging"]["level"] = "INFO"
+        
+        # 5. Whitelist configuration validation
+        whitelist_config = config.get("whitelist", {})
+        if whitelist_config.get("update_interval", 0) < 30:
+            warnings.append("Whitelist update interval too low (<30s) - may cause server overload")
+        
+        # 6. Heartbeat configuration validation
+        heartbeat_config = config.get("heartbeat", {})
+        if heartbeat_config.get("interval", 0) < 10:
+            warnings.append("Heartbeat interval too low (<10s) - may cause server overload")
+        
+        # Log validation results
+        if errors:
+            logger.error("Configuration validation failed:")
+            for error in errors:
+                logger.error(f"   - {error}")
+            return False
+        
+        if warnings:
+            logger.warning("Configuration warnings:")
+            for warning in warnings:
+                logger.warning(f"   - {warning}")
+        
+        logger.info("Configuration validation passed")
+        return True
+        
     except Exception as e:
-        # Ghi log nếu xảy ra lỗi trong quá trình xử lý
-        logger.error(f"Lỗi trong hàm xử lý phát hiện tên miền: {str(e)}", exc_info=True)
+        logger.error(f"Error during configuration validation: {e}")
+        return False
 
-def initialize_components():
-    """Khởi tạo tất cả các thành phần của agent."""
-    global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
+# ========================================
+# IP DETECTION LOGIC - UTC ONLY
+# ========================================
+
+class IPDetector:
+    """
+    UPDATED: IP detection với UTC only
+    """
     
-    try:
-        logger.info("Đang khởi tạo các thành phần của agent...")
+    def __init__(self):
+        self._cached_local_ip = None
+        self._cached_admin_status = None
+        self._last_ip_check = 0
+        self._ip_cache_ttl = 300  # 5 minutes
+
+    def get_local_ip(self, force_refresh: bool = False) -> str:
+        """
+        UPDATED: Sử dụng UTC time_utils
+        """
+        current_time = now()  # UTC timestamp
         
-        # ✅ FIX: Check if global config is available
-        if not config:
-            logger.error("Global config chưa được khởi tạo! Attempting to load...")
-            config = get_config()  # Load config nếu chưa có
-            if not config:
-                raise ValueError("Cannot load configuration")
+        # Use cache validation from time_utils
+        if (not force_refresh and 
+            self._cached_local_ip and 
+            is_cache_valid(self._last_ip_check, self._ip_cache_ttl)):
+            
+            age = cache_age(self._last_ip_check)
+            logger.debug(f"IP cache hit: {self._cached_local_ip} (age: {age:.1f}s)")
+            return self._cached_local_ip
         
-        # ✅ IMPROVED: Better local IP detection
-        def get_local_ip():
-            try:
-                # Try multiple methods to get local IP
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    s.connect(("8.8.8.8", 80))
-                    return s.getsockname()[0]
-            except:
+        # Log cache miss reason
+        if force_refresh:
+            logger.debug("IP cache miss: force refresh requested")
+        elif not self._cached_local_ip:
+            logger.debug("IP cache miss: no cached value")
+        else:
+            age = cache_age(self._last_ip_check)
+            logger.debug(f"IP cache miss: expired (age: {age:.1f}s > {self._ip_cache_ttl}s)")
+        
+        try:
+            # Method 1: Connect to external server (most reliable)
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                
+                if local_ip and local_ip != "127.0.0.1":
+                    self._cached_local_ip = local_ip
+                    self._last_ip_check = current_time
+                    logger.debug(f"Detected local IP (method 1): {local_ip} at {now_iso()}")
+                    return local_ip
+        except Exception as e:
+            logger.debug(f"Method 1 failed: {e}")
+        
+        try:
+            # Method 2: Hostname resolution
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            
+            if local_ip and local_ip != "127.0.0.1":
+                self._cached_local_ip = local_ip
+                self._last_ip_check = current_time
+                logger.debug(f"Detected local IP (method 2): {local_ip} at {now_iso()}")
+                return local_ip
+        except Exception as e:
+            logger.debug(f"Method 2 failed: {e}")
+        
+        try:
+            # Method 3: Network interfaces với netifaces
+            for interface in netifaces.interfaces():
+                addresses = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addresses:
+                    for addr in addresses[netifaces.AF_INET]:
+                        ip = addr['addr']
+                        # Skip loopback và link-local addresses
+                        if not ip.startswith(('127.', '169.254.')):
+                            self._cached_local_ip = ip
+                            self._last_ip_check = current_time
+                            logger.debug(f"Detected local IP (method 3): {ip} at {now_iso()}")
+                            return ip
+        except Exception as e:
+            logger.debug(f"Method 3 failed: {e}")
+        
+        # Fallback
+        logger.warning("Could not detect local IP, using localhost")
+        self._cached_local_ip = "127.0.0.1"
+        self._last_ip_check = current_time
+        return "127.0.0.1"
+    
+    def get_cache_debug_info(self) -> Dict:
+        """
+        Get cache debug info using UTC time_utils
+        """
+        return {
+            "cached_ip": self._cached_local_ip,
+            "last_check_timestamp": self._last_ip_check,
+            "last_check_iso": now_server_compatible(self._last_ip_check) if self._last_ip_check > 0 else "never",
+            "cache_age": cache_age(self._last_ip_check) if self._last_ip_check > 0 else -1,
+            "ttl": self._ip_cache_ttl,
+            "cache_valid": is_cache_valid(self._last_ip_check, self._ip_cache_ttl)
+        }
+    
+    def get_admin_status(self, force_refresh: bool = False) -> bool:
+        """
+        Admin status checking (unchanged logic)
+        """
+        if not force_refresh and self._cached_admin_status is not None:
+            return self._cached_admin_status
+        
+        try:
+            if platform.system() == "Windows":
+                import ctypes
+                admin_status = bool(ctypes.windll.shell32.IsUserAnAdmin())
+            else:
+                import os
+                admin_status = os.geteuid() == 0
+            
+            self._cached_admin_status = admin_status
+            logger.debug(f"Admin privileges: {admin_status}")
+            return admin_status
+            
+        except Exception as e:
+            logger.warning(f"Could not check admin privileges: {e}")
+            self._cached_admin_status = False
+            return False
+
+# Global IP detector instance
+ip_detector = IPDetector()
+
+def check_admin_privileges() -> bool:
+    """Helper function để maintain backward compatibility"""
+    return ip_detector.get_admin_status()
+
+def get_local_ip() -> str:
+    """Helper function để maintain backward compatibility"""
+    return ip_detector.get_local_ip()
+
+# ========================================
+# CRITICAL ERROR HANDLING
+# ========================================
+
+class CriticalErrorHandler:
+    """
+    Proper error handling in critical paths
+    """
+    
+    @staticmethod
+    def safe_execute(func, *args, error_msg="Operation failed", 
+                    return_on_error=None, log_traceback=True, **kwargs):
+        """
+        Thực thi function một cách an toàn với error handling.
+        """
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if log_traceback:
+                logger.error(f"{error_msg}: {e}", exc_info=True)
+            else:
+                logger.error(f"{error_msg}: {e}")
+            return return_on_error
+    
+    @staticmethod
+    def critical_operation(operation_name: str):
+        """Decorator cho critical operations"""
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                logger.info(f"Starting critical operation: {operation_name}")
                 try:
-                    # Fallback: get hostname IP
-                    return socket.gethostbyname(socket.gethostname())
-                except:
-                    return "127.0.0.1"
-        
+                    result = func(*args, **kwargs)
+                    logger.info(f"Critical operation completed: {operation_name}")
+                    return result
+                except Exception as e:
+                    logger.error(f"Critical operation failed: {operation_name} - {e}", exc_info=True)
+                    raise
+            return wrapper
+        return decorator
+
+# ========================================
+# AGENT REGISTRATION - UTC ONLY
+# ========================================
+
+@CriticalErrorHandler.critical_operation("Agent Registration")
+def register_agent() -> bool:
+    """
+    UPDATED: Registration với UTC timestamps
+    """
+    try:
+        # Collect agent information
         local_ip = get_local_ip()
+        admin_status = check_admin_privileges()
         
-        # ✅ IMPROVED: Better agent info collection
         agent_info = {
             "hostname": socket.gethostname(),
             "ip_address": local_ip,
             "platform": platform.system(),
-            "os_info": f"{platform.system()} {platform.release()} {platform.version()}",
+            "os_info": f"{platform.system()} {platform.release()}",
             "agent_version": "1.0.0",
-            "python_version": f"{platform.python_version()}",
-            "architecture": platform.architecture()[0]
+            "python_version": platform.python_version(),
+            "admin_privileges": admin_status,
+            "capabilities": {
+                "packet_capture": True,
+                "firewall_management": admin_status,
+                "whitelist_sync": True
+            },
+            "registration_time": now_iso(),  # UTC ISO
+            "registration_timestamp": now()  # UTC Unix timestamp
         }
         
-        # ✅ IMPROVED: Better registration logic với multiple URLs
-        registration_success = False
+        # Try registration với multiple servers
         server_urls = config['server'].get('urls', [config['server']['url']])
         
         for server_url in server_urls:
-            try:
-                register_url = f"{server_url.rstrip('/')}/api/agents/register"
-                logger.info(f"Attempting registration with: {register_url}")
+            if try_register_with_server(server_url, agent_info):
+                return True
+        
+        logger.error("Failed to register with any server")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error in agent registration: {e}")
+        return False
+
+def try_register_with_server(server_url: str, agent_info: Dict) -> bool:
+    """
+    Thử đăng ký với một server cụ thể.
+    """
+    try:
+        register_url = f"{server_url.rstrip('/')}/api/agents/register"
+        logger.info(f"🔗 Attempting registration with: {register_url}")
+        
+        response = requests.post(
+            register_url,
+            json=agent_info,
+            timeout=config['server'].get('connect_timeout', 15),
+            headers={'Content-Type': 'application/json'}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                agent_data = data.get('data', {})
                 
-                response = requests.post(
-                    register_url, 
-                    json=agent_info, 
-                    timeout=config['server'].get('connect_timeout', 10),
-                    headers={'Content-Type': 'application/json'}
-                )
+                # Save credentials globally
+                config['agent_id'] = agent_data.get('agent_id')
+                config['agent_token'] = agent_data.get('token')
+                config['user_id'] = agent_data.get('user_id')
+                config['server_url'] = server_url
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get('success'):
-                        agent_data = data.get('data', {})
-                        logger.info(f"✅ Agent registered successfully with ID: {agent_data.get('agent_id')}")
-                        
-                        # ✅ Lưu agent_id và token vào config để sử dụng sau
-                        config['agent_id'] = agent_data.get('agent_id')
-                        config['agent_token'] = agent_data.get('token')
-                        config['user_id'] = agent_data.get('user_id')
-                        config['server_url'] = server_url  # Save working server URL
-                        
-                        logger.info(f"Agent token: {config['agent_token'][:8]}...")
-                        registration_success = True
-                        break
-                    else:
-                        logger.warning(f"Registration failed with {server_url}: {data.get('error', 'Unknown error')}")
-                else:
-                    logger.warning(f"Registration failed with {server_url}: HTTP {response.status_code}")
-                    
-            except requests.exceptions.ConnectionError:
-                logger.warning(f"Could not connect to {server_url}")
-            except requests.exceptions.Timeout:
-                logger.warning(f"Timeout connecting to {server_url}")
-            except Exception as e:
-                logger.warning(f"Error registering with {server_url}: {e}")
-        
-        if not registration_success:
-            logger.error("Failed to register with any server - agent functionality will be limited")
-        
-        # ✅ Initialize các components...
-        # Initialize whitelist với updated config
-        whitelist = WhitelistManager(config)
-        logger.info(f"Whitelist initialized for agent: {local_ip}")
-        
-        # Khởi tạo quản lý tường lửa nếu được bật trong cấu hình
-        if config["firewall"]["enabled"]:
-            firewall = FirewallManager(config["firewall"]["rule_prefix"])
-            logger.info(f"Firewall manager đã khởi tạo với {len(firewall.blocked_ips)} quy tắc chặn hiện có")
-            
-            # ✅ THÊM: Link firewall với whitelist để auto-sync
-            whitelist.set_firewall_manager(firewall)
-            logger.info("Linked firewall manager with whitelist for auto-sync")
+                # Update agent state
+                agent_state['agent_id'] = config['agent_id']
+                agent_state['registration_completed'] = True
+                
+                logger.info(f"Registration successful - Agent ID: {config['agent_id']}")
+                return True
+            else:
+                logger.warning(f"Registration rejected: {data.get('error')}")
+                return False
         else:
-            logger.info("Chức năng tường lửa bị vô hiệu hóa trong cấu hình")
+            logger.warning(f"Registration failed: HTTP {response.status_code}")
+            return False
+            
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"Connection failed to {server_url}")
+        return False
+    except requests.exceptions.Timeout:
+        logger.warning(f"Timeout connecting to {server_url}")
+        return False
+    except Exception as e:
+        logger.error(f"Error registering with {server_url}: {e}")
+        return False
+
+# ========================================
+# PACKET DETECTION HANDLER - UTC ONLY
+# ========================================
+
+def handle_domain_detection(record: Dict):
+    """
+    UPDATED: Handler với UTC timestamps only
+    """
+    try:
+        # Extract packet information
+        domain = record.get("domain")
+        dest_ip = record.get("dest_ip")
+        src_ip = record.get("src_ip", "unknown")
+        protocol = record.get("protocol", "TCP")
+        port = record.get("port", "unknown")
         
-        # ✅ IMPROVED: Log sender với better config
+        # Use consolidated IP detection nếu src_ip không có
+        if src_ip == "unknown" or not src_ip:
+            src_ip = get_local_ip()
+        
+        # Enhanced protocol detection
+        if port != "unknown":
+            if str(port) == "443":
+                protocol = "HTTPS"
+            elif str(port) == "80":
+                protocol = "HTTP"
+            elif str(port) == "53":
+                protocol = "DNS"
+        
+        # Whitelist checking với error handling
+        domain_allowed = False
+        ip_allowed = False
+        
+        if domain and whitelist:
+            domain_allowed = CriticalErrorHandler.safe_execute(
+                whitelist.is_allowed, 
+                domain,
+                error_msg=f"Error checking domain {domain}",
+                return_on_error=False
+            )
+        
+        if dest_ip and whitelist:
+            ip_allowed = CriticalErrorHandler.safe_execute(
+                whitelist.is_ip_allowed,
+                dest_ip,
+                error_msg=f"Error checking IP {dest_ip}",
+                return_on_error=False
+            )
+        
+        # Determine action based on firewall mode
+        firewall_mode = config["firewall"]["mode"]
+        firewall_enabled = config["firewall"]["enabled"]
+        
+        if firewall_enabled and firewall_mode == "whitelist_only":
+            action = "ALLOWED" if (domain_allowed or ip_allowed) else "BLOCKED"
+            level = "INFO" if action == "ALLOWED" else "WARNING"
+        elif firewall_enabled and firewall_mode == "block":
+            action = "BLOCKED" if not (domain_allowed or ip_allowed) else "ALLOWED"
+            level = "WARNING" if action == "BLOCKED" else "INFO"
+        else:
+            action = "MONITORED"
+            level = "INFO"
+        
+        # UPDATED: Create enhanced log record với UTC timestamps
+        enhanced_record = {
+            "timestamp": now_iso(),  # UTC ISO timestamp
+            "timestamp_unix": now(),  # UTC Unix timestamp
+            "agent_id": config.get("agent_id", "unknown"),
+            "level": level,
+            "action": action,
+            "domain": domain or "unknown",
+            "destination": domain or dest_ip or "unknown",
+            "source_ip": src_ip,
+            "dest_ip": dest_ip or "unknown",
+            "protocol": protocol,
+            "port": str(port),
+            "firewall_mode": firewall_mode,
+            "firewall_enabled": firewall_enabled,
+            "admin_privileges": check_admin_privileges(),
+            "domain_allowed": domain_allowed,
+            "ip_allowed": ip_allowed,
+            "source": "domain_detection",
+            "agent_uptime": uptime_string()
+        }
+        
+        # Queue log với error handling
+        if log_sender:
+            success = CriticalErrorHandler.safe_execute(
+                log_sender.queue_log,
+                enhanced_record,
+                error_msg="Failed to queue detection log",
+                return_on_error=False
+            )
+            
+            if not success:
+                logger.warning(f"Failed to queue log for {domain or dest_ip}")
+        
+        # Local logging
+        log_message = f"{action}: {domain or dest_ip} -> {dest_ip} ({protocol}:{port})"
+        if level == "WARNING":
+            logger.warning(f"{log_message}")
+        else:
+            logger.info(f"{log_message}")
+    
+    except Exception as e:
+        logger.error(f"Error in domain detection handler: {e}", exc_info=True)
+
+# ========================================
+# COMPONENT INITIALIZATION
+# ========================================
+
+@CriticalErrorHandler.critical_operation("Component Initialization")
+def initialize_components():
+    """
+    ENHANCED: Khởi tạo tất cả components với proper error handling
+    """
+    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
+    
+    try:
+        logger.info("Initializing agent components...")
+        
+        # Update agent state với local IP
+        agent_state['local_ip'] = get_local_ip()
+        agent_state['admin_privileges'] = check_admin_privileges()
+        
+        # 1. Register agent first (critical for other components)
+        registration_success = register_agent()
+        
+        # 2. Initialize WhitelistManager
+        logger.info("Initializing whitelist manager...")
+        whitelist = WhitelistManager(config)
+        logger.info("Whitelist manager initialized")
+        
+        # 3. Initialize FirewallManager (if enabled and has admin)
+        if config["firewall"]["enabled"] and check_admin_privileges():
+            logger.info(" Initializing firewall manager...")
+            firewall = FirewallManager(config["firewall"]["rule_prefix"])
+            
+            # Link whitelist với firewall
+            whitelist.set_firewall_manager(firewall)
+            logger.info("Firewall manager initialized and linked")
+        else:
+            logger.info("Firewall disabled or no admin privileges")
+        
+        # 4. Initialize LogSender
+        logger.info("Initializing log sender...")
         log_sender_config = {
-            "server_url": config.get('server_url', config["server"]["url"]),  # Use working URL
+            "server_url": config.get('server_url', config["server"]["url"]),
             "batch_size": config["logging"]["sender"]["batch_size"],
             "max_queue_size": config["logging"]["sender"]["max_queue_size"],
             "send_interval": config["logging"]["sender"]["send_interval"],
-            "timeout": config["server"].get("connect_timeout", 10)
+            "agent_id": config.get('agent_id'),
+            "agent_token": config.get('agent_token')
         }
-        
-        # ✅ Thêm agent credentials vào log sender config
-        if config.get('agent_id') and config.get('agent_token'):
-            log_sender_config["agent_id"] = config['agent_id']
-            log_sender_config["agent_token"] = config['agent_token']
-        
         log_sender = LogSender(log_sender_config)
         log_sender.start()
-        logger.info("Log sender đã khởi tạo và bắt đầu")
+        logger.info("Log sender initialized")
         
-        # Khởi tạo module bắt gói tin
+        # 5. Initialize PacketSniffer
+        logger.info("Initializing packet sniffer...")
         packet_sniffer = PacketSniffer(callback=handle_domain_detection)
         packet_sniffer.start()
-        logger.info("Packet sniffer đã khởi tạo và bắt đầu")
+        logger.info("Packet sniffer initialized")
         
-        # ✅ IMPROVED: Heartbeat sender với better error handling
+        # 6. Initialize HeartbeatSender (if registered)
         if registration_success:
+            logger.info("Initializing heartbeat sender...")
             heartbeat_sender = HeartbeatSender(config)
             heartbeat_sender.set_agent_credentials(config['agent_id'], config['agent_token'])
             heartbeat_sender.start()
-            logger.info("✅ Heartbeat sender started")
-        else:
-            logger.warning("Skipping heartbeat sender - agent not registered")
+            logger.info("Heartbeat sender initialized")
         
-        # ✅ ADD: Initialize command processor
+        # 7. Initialize CommandProcessor
+        logger.info("⚡ Initializing command processor...")
         command_processor = CommandProcessor()
-        logger.info("✅ Command processor initialized")
         
-        # ✅ ADD: Start command polling (check for commands periodically)
+        # Start command polling if registered
         if registration_success:
             start_command_polling()
         
-        logger.info("✅ Tất cả các thành phần của agent đã khởi tạo thành công")
+        logger.info("Command processor initialized")
+        
+        # Update agent state
+        agent_state['components_initialized'] = True
+        logger.info("All components initialized successfully")
+        
+        return True
         
     except Exception as e:
-        logger.error(f"Lỗi khi khởi tạo các thành phần: {str(e)}", exc_info=True)
-        raise
+        logger.error(f"Failed to initialize components: {e}")
+        return False
+
+# ========================================
+# COMMAND POLLING
+# ========================================
 
 def start_command_polling():
-    """Start polling for commands from server"""
-    import threading
-    import requests
-    import time
-    
-    def poll_commands():
+    """Khởi động command polling thread"""
+    def polling_loop():
+        logger.info("🎮 Command polling started")
+        
         while running:
             try:
-                if not config.get('agent_id') or not config.get('agent_token'):
-                    time.sleep(30)  # Wait if not registered
+                if not config.get('agent_id'):
+                    sleep(30)
                     continue
                 
-                # Check for pending commands
+                # Poll commands từ server
                 server_url = config.get('server_url', config["server"]["url"])
-                commands_url = f"{server_url.rstrip('/')}/api/agents/commands"
+                commands_url = f"{server_url.rstrip('/')}/api/agents/{config['agent_id']}/commands"
                 
-                params = {
-                    'agent_id': config['agent_id'],
-                    'token': config['agent_token']
-                }
-                
-                response = requests.get(commands_url, params=params, timeout=10)
+                response = requests.get(commands_url, timeout=10)
                 
                 if response.status_code == 200:
                     data = response.json()
-                    commands = data.get('data', {}).get('commands', [])
+                    commands = data.get('commands', [])
                     
                     for command in commands:
                         process_command(command)
                 
-                time.sleep(5)  # Poll every 5 seconds
+                sleep(30)  # Poll every 30 seconds
                 
             except Exception as e:
-                logger.error(f"Error polling commands: {e}")
-                time.sleep(10)  # Wait longer on error
+                logger.error(f"Error in command polling: {e}")
+                sleep(60)
     
-    # Start polling in background thread
-    polling_thread = threading.Thread(target=poll_commands)
-    polling_thread.daemon = True
+    polling_thread = threading.Thread(target=polling_loop, daemon=True)
     polling_thread.start()
-    logger.info("✅ Command polling started")
 
 def process_command(command: Dict):
-    """Process a command from server"""
+    """Process command từ server"""
     try:
         command_id = command.get('command_id')
         logger.info(f"Processing command {command_id}: {command.get('command_type')}")
         
-        # Process command
         result = command_processor.process_command(command)
+        logger.info(f"Command {command_id} completed")
         
-        # Send result back to server
-        server_url = config.get('server_url', config["server"]["url"])
-        result_url = f"{server_url.rstrip('/')}/api/agents/command/result"
-        
-        result_data = {
-            'agent_id': config['agent_id'],
-            'token': config['agent_token'],
-            'command_id': command_id,
-            'status': 'completed' if result.get('success') else 'failed',
-            'result': result.get('message') or result.get('error', 'No result'),
-            'execution_time': result.get('execution_time', 0)
-        }
-        
-        response = requests.post(result_url, json=result_data, timeout=10)
-        
-        if response.status_code == 200:
-            logger.info(f"✅ Command {command_id} result sent successfully")
-        else:
-            logger.error(f"❌ Failed to send command result: {response.status_code}")
-            
     except Exception as e:
-        logger.error(f"Error processing command {command.get('command_id')}: {e}")
+        logger.error(f"Error processing command: {e}")
+
+# ========================================
+# CLEANUP - UTC ONLY
+# ========================================
 
 def cleanup():
     """
-    Dừng tất cả các thành phần một cách an toàn khi agent kết thúc.
-    Bao gồm: packet_sniffer, whitelist updater, log_sender và có thể xóa các quy tắc tường lửa.
+    UPDATED: Cleanup với firewall policy restore
     """
-    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor  # ✅ THÊM heartbeat_sender
+    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender
     
-    logger.info("Đang dừng các thành phần của agent...")
+    logger.info("Starting agent cleanup...")
     
-    # Dừng packet sniffer - module bắt gói tin
+    # Stop packet capture first
     if packet_sniffer:
-        try:
-            packet_sniffer.stop()
-            logger.info("Packet sniffer đã dừng")
-        except Exception as e:
-            logger.error(f"Lỗi khi dừng packet sniffer: {str(e)}")
-    
-    # Dừng cập nhật whitelist
+        CriticalErrorHandler.safe_execute(
+            packet_sniffer.stop,
+            error_msg="Error stopping packet sniffer"
+        )
+        logger.info("Packet sniffer stopped")
+
+    # Stop whitelist updates
     if whitelist:
-        try:
-            whitelist.stop_periodic_updates()
-            logger.info("Whitelist updater đã dừng")
-        except Exception as e:
-            logger.error(f"Lỗi khi dừng whitelist updater: {str(e)}")
+        CriticalErrorHandler.safe_execute(
+            whitelist.stop_periodic_updates,
+            error_msg="Error stopping whitelist updates"
+        )
+        logger.info("Whitelist updates stopped")
     
-    # Dừng log sender và đẩy các log còn trong hàng đợi
-    if log_sender:
-        try:
-            log_sender.stop()  # Hàm này sẽ cố gắng gửi các log còn lại trước khi thoát
-            logger.info("Log sender đã dừng")
-        except Exception as e:
-            logger.error(f"Lỗi khi dừng log sender: {str(e)}")
+    # Send final logs
+    if log_sender and config.get('agent_id'):
+        shutdown_log = {
+            "agent_id": config['agent_id'],
+            "event_type": "agent_shutdown",
+            "timestamp": now_iso(),
+            "timestamp_unix": now(),
+            "uptime_seconds": uptime(),
+            "uptime_string": uptime_string(),
+            "uptime_info": agent_state
+        }
+        CriticalErrorHandler.safe_execute(
+            log_sender.queue_log,
+            shutdown_log,
+            error_msg="Error sending shutdown log"
+        )
+        sleep(2)
+        
+        CriticalErrorHandler.safe_execute(
+            log_sender.stop,
+            error_msg="Error stopping log sender"
+        )
+        logger.info("Log sender stopped")
     
-    # ✅ THÊM: Stop heartbeat sender
+    # Stop heartbeat
     if heartbeat_sender:
-        try:
-            heartbeat_sender.stop()
-            logger.info("Heartbeat sender đã dừng")
-        except Exception as e:
-            logger.error(f"Lỗi khi dừng heartbeat sender: {str(e)}")
+        CriticalErrorHandler.safe_execute(
+            heartbeat_sender.stop,
+            error_msg="Error stopping heartbeat sender"
+        )
+        logger.info("Heartbeat sender stopped")
     
-    # Xóa các quy tắc tường lửa nếu được cấu hình
-    if firewall and config and config["firewall"]["cleanup_on_exit"]:
-        try:
-            logger.info("Đang xóa các quy tắc tường lửa...")
-            firewall.clear_all_rules()  # Xóa tất cả các quy tắc do agent tạo ra
-            logger.info("Các quy tắc tường lửa đã được xóa")
-        except Exception as e:
-            logger.error(f"Lỗi khi xóa các quy tắc tường lửa: {str(e)}")
+    # ✅ FIX: Complete firewall cleanup with policy restore
+    if firewall:
+        cleanup_enabled = config and config["firewall"].get("cleanup_on_exit", True)
+        
+        if cleanup_enabled:
+            logger.info("🔧 Performing complete firewall cleanup...")
+            
+            # ✅ Use complete cleanup method that restores policy
+            success = CriticalErrorHandler.safe_execute(
+                firewall.cleanup_whitelist_firewall,  # ← This restores policy
+                error_msg="Error in complete firewall cleanup",
+                return_on_error=False
+            )
+            
+            if success:
+                logger.info("✅ Firewall completely cleaned up and policy restored")
+            else:
+                logger.warning("⚠️ Some firewall cleanup operations failed")
+                
+                # ✅ Fallback: try individual operations
+                logger.info("🔧 Attempting fallback cleanup...")
+                
+                # Clear rules
+                CriticalErrorHandler.safe_execute(
+                    firewall.clear_all_rules,
+                    error_msg="Error clearing firewall rules"
+                )
+                
+                # Restore policy
+                success = CriticalErrorHandler.safe_execute(
+                    firewall._restore_original_policy,
+                    error_msg="Error restoring original firewall policy",
+                    return_on_error=False
+                )
+                
+                if not success:
+                    # Final fallback: restore default policy
+                    CriticalErrorHandler.safe_execute(
+                        firewall._restore_default_policy,
+                        error_msg="Error restoring default firewall policy"
+                    )
+                    logger.info("🔧 Restored firewall to Windows defaults")
+        else:
+            logger.info("🔧 Firewall cleanup disabled by configuration")
     
-    # ✅ ADD: Command processor cleanup if needed
-    if command_processor:
-        logger.info("Command processor stopped")
+    # Update final state
+    agent_state['startup_completed'] = False
+    agent_state['components_initialized'] = False
     
-    logger.info("Agent đã đóng hoàn toàn")
+    logger.info(f"Agent cleanup completed (total uptime: {uptime_string()})")
+
+# ========================================
+# SIGNAL HANDLERS
+# ========================================
 
 def signal_handler(sig, frame):
-    """
-    Xử lý tín hiệu kết thúc từ hệ điều hành (Ctrl+C, kill, v.v).
-    
-    Tham số:
-        sig: Mã tín hiệu nhận được
-        frame: Frame stack hiện tại
-    """
+    """Handle shutdown signals"""
     global running
-    logger.info(f"Nhận được tín hiệu {sig}, đang dừng agent...")
-    running = False  # Đặt biến running thành False để thoát vòng lặp chính
+    logger.info(f"Received signal {sig}, shutting down...")
+    running = False
+
+# ========================================
+# MAIN FUNCTION - UTC ONLY
+# ========================================
 
 def main():
-    """Hàm chính của agent"""
-    global config, firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
+    """
+    UPDATED: Main function với UTC timestamps only
+    """
+    global config, running
     
     try:
-        # ✅ FIX: Load config vào global variable
-        logger.info("Loading agent configuration...")
-        config = get_config()  # Load vào global variable
-        logger.info("✅ Configuration loaded successfully")
+        logger.info("Starting Secure Firewall Controller Agent...")
         
-        # ✅ ADD: Debug config để kiểm tra
-        logger.info(f"Server URLs: {config['server'].get('urls', [])}")
-        logger.info(f"Primary URL: {config['server']['url']}")
-        logger.info(f"Whitelist auto-sync: {config['whitelist']['auto_sync']}")
-        logger.info(f"Firewall enabled: {config['firewall']['enabled']}")
+        # Debug time info in debug mode
+        if logger.isEnabledFor(logging.DEBUG):
+            debug_info = debug_time_info()
+            logger.debug(f"Time info: {debug_info}")
         
-        # Áp dụng độ trễ khởi động nếu được cấu hình
+        # Load and validate configuration
+        logger.info("Loading configuration...")
+        config = get_config()
+        
+        if not validate_configuration(config):
+            logger.error("Configuration validation failed")
+            sys.exit(1)
+        
+        logger.info("Configuration loaded and validated")
+        
+        # Auto-adjust configuration based on privileges
+        admin_status = check_admin_privileges()
+        if config["firewall"]["enabled"] and not admin_status:
+            if config["firewall"]["mode"] in ["block", "whitelist_only"]:
+                logger.warning("No admin privileges - switching to monitor mode")
+                config["firewall"]["enabled"] = False
+                config["firewall"]["mode"] = "monitor"
+        
+        # Apply startup delay if configured
         startup_delay = config["general"]["startup_delay"]
         if startup_delay > 0:
-            logger.info(f"Áp dụng độ trễ khởi động {startup_delay} giây...")
-            time.sleep(startup_delay)  # Tạm dừng trước khi khởi động
+            logger.info(f"Applying startup delay: {startup_delay} seconds...")
+            sleep(startup_delay)
         
-        # Kiểm tra quyền admin nếu yêu cầu (cần thiết cho thao tác tường lửa)
-        if config["general"]["check_admin"] and config["firewall"]["enabled"]:
-            import ctypes
-            if not ctypes.windll.shell32.IsUserAnAdmin():
-                logger.error("Các thao tác với tường lửa yêu cầu quyền admin. Vui lòng chạy với quyền admin.")
-                if config["firewall"]["enabled"]:
-                    logger.warning("Tiếp tục mà không có khả năng điều khiển tường lửa...")
-                    config["firewall"]["enabled"] = False  # Vô hiệu hóa chức năng tường lửa
+        # Initialize all components
+        if not initialize_components():
+            logger.error("Component initialization failed - cannot start agent")
+            sys.exit(1)
         
-        # Khởi tạo tất cả các thành phần
-        initialize_components()
-        
-        # Gửi log thông báo khởi động
+        # Send startup notification
         if log_sender and config.get('agent_id'):
             startup_log = {
-                "agent_id": config['agent_id'],  # ✅ Thêm agent_id
-                "event_type": "agent_startup",  # Loại sự kiện: khởi động agent
-                "hostname": socket.gethostname(),  # Tên máy
-                "os": f"{platform.system()} {platform.version()}",  # Thông tin hệ điều hành
-                "firewall_enabled": config["firewall"]["enabled"],  # Trạng thái tường lửa
-                "firewall_mode": config["firewall"]["mode"]  # Chế độ tường lửa (block/monitor)
+                "agent_id": config['agent_id'],
+                "event_type": "agent_startup",
+                "hostname": socket.gethostname(),
+                "local_ip": get_local_ip(),
+                "admin_privileges": check_admin_privileges(),
+                "firewall_enabled": config["firewall"]["enabled"],
+                "firewall_mode": config["firewall"]["mode"],
+                "timestamp": now_iso(),  # UTC ISO
+                "timestamp_unix": now(),  # UTC Unix timestamp
             }
-            log_sender.queue_log(startup_log)  # Đưa log khởi động vào hàng đợi
+            log_sender.queue_log(startup_log)
         
-        logger.info("Khởi tạo agent hoàn tất, bắt đầu vòng lặp chính")
+        # Mark startup as completed
+        agent_state['startup_completed'] = True
+        logger.info(f"🎉 Agent startup completed successfully (startup time: {uptime_string()})")
         
-        # Vòng lặp chính - giữ cho tiến trình hoạt động
-        # Công việc chính được thực hiện trong các luồng nền
+        # Main loop với UTC timestamps
+        loop_count = 0
+        last_status_log = now()  # UTC timestamp
+        
         while running:
-            time.sleep(1)  # Ngủ 1 giây để giảm tải CPU
+            sleep(1)
+            loop_count += 1
+            
+            # Log status every 5 minutes
+            if now() - last_status_log >= 300:
+                logger.info(f"Agent running - Loop: {loop_count}, Uptime: {uptime_string()}")
+                
+                # Debug cache info in debug mode
+                if logger.isEnabledFor(logging.DEBUG):
+                    cache_info = ip_detector.get_cache_debug_info()
+                    logger.debug(f"IP Cache: {cache_info}")
+                
+                last_status_log = now()
         
     except KeyboardInterrupt:
-        # Bắt sự kiện khi người dùng nhấn Ctrl+C
-        logger.info("Nhận được tín hiệu ngắt từ bàn phím")
+        logger.info("Keyboard interrupt received")
     except Exception as e:
-        # Bắt các lỗi không xử lý được
-        logger.error(f"Lỗi không xử lý được trong agent main: {str(e)}", exc_info=True)
+        logger.error(f"Unhandled error in main: {e}", exc_info=True)
     finally:
-        # Luôn thực hiện đoạn cleanup khi kết thúc, dù có lỗi hay không
         cleanup()
 
+# ========================================
+# SERVICE RUNNER (Simplified)
+# ========================================
+
 def run_as_service():
-    """
-    Chạy agent như một dịch vụ Windows, cho phép:
-    - Cài đặt/gỡ bỏ dịch vụ
-    - Khởi động/dừng dịch vụ từ trình quản lý dịch vụ Windows
-    """
+    """Enhanced Windows Service implementation"""
     try:
-        # Import các module cần thiết cho dịch vụ Windows
-        import servicemanager  # Tương tác với trình quản lý dịch vụ Windows
-        import win32event  # Xử lý sự kiện Windows
-        import win32service  # Giao diện với hệ thống dịch vụ Windows
-        import win32serviceutil  # Tiện ích làm việc với dịch vụ Windows
+        import servicemanager
+        import win32event
+        import win32service
+        import win32serviceutil
         
         class AgentService(win32serviceutil.ServiceFramework):
-            _svc_name_ = "FirewallControllerAgent"  # Tên dịch vụ trong hệ thống
-            _svc_display_name_ = "Firewall Controller Agent"  # Tên hiển thị
-            _svc_description_ = "Giám sát lưu lượng mạng và thực thi chính sách whitelist tên miền"  # Mô tả
-
+            _svc_name_ = "FirewallControllerAgent"
+            _svc_display_name_ = "Firewall Controller Agent"
+            _svc_description_ = "Network traffic monitoring and domain whitelist enforcement"
+            
             def __init__(self, args):
-                # Khởi tạo framework dịch vụ
                 win32serviceutil.ServiceFramework.__init__(self, args)
-                # Tạo event để báo hiệu dừng dịch vụ
                 self.stop_event = win32event.CreateEvent(None, 0, 0, None)
-
+                self.running = True
+            
             def SvcStop(self):
-                # Được gọi khi dịch vụ nhận lệnh dừng
-                # Báo cáo trạng thái "đang chuẩn bị dừng"
+                """Stop the service"""
                 self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-                # Đặt event dừng để báo hiệu dừng dịch vụ
                 win32event.SetEvent(self.stop_event)
-                # Đặt biến running thành False để dừng vòng lặp chính
+                self.running = False
+                
                 global running
                 running = False
-
+                
+                # Cleanup components
+                try:
+                    cleanup()
+                except Exception as e:
+                    servicemanager.LogErrorMsg(f"Error during service cleanup: {e}")
+            
             def SvcDoRun(self):
-                # Được gọi khi dịch vụ bắt đầu chạy
-                # Báo cáo trạng thái "đang chạy"
+                """Main service execution"""
                 self.ReportServiceStatus(win32service.SERVICE_RUNNING)
-                # Ghi log khởi động dịch vụ vào event log Windows
                 servicemanager.LogMsg(
                     servicemanager.EVENTLOG_INFORMATION_TYPE,
                     servicemanager.PYS_SERVICE_STARTED,
                     (self._svc_name_, '')
                 )
                 
-                # Gọi hàm main để chạy logic chính của agent
-                main()
-
-        # Xử lý các đối số dòng lệnh
+                try:
+                    main()
+                except Exception as e:
+                    servicemanager.LogErrorMsg(f"Service error: {e}")
+                    self.SvcStop()
+                
+                servicemanager.LogMsg(
+                    servicemanager.EVENTLOG_INFORMATION_TYPE,
+                    servicemanager.PYS_SERVICE_STOPPED,
+                    (self._svc_name_, '')
+                )
+        
+        # Enhanced command line handling
         if len(sys.argv) == 1:
-            # Không có đối số = chạy dịch vụ
+            # No arguments - run as service
             servicemanager.Initialize()
             servicemanager.PrepareToHostSingle(AgentService)
             servicemanager.StartServiceCtrlDispatcher()
         else:
-            # Có đối số = xử lý lệnh dịch vụ (install, remove, start, stop)
-            win32serviceutil.HandleCommandLine(AgentService)
+            # Handle service commands
+            if sys.argv[1] == 'install':
+                win32serviceutil.InstallService(
+                    pythonClassString=f"{__name__}.AgentService",
+                    serviceName=AgentService._svc_name_,
+                    displayName=AgentService._svc_display_name_,
+                    description=AgentService._svc_description_,
+                    startType=win32service.SERVICE_AUTO_START
+                )
+                print(f"Service '{AgentService._svc_display_name_}' installed successfully")
+                
+            elif sys.argv[1] == 'remove':
+                win32serviceutil.RemoveService(AgentService._svc_name_)
+                print(f"Service '{AgentService._svc_display_name_}' removed successfully")
+                
+            elif sys.argv[1] == 'start':
+                win32serviceutil.StartService(AgentService._svc_name_)
+                print(f"Service '{AgentService._svc_display_name_}' started")
+                
+            elif sys.argv[1] == 'stop':
+                win32serviceutil.StopService(AgentService._svc_name_)
+                print(f"Service '{AgentService._svc_display_name_}' stopped")
+                
+            elif sys.argv[1] == 'restart':
+                try:
+                    win32serviceutil.StopService(AgentService._svc_name_)
+                    sleep(2)
+                    win32serviceutil.StartService(AgentService._svc_name_)
+                    print(f"Service '{AgentService._svc_display_name_}' restarted")
+                except Exception as e:
+                    print(f"Error restarting service: {e}")
+                    
+            elif sys.argv[1] == 'status':
+                try:
+                    status = win32serviceutil.QueryServiceStatus(AgentService._svc_name_)
+                    status_map = {
+                        win32service.SERVICE_STOPPED: "STOPPED",
+                        win32service.SERVICE_START_PENDING: "START_PENDING", 
+                        win32service.SERVICE_STOP_PENDING: "STOP_PENDING",
+                        win32service.SERVICE_RUNNING: "RUNNING",
+                        win32service.SERVICE_CONTINUE_PENDING: "CONTINUE_PENDING",
+                        win32service.SERVICE_PAUSE_PENDING: "PAUSE_PENDING",
+                        win32service.SERVICE_PAUSED: "PAUSED"
+                    }
+                    print(f"Service Status: {status_map.get(status[1], 'UNKNOWN')}")
+                except Exception as e:
+                    print(f"Error checking service status: {e}")
+            else:
+                win32serviceutil.HandleCommandLine(AgentService)
             
-    except ImportError:
-        # Xử lý trường hợp không cài đặt thư viện pywin32
-        logger.error("Các module dịch vụ Windows cần thiết chưa được cài đặt. Vui lòng cài đặt pywin32.")
+    except ImportError as e:
+        logger.error("Windows service modules not available. Install pywin32:")
+        logger.error("   pip install pywin32")
+        logger.error("   python Scripts/pywin32_postinstall.py -install")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Service error: {e}")
         sys.exit(1)
 
+# ========================================
+# ENTRY POINT
+# ========================================
+
 if __name__ == "__main__":
-    # Đăng ký handler xử lý tín hiệu
-    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-    signal.signal(signal.SIGTERM, signal_handler)  # kill command
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     
-    # Kiểm tra xem có đang chạy như một dịch vụ không
-    if len(sys.argv) > 1 and sys.argv[1] in ['--service', 'install', 'remove', 'start', 'stop', 'update']:
-        # Chạy như dịch vụ Windows
+    # Check if running as service
+    if len(sys.argv) > 1 and sys.argv[1] in ['--service', 'install', 'remove', 'start', 'stop']:
         run_as_service()
     else:
-        # Chạy như tiến trình thông thường
         main()
