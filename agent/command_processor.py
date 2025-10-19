@@ -1,7 +1,6 @@
 """
 Command Processor - Handles commands from server
 
- UPDATED: Sử dụng time_utils cho consistent time management
 """
 
 import logging

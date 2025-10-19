@@ -19,7 +19,7 @@ import signal
 import sys
 import threading
 import json
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, List
 
 # Network & system utilities
 import socket
@@ -183,9 +183,7 @@ class IPDetector:
         self._ip_cache_ttl = 300  # 5 minutes
 
     def get_local_ip(self, force_refresh: bool = False) -> str:
-        """
-        UPDATED: Sử dụng UTC time_utils
-        """
+       
         current_time = now()  # UTC timestamp
         
         # Use cache validation from time_utils
@@ -500,7 +498,7 @@ def handle_domain_detection(record: Dict):
             action = "MONITORED"
             level = "INFO"
         
-        # UPDATED: Create enhanced log record với UTC timestamps
+        #Create enhanced log record với UTC timestamps
         enhanced_record = {
             "timestamp": now_iso(),  # UTC ISO timestamp
             "timestamp_unix": now(),  # UTC Unix timestamp
@@ -610,7 +608,7 @@ def initialize_components():
             logger.info("Heartbeat sender initialized")
         
         # 7. Initialize CommandProcessor
-        logger.info("⚡ Initializing command processor...")
+        logger.info("Initializing command processor...")
         command_processor = CommandProcessor()
         
         # Start command polling if registered
@@ -636,7 +634,7 @@ def initialize_components():
 def start_command_polling():
     """Khởi động command polling thread"""
     def polling_loop():
-        logger.info("🎮 Command polling started")
+        logger.info("Command polling started")
         
         while running:
             try:
@@ -891,17 +889,17 @@ def main():
     finally:
         cleanup()
 
-# ========================================
-# SERVICE RUNNER (Simplified)
-# ========================================
+# ===============
+# SERVICE RUNNER
+# ===============
 
 def run_as_service():
     """Enhanced Windows Service implementation"""
     try:
-        import servicemanager
-        import win32event
-        import win32service
-        import win32serviceutil
+        import servicemanager # type: ignore
+        import win32event # type: ignore
+        import win32service # type: ignore
+        import win32serviceutil # type: ignore
         
         class AgentService(win32serviceutil.ServiceFramework):
             _svc_name_ = "FirewallControllerAgent"

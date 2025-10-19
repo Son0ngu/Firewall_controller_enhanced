@@ -13,6 +13,43 @@ from time_utils import now_utc, to_utc_naive, now_iso, parse_agent_timestamp
 
 logger = logging.getLogger(__name__)
 
+# Wildcard expansion map for popular services
+WILDCARD_EXPANSION_MAP = {
+    "*.github.com": [
+        "github.com",
+        "github.githubassets.com",
+        "avatars.githubusercontent.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com",
+        "api.github.com",
+        "objects.githubusercontent.com"
+    ],
+    "*.cloud.mongodb.com": [
+        "cloud.mongodb.com",
+        "realm.mongodb.com",
+        "assets.mongodb.com",
+        "stitch.mongodb.com"
+    ],
+    "*.githubusercontent.com": [
+        "raw.githubusercontent.com",
+        "avatars.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "camo.githubusercontent.com"
+    ],
+    "*.google.com": [
+        "google.com",
+        "www.google.com",
+        "accounts.google.com",
+        "apis.google.com"
+    ],
+    "*.microsoft.com": [
+        "microsoft.com",
+        "www.microsoft.com",
+        "login.microsoft.com",
+        "graph.microsoft.com"
+    ]
+}
+
 class WhitelistService:
     """Service class for whitelist business logic - UTC ONLY"""
     
@@ -66,6 +103,22 @@ class WhitelistService:
             "server_time": now_iso()  # UTC ISO
         }
     
+    def _auto_expand_wildcard(self, value: str) -> List[str]:
+        """Auto-expand wildcard domain using expansion map"""
+        if not value.startswith("*."):
+            return []
+        
+        # Check if we have expansion data for this wildcard
+        includes = WILDCARD_EXPANSION_MAP.get(value, [])
+        
+        # If no predefined expansion, just include base domain
+        if not includes:
+            base = value[2:]  # Remove *.
+            includes = [base]
+        
+        self.logger.debug(f"Auto-expanded {value} to {len(includes)} subdomains")
+        return includes
+
     def add_entry(self, entry_data: Dict, client_ip: str) -> Dict:
         """Add new entry to whitelist - UTC ONLY"""
         entry_type = entry_data.get("type", "domain")
@@ -98,6 +151,21 @@ class WhitelistService:
             "added_date": current_time,
             "is_active": True
         }
+        
+        # Auto-expand wildcard includes if not provided
+        if entry_type == "domain" and value.startswith("*."):
+            user_includes = entry_data.get("includes", [])
+            if not user_includes:
+                # Auto-populate from expansion map
+                auto_includes = self._auto_expand_wildcard(value)
+                processed_entry["includes"] = auto_includes
+                logger.info(f"Auto-expanded {value} → {len(auto_includes)} subdomains")
+            else:
+                # Use user-provided includes
+                processed_entry["includes"] = self.model._sanitize_includes(user_includes)
+        else:
+            # Non-wildcard or explicit includes
+            processed_entry["includes"] = self.model._sanitize_includes(entry_data.get("includes", []))
         
         # Add optional fields if specified
         if entry_data.get("notes"):
@@ -404,7 +472,8 @@ class WhitelistService:
                     "added_date": entry.get("added_date"),
                     "priority": entry.get("priority", "normal"),
                     "category": entry.get("category", "uncategorized"),
-                    "is_active": entry.get("is_active", True)
+                    "is_active": entry.get("is_active", True),
+                    "includes": entry.get("includes", [])  #  Pass through includes
                 }
                 domains.append(domain_entry)
             
@@ -542,7 +611,7 @@ class WhitelistService:
                 "inactive": 0,
                 "by_type": {},
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # UTC ONLY
             }
     
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
@@ -672,6 +741,10 @@ class WhitelistService:
                 "priority": "normal",
                 "added_by": "admin"
             }
+
+            # ensure wildcards carry includes
+            if domain_value.startswith("*."):
+                entry_data["includes"] = self._auto_expand_wildcard(domain_value)
             
             # Insert domain
             entry_id = self.model.insert_entry(entry_data)

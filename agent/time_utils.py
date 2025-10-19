@@ -3,8 +3,6 @@ Time Utilities for Firewall Controller Agent - UTC ONLY
 
 Simplified time management - chỉ sử dụng UTC:
 - All timestamps in UTC
-- No timezone confusion
-- Clean and simple
 """
 
 import logging
