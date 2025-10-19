@@ -78,7 +78,8 @@ class LogService:
                         "connection_type": log.get("connection_type", "outbound"),
                         "service_type": log.get("service_type", "unknown"),
                         "process_name": log.get("process_name"),
-                        "process_pid": log.get("process_pid")
+                        "process_pid": log.get("process_pid"),
+                        "agent_host": log.get("agent_host") or log.get("hostname") or log.get("host_name") or "Unknown Agent"
                     }
                     
                     # Format display fields
@@ -188,7 +189,8 @@ class LogService:
                         'dest_ip': log.get('dest_ip', 'unknown'),
                         'protocol': log.get('protocol', 'unknown'),
                         'port': str(log.get('port', 'unknown')),
-                        'message': log.get('message', 'Log entry')
+                        'message': log.get('message', 'Log entry'),
+                        'agent_host': log.get('agent_host', 'Unknown Agent')
                     }
                     self.socketio.emit('new_log', broadcast_log)
             
@@ -297,7 +299,8 @@ class LogService:
                         "protocol": log.get("protocol", "unknown"),
                         "port": str(log.get("port", "unknown")),
                         "message": log.get("message", "Log entry"),
-                        "source": log.get("source", "agent")
+                        "source": log.get("source", "agent"),
+                        "agent_host": log.get("agent_host") or log.get("hostname") or log.get("host_name") or "Unknown Agent"
                     }
                     
                     # Handle timestamps - UTC only
@@ -479,12 +482,13 @@ class LogService:
                     "filtered_warnings": self.model.count_logs({**query, "level": "WARNING"})
                 }
             
-            # Combine results
+            # Combine stats
             result = {
                 **total_stats,
                 **filtered_stats,
                 "has_filters": has_filters,
-                "server_time": now_iso()  # UTC ISO
+                "success": True,
+                "server_time": now_iso()
             }
             
             self.logger.info(f"Statistics result: {result}")
@@ -493,42 +497,41 @@ class LogService:
         except Exception as e:
             self.logger.error(f"Error getting comprehensive statistics: {e}")
             return {
+                "success": False,
+                "error": str(e),
                 "total": 0,
                 "allowed": 0,
                 "blocked": 0,
                 "warnings": 0,
-                "has_filters": False,
-                "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()
             }
     
     def _build_query_from_filters(self, filters: Dict) -> Dict:
-        """Build MongoDB query from filters - UTC ONLY"""
+        """Build MongoDB query from filters"""
         query = {}
         
-        if filters.get("level"):
-            query["level"] = filters["level"]
+        if filters.get('level'):
+            query['level'] = filters['level']
         
-        if filters.get("action"):
-            query["action"] = filters["action"]
+        if filters.get('action'):
+            query['action'] = filters['action']
         
-        if filters.get("agent_id"):
-            query["agent_id"] = filters["agent_id"]
+        if filters.get('agent_id'):
+            query['agent_id'] = filters['agent_id']
         
-        if filters.get("search"):
-            search_term = filters["search"]
-            query["$or"] = [
-                {"domain": {"$regex": search_term, "$options": "i"}},
-                {"destination": {"$regex": search_term, "$options": "i"}},
-                {"source_ip": {"$regex": search_term, "$options": "i"}},
-                {"dest_ip": {"$regex": search_term, "$options": "i"}},
-                {"message": {"$regex": search_term, "$options": "i"}}
+        if filters.get('search'):
+            search_term = filters['search']
+            query['$or'] = [
+                {'domain': {'$regex': search_term, '$options': 'i'}},
+                {'destination': {'$regex': search_term, '$options': 'i'}},
+                {'source_ip': {'$regex': search_term, '$options': 'i'}},
+                {'dest_ip': {'$regex': search_term, '$options': 'i'}},
+                {'message': {'$regex': search_term, '$options': 'i'}}
             ]
         
-        # Time range filter - UTC
-        if filters.get("time_range"):
-            time_range = filters["time_range"]
-            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+        if filters.get('time_range'):
+            time_range = filters['time_range']
+            current_time = to_utc_naive(now_utc())
             
             if time_range == "1h":
                 since_time = current_time - timedelta(hours=1)
@@ -544,78 +547,4 @@ class LogService:
             if since_time:
                 query["timestamp"] = {"$gte": since_time}
         
-        # Date range filter - UTC
-        if filters.get("start_date") or filters.get("end_date"):
-            date_query = {}
-            if filters.get("start_date"):
-                try:
-                    start_dt = parse_agent_timestamp(filters["start_date"])
-                    # Convert to naive for MongoDB query
-                    date_query["$gte"] = start_dt.replace(tzinfo=None)
-                except Exception:
-                    pass
-            
-            if filters.get("end_date"):
-                try:
-                    end_dt = parse_agent_timestamp(filters["end_date"])
-                    # Convert to naive for MongoDB query
-                    date_query["$lte"] = end_dt.replace(tzinfo=None)
-                except Exception:
-                    pass
-            
-            if date_query:
-                query["timestamp"] = date_query
-        
-        self.logger.debug(f"Built query from filters {filters}: {query}")
         return query
-    
-    def get_total_count(self) -> int:
-        """Get total log count"""
-        try:
-            return self.model.count_logs({})
-        except Exception as e:
-            self.logger.error(f"Error getting total count: {e}")
-            return 0
-    
-    def get_count_by_action(self, action: str) -> int:
-        """Get count by action type"""
-        try:
-            query = {"action": action.upper()}
-            return self.model.count_logs(query)
-        except Exception as e:
-            self.logger.error(f"Error getting count by action: {e}")
-            return 0
-    
-    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
-        """Get recent logs - UTC ONLY"""
-        try:
-            logs = self.model.find_all_logs({}, limit=limit, offset=0)
-            
-            # Format for display
-            formatted_logs = []
-            for log in logs:
-                formatted_log = {
-                    "timestamp": log.get("timestamp"),
-                    "domain": log.get("domain", "unknown"),
-                    "action": log.get("action", "UNKNOWN"),
-                    "agent_id": log.get("agent_id", "unknown"),
-                    "level": log.get("level", "INFO")
-                }
-                
-                # Format timestamp for display - UTC
-                if log.get("timestamp"):
-                    try:
-                        if hasattr(log["timestamp"], 'strftime'):
-                            formatted_log["display_time"] = log["timestamp"].strftime("%H:%M:%S")
-                        else:
-                            formatted_log["display_time"] = str(log["timestamp"])[:8]
-                    except:
-                        formatted_log["display_time"] = "00:00:00"
-                
-                formatted_logs.append(formatted_log)
-            
-            return formatted_logs
-            
-        except Exception as e:
-            self.logger.error(f"Error getting recent logs: {e}")
-            return []

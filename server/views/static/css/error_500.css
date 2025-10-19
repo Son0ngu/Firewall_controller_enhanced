@@ -1,0 +1,36 @@
+.error-page {
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.error-illustration {
+    font-size: 8rem;
+    color: #dc3545;
+    opacity: 0.7;
+    animation: pulse 2s infinite;
+}
+.error-code {
+    font-size: 6rem;
+    font-weight: bold;
+    color: #dc3545;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+}
+.btn-retry {
+    transition: all 0.3s ease;
+}
+.btn-retry:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+@keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+}
+.error-details {
+    background: #f8f9fa;
+    border-left: 4px solid #dc3545;
+    padding: 1rem;
+    margin: 1rem 0;
+}

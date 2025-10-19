@@ -79,6 +79,8 @@ agent_state = {
     "agent_id": None
 }
 
+AGENT_HOSTNAME = socket.gethostname().strip() or "Unknown Agent"
+
 # ========================================
 # CONFIGURATION VALIDATION
 # ========================================
@@ -500,8 +502,8 @@ def handle_domain_detection(record: Dict):
         
         #Create enhanced log record với UTC timestamps
         enhanced_record = {
-            "timestamp": now_iso(),  # UTC ISO timestamp
-            "timestamp_unix": now(),  # UTC Unix timestamp
+            "timestamp": now_iso(),
+            "timestamp_unix": now(),
             "agent_id": config.get("agent_id", "unknown"),
             "level": level,
             "action": action,
@@ -517,7 +519,9 @@ def handle_domain_detection(record: Dict):
             "domain_allowed": domain_allowed,
             "ip_allowed": ip_allowed,
             "source": "domain_detection",
-            "agent_uptime": uptime_string()
+            "agent_uptime": uptime_string(),
+            "agent_host": AGENT_HOSTNAME,
+            "hostname": AGENT_HOSTNAME
         }
         
         # Queue log với error handling
@@ -856,6 +860,8 @@ def main():
                 "firewall_mode": config["firewall"]["mode"],
                 "timestamp": now_iso(),  # UTC ISO
                 "timestamp_unix": now(),  # UTC Unix timestamp
+                "agent_host": AGENT_HOSTNAME,
+                "host_name": AGENT_HOSTNAME
             }
             log_sender.queue_log(startup_log)
         

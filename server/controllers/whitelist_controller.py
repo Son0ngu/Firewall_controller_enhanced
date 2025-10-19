@@ -55,6 +55,19 @@ class WhitelistController:
         self.blueprint.add_url_rule('/whitelist/statistics', 
                                    methods=['GET'], 
                                    view_func=self.get_statistics)
+        
+        # Bulk operations - NEW ROUTES
+        self.blueprint.add_url_rule('/whitelist/bulk', 
+                                   methods=['POST'], 
+                                   view_func=self.bulk_add_entries)
+        
+        self.blueprint.add_url_rule('/whitelist/bulk-update', 
+                                   methods=['POST'], 
+                                   view_func=self.bulk_update_entries)
+        
+        self.blueprint.add_url_rule('/whitelist/bulk-delete', 
+                                   methods=['POST'], 
+                                   view_func=self.bulk_delete_entries)
     
     def agent_sync(self):
         """Sync whitelist for agents - UTC ONLY"""
@@ -271,6 +284,150 @@ class WhitelistController:
         except Exception as e:
             self.logger.error(f"Error getting statistics: {e}")
             return self._error_response("Failed to get statistics", 500)
+    
+    def bulk_add_entries(self):
+        """Bulk add multiple whitelist entries"""
+        try:
+            data = request.get_json()
+            
+            if not data or 'items' not in data:
+                return jsonify({
+                    "success": False,
+                    "error": "No items provided"
+                }), 400
+            
+            items = data['items']
+            
+            if not isinstance(items, list):
+                return jsonify({
+                    "success": False,
+                    "error": "Items must be an array"
+                }), 400
+            
+            if len(items) == 0:
+                return jsonify({
+                    "success": False,
+                    "error": "No items to import"
+                }), 400
+            
+            if len(items) > 1000:
+                return jsonify({
+                    "success": False,
+                    "error": "Maximum 1000 items per bulk operation"
+                }), 400
+            
+            # Get client IP
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            
+            # Process bulk add
+            result = self.service.bulk_add_entries(items, client_ip)
+            
+            return jsonify(result), 200 if result['success'] else 400
+            
+        except Exception as e:
+            self.logger.error(f"Error in bulk add: {e}")
+            return jsonify({
+                "success": False,
+                "error": str(e),
+                "server_time": now_iso()
+            }), 500
+    
+    def bulk_update_entries(self):
+        """Bulk update multiple whitelist entries"""
+        try:
+            data = request.get_json()
+            
+            if not data or 'item_ids' not in data:
+                return jsonify({
+                    "success": False,
+                    "error": "No item IDs provided"
+                }), 400
+            
+            item_ids = data['item_ids']
+            active = data.get('active', True)
+            
+            if not isinstance(item_ids, list):
+                return jsonify({
+                    "success": False,
+                    "error": "Item IDs must be an array"
+                }), 400
+            
+            updated_count = 0
+            errors = []
+            
+            for item_id in item_ids:
+                try:
+                    success = self.service.update_entry(item_id, {"is_active": active})
+                    if success:
+                        updated_count += 1
+                    else:
+                        errors.append(f"Failed to update {item_id}")
+                except Exception as e:
+                    errors.append(f"Error updating {item_id}: {str(e)}")
+            
+            return jsonify({
+                "success": True,
+                "updated_count": updated_count,
+                "error_count": len(errors),
+                "errors": errors[:10],  # Limit error list
+                "server_time": now_iso()
+            }), 200
+            
+        except Exception as e:
+            self.logger.error(f"Error in bulk update: {e}")
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
+    
+    def bulk_delete_entries(self):
+        """Bulk delete multiple whitelist entries"""
+        try:
+            data = request.get_json()
+            
+            if not data or 'item_ids' not in data:
+                return jsonify({
+                    "success": False,
+                    "error": "No item IDs provided"
+                }), 400
+            
+            item_ids = data['item_ids']
+            
+            if not isinstance(item_ids, list):
+                return jsonify({
+                    "success": False,
+                    "error": "Item IDs must be an array"
+                }), 400
+            
+            deleted_count = 0
+            errors = []
+            
+            for item_id in item_ids:
+                try:
+                    success = self.service.delete_entry(item_id)
+                    if success:
+                        deleted_count += 1
+                    else:
+                        errors.append(f"Failed to delete {item_id}")
+                except Exception as e:
+                    errors.append(f"Error deleting {item_id}: {str(e)}")
+            
+            return jsonify({
+                "success": True,
+                "deleted_count": deleted_count,
+                "error_count": len(errors),
+                "errors": errors[:10],
+                "server_time": now_iso()
+            }), 200
+            
+        except Exception as e:
+            self.logger.error(f"Error in bulk delete: {e}")
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
     
     def _error_response(self, message: str, status_code: int) -> Tuple:
         """Create error response - UTC ONLY"""

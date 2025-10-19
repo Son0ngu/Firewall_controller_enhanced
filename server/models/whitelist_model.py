@@ -147,7 +147,6 @@ class WhitelistModel:
             
             #  FIX: Ensure value is lowercase and trimmed
             entry_data["value"] = entry_data["value"].strip().lower()
-
             
             self.logger.info(f"Inserting entry: {entry_data['value']} at {current_time.isoformat()}")
             
@@ -280,18 +279,14 @@ class WhitelistModel:
             return {"valid": False, "message": f"Validation error: {str(e)}"}
     
     def _validate_domain(self, domain: str) -> Dict:
-        """Validate domain format - supports wildcards"""
-        # Enhanced regex to support wildcards
-        # Supports: example.com, *.example.com, subdomain.example.com
-        domain_pattern = (
-            r'^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)*'
-            r'[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$'
-        )
+        """Validate domain format"""
+        # Basic domain validation regex
+        domain_pattern = r'^([a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$'
         
         if re.match(domain_pattern, domain):
             return {"valid": True, "message": "Valid domain"}
         else:
-            return {"valid": False, "message": "Invalid domain format. Supported: example.com, *.example.com"}
+            return {"valid": False, "message": "Invalid domain format"}
     
     def _validate_ip(self, ip: str) -> Dict:
         """Validate IP address format"""
@@ -398,9 +393,10 @@ class WhitelistModel:
             if since_date:
                 # Parse and convert to UTC naive for database query
                 if isinstance(since_date, str):
-                    since_utc = parse_agent_timestamp(since_date)
-                    since_naive = since_utc.replace(tzinfo=None)
+                    since_utc = parse_agent_timestamp(since_date)  # UTC parsing
+                    since_naive = since_utc.replace(tzinfo=None)  # UTC naive for MongoDB
                 else:
+                    # Convert datetime to UTC naive
                     from datetime import timezone
                     if isinstance(since_date, datetime):
                         if since_date.tzinfo is None:
@@ -422,12 +418,12 @@ class WhitelistModel:
                     "value": entry.get("value"),
                     "type": entry.get("type", "domain"),
                     "priority": entry.get("priority", "normal"),
-                    "category": entry.get("category", "uncategorized"),
-                    "includes": entry.get("includes", [])  #  ADD THIS LINE
+                    "category": entry.get("category", "uncategorized")
                 }
                 
                 # Add timestamp for sync - UTC ISO format
                 if entry.get("added_date"):
+                    # Convert naive datetime to UTC timezone for ISO format
                     from datetime import timezone
                     utc_dt = entry["added_date"].replace(tzinfo=timezone.utc)
                     sync_entry["added_date"] = utc_dt.isoformat()
@@ -444,18 +440,17 @@ class WhitelistModel:
         """Bulk insert multiple entries - UTC ONLY"""
         if not entries:
             return []
-
+        
         try:
             # Set timestamps for all entries - UTC naive for MongoDB
             current_time = to_utc_naive(now_utc())
-
+            
             for entry in entries:
                 entry["added_date"] = current_time
                 entry["created_at"] = current_time
                 entry["updated_at"] = current_time
                 entry.setdefault("is_active", True)
                 entry.setdefault("type", "domain")
-                
             
             result = self.collection.insert_many(entries)
             
