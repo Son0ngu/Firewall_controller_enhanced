@@ -4,7 +4,7 @@ UTC ONLY - Clean and simple
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 from datetime import datetime, timedelta, timezone
 from models.log_model import LogModel
 

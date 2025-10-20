@@ -1,19 +1,20 @@
 """
-Time Utilities for Firewall Controller Agent - UTC ONLY
+Time Utilities for Firewall Controller Agent 
 
-Simplified time management - chỉ sử dụng UTC:
+Simplified time management 
 - All timestamps in UTC
 """
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("time_utils")
 
 # ========================================
-# CORE TIME FUNCTIONS - UTC ONLY
+# CORE TIME FUNCTIONS 
 # ========================================
 
 def now() -> float:
@@ -22,7 +23,7 @@ def now() -> float:
 
 def now_iso() -> str:
     """UTC time ISO with Z suffix."""
-    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    return datetime.now(VIETNAM_TZ).isoformat()
 
 def now_server_compatible(ts: Optional[float] = None) -> str:
     """
@@ -30,7 +31,7 @@ def now_server_compatible(ts: Optional[float] = None) -> str:
     """
     if ts is None:
         return now_iso()
-    return datetime.fromtimestamp(ts, timezone.utc).isoformat().replace('+00:00', 'Z')
+    return datetime.fromtimestamp(ts, VIETNAM_TZ).isoformat()
 
 def sleep(duration: float):
     """Sleep function."""
@@ -71,14 +72,14 @@ def uptime_string() -> str:
 # ALIASES FOR COMPATIBILITY
 # ========================================
 
-# Remove Vietnam aliases
+# Maintain compatibility aliases
 agent_time = now_iso
 cache_time = now
 
 def debug_time_info() -> dict:
-    """Debug time information - UTC only."""
+    """Debug time information """
     return {
         "unix": now(),
-        "utc_iso": now_iso(),
+        "vietnam_iso": now_iso(),
         "uptime": uptime_string()
     }

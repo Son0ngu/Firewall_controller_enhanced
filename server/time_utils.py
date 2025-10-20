@@ -8,40 +8,47 @@ Simplified time management - chỉ sử dụng UTC:
 
 import time
 import logging
-from datetime import datetime, timezone
-from typing import Optional
-
+from datetime import datetime
+from zoneinfo import ZoneInfo
 logger = logging.getLogger("server_time_utils")
 
 # ========================================
-# CORE TIME FUNCTIONS - UTC ONLY
+# CORE TIME FUNCTIONS - VIETNAM TIMEZONE
 # ========================================
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 def now() -> float:
     """Get current timestamp (Unix time)"""
     return time.time()
+def now_vietnam() -> datetime:
+    """Get current Vietnam datetime (Asia/Ho_Chi_Minh)."""
+    return datetime.now(VIETNAM_TZ)
 
 def now_utc() -> datetime:
-    """Get current UTC datetime"""
-    return datetime.now(timezone.utc)
+    """Backward compatible alias that returns Vietnam time."""
+    return now_vietnam()
 
 def now_iso() -> str:
-    """Get current UTC time as ISO string"""
-    return now_utc().isoformat()
+    """Get current Vietnam time as ISO string"""
+    return now_vietnam().isoformat()
 
-def to_utc(dt: datetime) -> datetime:
-    """Convert any datetime to UTC"""
+def to_vietnam(dt: datetime) -> datetime:
+    """Convert any datetime to Vietnam time"""
     if dt is None:
         return None
     
     if dt.tzinfo is None:
-        # Assume UTC if no timezone
-        dt = dt.replace(tzinfo=timezone.utc)
-    
-    return dt.astimezone(timezone.utc)
+         # Assume current Vietnam timezone if no timezone
+        dt = dt.replace(tzinfo=VIETNAM_TZ)
+
+    return dt.astimezone(VIETNAM_TZ)
+
+def to_utc(dt: datetime) -> datetime:
+    """Backward compatible alias for :func:`to_vietnam`."""
+    return to_vietnam(dt)
 
 def to_utc_naive(dt: datetime) -> datetime:
-    """Convert datetime to UTC naive (for MongoDB storage)"""
+    """Convert datetime to Vietnam naive (for MongoDB storage)"""
     if dt is None:
         return None
     
@@ -61,18 +68,18 @@ def parse_agent_timestamp(iso_string: str) -> datetime:
         # Handle ISO format with timezone
         if 'T' in iso_string and ('+' in iso_string or 'Z' in iso_string):
             dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
-            return dt.astimezone(timezone.utc)  # Always convert to UTC
+            return dt.astimezone(VIETNAM_TZ)  # Always convert to UTC
         elif 'T' in iso_string:
             # ISO without timezone - assume UTC
             dt = datetime.fromisoformat(iso_string)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=VIETNAM_TZ)
         else:
             # Handle simple formats
             formats_to_try = ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S']
             for fmt in formats_to_try:
                 try:
                     dt = datetime.strptime(iso_string, fmt)
-                    return dt.replace(tzinfo=timezone.utc)  # Assume UTC
+                    return dt.replace(tzinfo=VIETNAM_TZ)  # Assume UTC
                 except ValueError:
                     continue
             
@@ -104,9 +111,9 @@ def format_datetime(dt, format='%Y-%m-%d %H:%M:%S') -> str:
     try:
         # Convert to UTC if needed
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=VIETNAM_TZ)
         else:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(VIETNAM_TZ)
         
         return dt.strftime(format)
     except Exception as e:
@@ -119,7 +126,7 @@ def format_timestamp(timestamp: float, format='%Y-%m-%d %H:%M:%S') -> str:
         return 'N/A'
     
     try:
-        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        dt = datetime.fromtimestamp(timestamp, tz=VIETNAM_TZ)
         return dt.strftime(format)
     except Exception as e:
         logger.warning(f"Error formatting timestamp {timestamp}: {e}")
@@ -133,9 +140,9 @@ def is_recent(dt: datetime, minutes: int = 5) -> bool:
     try:
         # Convert to UTC if needed
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=VIETNAM_TZ)
         else:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(VIETNAM_TZ)
         
         current = now_utc()
         time_diff = current - dt
@@ -153,9 +160,9 @@ def calculate_age_seconds(dt: datetime) -> float:
     try:
         # Convert to UTC if needed
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=VIETNAM_TZ)
         else:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(VIETNAM_TZ)
         
         current = now_utc()
         time_diff = current - dt
@@ -193,10 +200,7 @@ def get_time_ago_string(dt: datetime) -> str:
 # ALIASES FOR COMPATIBILITY
 # ========================================
 
-# Keep old function names for backward compatibility but make them UTC
-now_vietnam = now_utc  # Now returns UTC
-now_vietnam_naive = lambda: now_utc().replace(tzinfo=None)  # UTC naive
-now_vietnam_iso = now_iso  # UTC ISO
+# Keep alias for backward compatibility in UTC
 parse_agent_timestamp_direct = parse_agent_timestamp  # UTC parsing
 
 if __name__ == "__main__":
