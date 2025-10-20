@@ -190,45 +190,6 @@ def get_time_ago_string(dt: datetime) -> str:
         return str(dt)
 
 # ========================================
-# CACHE & VALIDATION - UTC ONLY
-# ========================================
-
-def is_cache_valid(timestamp: float, ttl: float) -> bool:
-    """Check if cache timestamp is still valid - UTC"""
-    if not timestamp:
-        return False
-    current_time = now()
-    return (current_time - timestamp) < ttl
-
-def cache_age(timestamp: float) -> float:
-    """Get cache age in seconds - UTC"""
-    if not timestamp:
-        return float('inf')
-    return now() - timestamp
-
-# ========================================
-# DEBUG FUNCTIONS - UTC ONLY
-# ========================================
-
-def get_time_info() -> dict:
-    """Get comprehensive time information for debugging - UTC only"""
-    current_utc = now_utc()
-    
-    return {
-        "current_utc": current_utc.isoformat(),
-        "current_timestamp": now(),
-        "timezone": "UTC"
-    }
-
-def debug_time_info():
-    """Print time debug information - UTC only"""
-    info = get_time_info()
-    print("    Server Time Debug Info (UTC ONLY):")
-    print(f"   UTC Time: {info['current_utc']}")
-    print(f"   Timestamp: {info['current_timestamp']}")
-    print(f"   Timezone: {info['timezone']}")
-
-# ========================================
 # ALIASES FOR COMPATIBILITY
 # ========================================
 
@@ -239,10 +200,6 @@ now_vietnam_iso = now_iso  # UTC ISO
 parse_agent_timestamp_direct = parse_agent_timestamp  # UTC parsing
 
 if __name__ == "__main__":
-    # Test functions when run directly
-    debug_time_info()
-    print()
-    
     # Test format functions
     print(" Testing format functions:")
     test_dt = now_utc().replace(tzinfo=None)

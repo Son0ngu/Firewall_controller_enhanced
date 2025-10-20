@@ -24,10 +24,6 @@ def now_iso() -> str:
     """UTC time ISO with Z suffix."""
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
-def now_utc_iso() -> str:
-    """Same as now_iso() - for compatibility."""
-    return now_iso()
-
 def now_server_compatible(ts: Optional[float] = None) -> str:
     """
     Return UTC ISO timestamp.
