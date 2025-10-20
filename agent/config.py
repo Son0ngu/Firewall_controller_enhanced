@@ -1,7 +1,7 @@
 """
 Configuration module for the Firewall Controller Agent.
 
- UPDATED: Sử dụng time_utils cho consistent time management - UTC ONLY
+ UPDATED: Sử dụng time_utils cho consistent time management - VIETNAMTIME ONLY
 
 This module loads and provides access to all configuration parameters needed by the agent.
 Configuration can be sourced from environment variables, a configuration file, or defaults.
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-#  Import time_utils - UTC ONLY
+#  Import time_utils - VIETNAMTIME ONLY
 from time_utils import now, now_iso
 
 # Cấu hình logging cho chính module cấu hình
@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 
 def load_config() -> Dict[str, Any]:
     """
-     UPDATED: Load configuration với UTC timestamps only
+     UPDATED: Load configuration với VIETNAMTIME timestamps only
     
     Load configuration from multiple sources, with the following precedence:
     1. Environment variables
@@ -136,9 +136,9 @@ def load_config() -> Dict[str, Any]:
     Returns:
         Dict: Complete configuration dictionary
     """
-    load_start_time = now()  # UTC timestamp
+    load_start_time = now()  # VIETNAMTIME timestamp
     
-    logger.info(f" Loading configuration at {now_iso()}")  # UTC ISO
+    logger.info(f" Loading configuration at {now_iso()}")  # VIETNAMTIME ISO
     
     # Khởi đầu với cấu hình mặc định
     config = DEFAULT_CONFIG.copy()
@@ -153,10 +153,10 @@ def load_config() -> Dict[str, Any]:
     if env_config:
         _deep_update(config, env_config)
     
-    #  Add configuration metadata với UTC timestamps only
+    #  Add configuration metadata với vietnam timestamps only
     config["_metadata"] = {
-        "loaded_at": now_iso(),           # UTC ISO
-        "loaded_timestamp": now(),        # UTC Unix timestamp
+        "loaded_at": now_iso(),           # vietnam ISO
+        "loaded_timestamp": now(),        # vietnam Unix timestamp
         "load_duration": now() - load_start_time,  # Duration in seconds
         "config_source": _get_config_source(file_config, env_config)
     }
@@ -172,7 +172,7 @@ def load_config() -> Dict[str, Any]:
 
 def _load_from_file() -> Optional[Dict[str, Any]]:
     """
-     UPDATED: Load from file với UTC timestamps only
+     UPDATED: Load from file với vietnam timestamps only
     
     Returns:
         Optional[Dict]: Configuration from file, or None if no file found
@@ -188,7 +188,7 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
     for path in config_paths:
         try:
             if path.exists():
-                file_load_start = now()  # UTC timestamp
+                file_load_start = now()  # vietnam timestamp
                 logger.info(f" Loading configuration from {path}")
                 
                 with open(path, "r") as f:
@@ -274,9 +274,9 @@ def _deep_update(base_dict: Dict, update_dict: Dict) -> None:
 
 def _validate_config(config: Dict) -> None:
     """
-     UPDATED: Enhanced validation với UTC timestamps only
+     UPDATED: Enhanced validation với vietnam timestamps only
     """
-    validation_start = now()  # UTC timestamp
+    validation_start = now()  # vietnam timestamp
     validation_issues = []
     
     # Validate server URL
@@ -300,9 +300,9 @@ def _validate_config(config: Dict) -> None:
             config["firewall"]["mode"] = "monitor"
             config["firewall"]["enabled"] = False
     
-    #  Add validation metadata với UTC timestamps only
+    #  Add validation metadata với vietnam timestamps only
     config["_metadata"]["validation"] = {
-        "validated_at": now_iso(),        # UTC ISO
+        "validated_at": now_iso(),        # vietnam ISO
         "validation_duration": now() - validation_start,  # Duration in seconds
         "issues_found": len(validation_issues),
         "issues": validation_issues
@@ -318,7 +318,7 @@ def _validate_config(config: Dict) -> None:
 
 def get_config() -> Dict[str, Any]:
     """
-     UPDATED: Get config với UTC timestamps only
+     UPDATED: Get config với vietnam timestamps only
     
     Returns:
         Dict: Complete configuration dictionary
@@ -327,8 +327,8 @@ def get_config() -> Dict[str, Any]:
     if _config is None:
         _config = load_config()
     else:
-        #  Update last accessed time - UTC only
-        _config["_metadata"]["last_accessed"] = now_iso()  # UTC ISO
+        #  Update last accessed time - vietnam only
+        _config["_metadata"]["last_accessed"] = now_iso()  # vietnam ISO
     
     return _config
 

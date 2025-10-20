@@ -1,6 +1,6 @@
 """
 Whitelist Service - Business logic for whitelist operations
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 import logging
@@ -8,13 +8,13 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from models.whitelist_model import WhitelistModel
 
-# Import time utilities - UTC ONLY
-from time_utils import now_utc, to_utc_naive, now_iso, parse_agent_timestamp
+# Import time utilities - vietnam ONLY
+from time_utils import now_vietnam, to_vietnam_naive, now_iso, parse_agent_timestamp
 
 logger = logging.getLogger(__name__)
 
 class WhitelistService:
-    """Service class for whitelist business logic - UTC ONLY"""
+    """Service class for whitelist business logic - vietnam ONLY"""
     
     def __init__(self, whitelist_model: WhitelistModel, socketio=None):
         """Initialize WhitelistService with model and socketio"""
@@ -22,10 +22,10 @@ class WhitelistService:
         self.socketio = socketio
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        self.logger.info("WhitelistService initialized with UTC timezone support")
+        self.logger.info("WhitelistService initialized with vietnam timezone support")
     
     def get_all_entries(self, filters: Dict = None) -> Dict:
-        """Get all whitelist entries with optional filtering - UTC ONLY"""
+        """Get all whitelist entries with optional filtering - vietnam ONLY"""
         query = {}
         if filters:
             query = self.model.build_query_from_filters(filters)
@@ -63,11 +63,11 @@ class WhitelistService:
         return {
             "domains": formatted_entries,
             "success": True,
-            "server_time": now_iso()  # UTC ISO
+            "server_time": now_iso()  # vietnam ISO
         }
     
     def add_entry(self, entry_data: Dict, client_ip: str) -> Dict:
-        """Add new entry to whitelist - UTC ONLY"""
+        """Add new entry to whitelist - vietnam ONLY"""
         entry_type = entry_data.get("type", "domain")
         value = entry_data.get("value", "").strip().lower()
         
@@ -84,9 +84,9 @@ class WhitelistService:
         if existing:
             raise ValueError("Entry already exists")
         
-        # Use UTC time for timestamps - UTC naive for MongoDB
-        current_time = to_utc_naive(now_utc())
-        logger.info(f"Adding entry with UTC timestamp: {current_time}")
+        # Use vietnam time for timestamps - vietnam naive for MongoDB
+        current_time = to_vietnam_naive(now_vietnam())
+        logger.info(f"Adding entry with vietnam timestamp: {current_time}")
         
         # Create processed entry
         processed_entry = {
@@ -105,9 +105,9 @@ class WhitelistService:
         
         if entry_data.get("expiry_date"):
             try:
-                # Parse expiry date using UTC parsing
-                expiry_utc = parse_agent_timestamp(entry_data["expiry_date"])
-                processed_entry["expiry_date"] = expiry_utc.replace(tzinfo=None)  # UTC naive for MongoDB
+                # Parse expiry date using vietnam parsing
+                expiry_vietnam = parse_agent_timestamp(entry_data["expiry_date"])
+                processed_entry["expiry_date"] = expiry_vietnam.replace(tzinfo=None)  # vietnam naive for MongoDB
                 
             except Exception as e:
                 logger.warning(f"Invalid expiry date format: {e}")
@@ -140,25 +140,25 @@ class WhitelistService:
             logger.error(f"Failed to insert entry: {e}")
             raise
         
-        # Broadcast notification via SocketIO - UTC only
+        # Broadcast notification via SocketIO - vietnam only
         if self.socketio:
             self.socketio.emit("whitelist_added", {
                 "type": entry_type,
                 "value": value,
                 "category": processed_entry["category"],
                 "added_by": client_ip,
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             })
         
         return {
             "id": entry_id,
             "message": f"{entry_type.capitalize()} added to whitelist",
-            "timestamp": now_iso(),  # UTC ISO
-            "server_time": now_iso()  # UTC ISO
+            "timestamp": now_iso(),  # vietnam ISO
+            "server_time": now_iso()  # vietnam ISO
         }
     
     def test_entry(self, entry_data: Dict) -> Dict:
-        """Test an entry before adding it - UTC ONLY"""
+        """Test an entry before adding it - vietnam ONLY"""
         try:
             entry_type = entry_data.get("type", "domain")
             value = entry_data.get("value", "").strip().lower()
@@ -191,13 +191,13 @@ class WhitelistService:
                     "valid": True,
                     "message": "Entry is valid",
                     "dns_info": dns_info,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             
             return {
                 "valid": True, 
                 "message": "Entry is valid",
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
         except Exception as e:
@@ -205,17 +205,17 @@ class WhitelistService:
             return {
                 "valid": False, 
                 "message": f"Test failed: {str(e)}",
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def test_dns(self, domain: str) -> Dict:
-        """Test DNS resolution for a domain - UTC ONLY"""
+        """Test DNS resolution for a domain - vietnam ONLY"""
         try:
             if not domain:
                 return {
                     "valid": False, 
                     "message": "Domain is required",
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             
             domain = domain.strip().lower()
@@ -225,7 +225,7 @@ class WhitelistService:
             if not validation_result["valid"]:
                 return {
                     **validation_result,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             
             # Test DNS resolution
@@ -244,7 +244,7 @@ class WhitelistService:
                     "domain": domain,
                     "ips": ips,
                     "count": len(ips),
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
                 
             except Exception as e:
@@ -252,7 +252,7 @@ class WhitelistService:
                     "valid": False,
                     "message": f"DNS resolution failed: {str(e)}",
                     "domain": domain,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
                 
         except Exception as e:
@@ -260,11 +260,11 @@ class WhitelistService:
             return {
                 "valid": False, 
                 "message": f"DNS test failed: {str(e)}",
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def _get_detailed_changes(self, since_naive: datetime) -> Dict:
-        """Get detailed changes since specified time - UTC ONLY"""
+        """Get detailed changes since specified time - vietnam ONLY"""
         try:
             changes = {
                 "added": [],
@@ -332,7 +332,7 @@ class WhitelistService:
             return {"added": [], "removed": [], "modified": [], "active_domains": []}
     
     def get_agent_sync_data(self, since_datetime: Optional[object] = None, agent_id: str = None) -> Dict:
-        """Get whitelist data for agent synchronization with detailed changes - UTC ONLY"""
+        """Get whitelist data for agent synchronization with detailed changes - vietnam ONLY"""
         try:
             sync_type = "full"  # Default to full sync
             changes_details = {
@@ -346,21 +346,21 @@ class WhitelistService:
             if since_datetime:
                 try:
                     sync_type = "incremental"
-                    current_time = to_utc_naive(now_utc())
+                    current_time = to_vietnam_naive(now_vietnam())
                     
-                    # Convert since to UTC naive
+                    # Convert since to vietnam naive
                     if isinstance(since_datetime, str):
-                        since_utc = parse_agent_timestamp(since_datetime)
-                        since_naive = since_utc.replace(tzinfo=None)
+                        since_vietnam = parse_agent_timestamp(since_datetime)
+                        since_naive = since_vietnam.replace(tzinfo=None)
                     else:
                         if isinstance(since_datetime, datetime):
                             if since_datetime.tzinfo is None:
-                                since_utc = since_datetime.replace(tzinfo=timezone.utc)
+                                since_vietnam = since_datetime.replace(tzinfo=timezone.vietnam)
                             else:
-                                since_utc = since_datetime.astimezone(timezone.utc)
-                            since_naive = since_utc.replace(tzinfo=None)
+                                since_vietnam = since_datetime.astimezone(timezone.vietnam)
+                            since_naive = since_vietnam.replace(tzinfo=None)
                         else:
-                            since_naive = to_utc_naive(now_utc())
+                            since_naive = to_vietnam_naive(now_vietnam())
                     
                     # Check if since is too old (more than 24 hours)
                     hours_ago = (current_time - since_naive).total_seconds() / 3600
@@ -393,7 +393,7 @@ class WhitelistService:
                 entries = self.model.get_entries_for_sync(since_datetime)
                 self.logger.info(f"Full sync: returning {len(entries)} domains")
             
-            current_time = to_utc_naive(now_utc())
+            current_time = to_vietnam_naive(now_vietnam())
             
             # Format entries for agent sync
             domains = []
@@ -441,7 +441,7 @@ class WhitelistService:
             }
     
     def delete_entry(self, entry_id: str) -> bool:
-        """Delete an entry - UTC ONLY"""
+        """Delete an entry - vietnam ONLY"""
         entry = self.model.find_entry_by_id(entry_id)
         if not entry:
             raise ValueError("Entry not found")
@@ -453,20 +453,20 @@ class WhitelistService:
                 "id": entry_id,
                 "value": entry.get("value"),
                 "type": entry.get("type", "domain"),
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             })
         
         return success
     
     def bulk_add_entries(self, entries_data: List[Dict], client_ip: str) -> Dict:
-        """Bulk add entries to whitelist - UTC ONLY"""
+        """Bulk add entries to whitelist - vietnam ONLY"""
         if not entries_data:
             raise ValueError("No entries provided")
         
         if len(entries_data) > 1000:
             raise ValueError("Maximum 1000 entries allowed per bulk operation")
         
-        current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+        current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
         processed_entries = []
         errors = []
         
@@ -517,7 +517,7 @@ class WhitelistService:
             self.socketio.emit("whitelist_bulk_added", {
                 "count": len(inserted_ids),
                 "added_by": client_ip,
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             })
         
         return {
@@ -525,14 +525,14 @@ class WhitelistService:
             "error_count": len(errors),
             "errors": errors[:10],
             "success": len(inserted_ids) > 0,
-            "server_time": now_iso()  # UTC ISO
+            "server_time": now_iso()  # vietnam ISO
         }
     
     def get_statistics(self) -> Dict:
-        """Get whitelist statistics - UTC ONLY"""
+        """Get whitelist statistics - vietnam ONLY"""
         try:
             stats = self.model.get_statistics()
-            stats["server_time"] = now_iso()  # UTC ISO
+            stats["server_time"] = now_iso()  # vietnam ISO
             return stats
         except Exception as e:
             self.logger.error(f"Error getting statistics: {e}")
@@ -542,11 +542,11 @@ class WhitelistService:
                 "inactive": 0,
                 "by_type": {},
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
-        """Update an entry - UTC ONLY"""
+        """Update an entry - vietnam ONLY"""
         entry = self.model.find_entry_by_id(entry_id)
         if not entry:
             raise ValueError("Entry not found")
@@ -562,8 +562,8 @@ class WhitelistService:
             
             update_data['value'] = value
         
-        # Update timestamp - UTC naive for MongoDB
-        update_data['updated_at'] = to_utc_naive(now_utc())
+        # Update timestamp - vietnam naive for MongoDB
+        update_data['updated_at'] = to_vietnam_naive(now_vietnam())
         
         success = self.model.update_entry(entry_id, update_data)
         
@@ -572,13 +572,13 @@ class WhitelistService:
                 "id": entry_id,
                 "value": update_data.get('value', entry.get('value')),
                 "type": update_data.get('type', entry.get('type', 'domain')),
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             })
         
         return success
     
     def sync_for_agent(self, agent_id: str, token: str, since_datetime: datetime = None) -> Dict:
-        """Sync whitelist for agent - UTC ONLY"""
+        """Sync whitelist for agent - vietnam ONLY"""
         try:
             # Get entries for sync
             domains = self.model.get_entries_for_sync(since_datetime)
@@ -590,7 +590,7 @@ class WhitelistService:
                 "domains": domains,
                 "count": len(domains),
                 "agent_id": agent_id,
-                "server_time": now_iso(),  # UTC ISO
+                "server_time": now_iso(),  # vietnam ISO
                 "since": since_datetime.isoformat() if since_datetime else None
             }
             
@@ -601,11 +601,11 @@ class WhitelistService:
                 "error": str(e),
                 "domains": [],
                 "count": 0,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def get_all_domains(self, limit: int = 100, offset: int = 0, search: str = None) -> Dict:
-        """Get all domains with pagination - UTC ONLY"""
+        """Get all domains with pagination - vietnam ONLY"""
         try:
             # Build query
             query = {}
@@ -628,7 +628,7 @@ class WhitelistService:
                 "total": total_count,
                 "limit": limit,
                 "offset": offset,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
         except Exception as e:
@@ -638,11 +638,11 @@ class WhitelistService:
                 "error": str(e),
                 "domains": [],
                 "total": 0,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def add_domain(self, domain_value: str, category: str = "general") -> Dict:
-        """Add new domain to whitelist - UTC ONLY"""
+        """Add new domain to whitelist - vietnam ONLY"""
         try:
             # Check if domain already exists
             existing = self.model.find_entry_by_value(domain_value)
@@ -651,7 +651,7 @@ class WhitelistService:
                     "success": False,
                     "error": "Domain already exists in whitelist",
                     "existing_entry": existing,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             
             # Validate domain
@@ -660,7 +660,7 @@ class WhitelistService:
                 return {
                     "success": False,
                     "error": validation.get("message", "Invalid domain"),
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             
             # Create entry data
@@ -681,7 +681,7 @@ class WhitelistService:
                 "entry_id": entry_id,
                 "domain": domain_value,
                 "category": category,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
         except Exception as e:
@@ -689,11 +689,11 @@ class WhitelistService:
             return {
                 "success": False,
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def delete_domain(self, domain_id: str) -> Dict:
-        """Delete domain from whitelist - UTC ONLY"""
+        """Delete domain from whitelist - vietnam ONLY"""
         try:
             # Check if domain exists
             existing = self.model.find_entry_by_id(domain_id)
@@ -701,7 +701,7 @@ class WhitelistService:
                 return {
                     "success": False,
                     "error": "Domain not found",
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             
             # Delete domain
@@ -712,13 +712,13 @@ class WhitelistService:
                     "success": True,
                     "domain_id": domain_id,
                     "domain_value": existing.get("value"),
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             else:
                 return {
                     "success": False,
                     "error": "Failed to delete domain",
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
                 
         except Exception as e:
@@ -726,11 +726,11 @@ class WhitelistService:
             return {
                 "success": False,
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def import_domains(self, domains: List[str], category: str = "imported") -> Dict:
-        """Import multiple domains - UTC ONLY"""
+        """Import multiple domains - vietnam ONLY"""
         try:
             added_count = 0
             duplicate_count = 0
@@ -779,7 +779,7 @@ class WhitelistService:
                 "error_count": error_count,
                 "errors": errors[:10],  # Limit error list
                 "total_processed": len(domains),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
         except Exception as e:
@@ -787,11 +787,11 @@ class WhitelistService:
             return {
                 "success": False,
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def export_domains(self, format: str = "json", category: str = None) -> Dict:
-        """Export domains in specified format - UTC ONLY"""
+        """Export domains in specified format - vietnam ONLY"""
         try:
             # Build query
             query = {}
@@ -811,7 +811,7 @@ class WhitelistService:
                     "data": text_data,
                     "count": len(domain_list),
                     "format": format,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             else:
                 # JSON format
@@ -820,7 +820,7 @@ class WhitelistService:
                     "data": domains,
                     "count": len(domains),
                     "format": format,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
                 
         except Exception as e:
@@ -828,5 +828,5 @@ class WhitelistService:
             return {
                 "success": False,
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  #  ISO
             }

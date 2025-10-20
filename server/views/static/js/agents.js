@@ -17,12 +17,12 @@ function parseTimestampCorrectly(timestamp) {
         const normalized = String(timestamp).trim();
 
         // If the timestamp already contains an explicit timezone indicator, let the Date
-        // constructor handle the conversion (it always stores values as UTC internally).
+        // constructor handle the conversion (it always stores values as vietnam internally).
         if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
             return new Date(normalized);
         }
 
-        // For naive ISO strings (no timezone info), treat them as UTC explicitly.
+        // For naive ISO strings (no timezone info), treat them as vietnam explicitly.
         if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(normalized)) {
             return new Date(`${normalized}Z`);
         }

@@ -1,6 +1,6 @@
 """
 Whitelist Controller - handles whitelist HTTP requests
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 import logging
@@ -9,7 +9,7 @@ from typing import Dict, Tuple
 from models.whitelist_model import WhitelistModel
 from services.whitelist_service import WhitelistService
 
-# Import time utilities - UTC ONLY
+# Import time utilities - vietnam ONLY
 from time_utils import now_iso, parse_agent_timestamp
 
 class WhitelistController:
@@ -70,7 +70,7 @@ class WhitelistController:
                                    view_func=self.bulk_delete_entries)
     
     def agent_sync(self):
-        """Sync whitelist for agents - UTC ONLY"""
+        """Sync whitelist for agents - vietnam ONLY"""
         try:
             # Get query parameters
             since = request.args.get('since')
@@ -78,11 +78,11 @@ class WhitelistController:
             
             self.logger.debug(f"Agent sync request - since: {since}, agent_id: {agent_id}")
             
-            # FIX: Better parameter validation using time_utils - UTC ONLY
+            # FIX: Better parameter validation using time_utils - vietnam ONLY
             since_datetime = None
             if since:
                 try:
-                    since_datetime = parse_agent_timestamp(since)  # UTC parsing
+                    since_datetime = parse_agent_timestamp(since)  # vietnam parsing
                 except Exception as e:
                     self.logger.warning(f"Invalid since parameter: {since}, error: {e}")
                     # Continue without since filter
@@ -97,10 +97,10 @@ class WhitelistController:
             if "domains" not in result:
                 result["domains"] = []
             
-            # Add success indicator and timestamp - UTC ONLY
+            # Add success indicator and timestamp - vietnam ONLY
             result["success"] = True
             result["agent_id"] = agent_id
-            result["timestamp"] = now_iso()  # UTC ISO
+            result["timestamp"] = now_iso()  # vietnam ISO
             result["count"] = len(result.get("domains", []))
             
             self.logger.debug(f"Returning {len(result.get('domains', []))} domains for agent sync")
@@ -110,12 +110,12 @@ class WhitelistController:
         except Exception as e:
             self.logger.error(f"Error in agent sync: {str(e)}", exc_info=True)
             
-            # FIX: Always return valid JSON with domains array - UTC ONLY
+            # FIX: Always return valid JSON with domains array - vietnam ONLY
             error_response = {
                 "success": False,
                 "error": "Sync failed: " + str(e),
                 "domains": [],  # Always include empty domains array
-                "timestamp": now_iso(),  # UTC ISO
+                "timestamp": now_iso(),  # vietnam ISO
                 "count": 0,
                 "type": "error"
             }
@@ -123,7 +123,7 @@ class WhitelistController:
             return jsonify(error_response), 500
     
     def list_domains(self):
-        """List all whitelist domains - UTC ONLY"""
+        """List all whitelist domains - vietnam ONLY"""
         try:
             # Get pagination parameters
             limit = min(int(request.args.get('limit', 100)), 1000)
@@ -133,9 +133,9 @@ class WhitelistController:
             # Call service method
             result = self.service.get_all_domains(limit, offset, search)
             
-            # Add UTC timestamp to response
+            # Add vietnam timestamp to response
             if isinstance(result, dict):
-                result["timestamp"] = now_iso()  # UTC ISO
+                result["timestamp"] = now_iso()  # vietnam ISO
             
             return jsonify(result), 200
             
@@ -144,7 +144,7 @@ class WhitelistController:
             return self._error_response("Failed to list domains", 500)
     
     def add_domain(self):
-        """Add new domain to whitelist - UTC ONLY"""
+        """Add new domain to whitelist - vietnam ONLY"""
         try:
             if not request.is_json:
                 return self._error_response("Request must be JSON", 400)
@@ -160,18 +160,18 @@ class WhitelistController:
             # Call service method
             result = self.service.add_domain(domain_value, data.get('category', 'general'))
             
-            # Broadcast update via SocketIO - UTC ONLY
+            # Broadcast update via SocketIO - vietnam ONLY
             if self.socketio and result.get('success'):
                 self.socketio.emit('whitelist_updated', {
                     'action': 'added',
                     'domain': domain_value,
                     'category': data.get('category', 'general'),
-                    'timestamp': now_iso()  # UTC ISO
+                    'timestamp': now_iso()  # vietnam ISO
                 })
             
-            # Add UTC timestamp to response
+            # Add vietnam timestamp to response
             if isinstance(result, dict):
-                result["timestamp"] = now_iso()  # UTC ISO
+                result["timestamp"] = now_iso()  # vietnam ISO
             
             return jsonify(result), 201 if result.get('success') else 400
             
@@ -180,22 +180,22 @@ class WhitelistController:
             return self._error_response("Failed to add domain", 500)
     
     def delete_domain(self, domain_id: str):
-        """Delete domain from whitelist - UTC ONLY"""
+        """Delete domain from whitelist - vietnam ONLY"""
         try:
             # Call service method
             result = self.service.delete_domain(domain_id)
             
-            # Broadcast update via SocketIO - UTC ONLY
+            # Broadcast update via SocketIO - vietnam ONLY
             if self.socketio and result.get('success'):
                 self.socketio.emit('whitelist_updated', {
                     'action': 'deleted',
                     'domain_id': domain_id,
-                    'timestamp': now_iso()  # UTC ISO
+                    'timestamp': now_iso()  # vietnam ISO
                 })
             
-            # Add UTC timestamp to response
+            # Add vietnam timestamp to response
             if isinstance(result, dict):
-                result["timestamp"] = now_iso()  # UTC ISO
+                result["timestamp"] = now_iso()  # vietnam ISO
             
             return jsonify(result), 200 if result.get('success') else 404
             
@@ -204,7 +204,7 @@ class WhitelistController:
             return self._error_response("Failed to delete domain", 500)
     
     def import_domains(self):
-        """Import multiple domains - UTC ONLY"""
+        """Import multiple domains - vietnam ONLY"""
         try:
             if not request.is_json:
                 return self._error_response("Request must be JSON", 400)
@@ -220,18 +220,18 @@ class WhitelistController:
             # Call service method
             result = self.service.import_domains(domains, data.get('category', 'imported'))
             
-            # Broadcast update via SocketIO - UTC ONLY
+            # Broadcast update via SocketIO - vietnam ONLY
             if self.socketio and result.get('success'):
                 self.socketio.emit('whitelist_updated', {
                     'action': 'imported',
                     'count': result.get('added_count', 0),
                     'category': data.get('category', 'imported'),
-                    'timestamp': now_iso()  # UTC ISO
+                    'timestamp': now_iso()  # vietnam ISO
                 })
             
-            # Add UTC timestamp to response
+            # Add vietnam timestamp to response
             if isinstance(result, dict):
-                result["timestamp"] = now_iso()  # UTC ISO
+                result["timestamp"] = now_iso()  # vietnam ISO
             
             return jsonify(result), 200
             
@@ -240,7 +240,7 @@ class WhitelistController:
             return self._error_response("Failed to import domains", 500)
     
     def export_domains(self):
-        """Export whitelist domains - UTC ONLY"""
+        """Export whitelist domains - vietnam ONLY"""
         try:
             format = request.args.get('format', 'json')
             category = request.args.get('category')
@@ -249,9 +249,9 @@ class WhitelistController:
             result = self.service.export_domains(format, category)
             
             if result.get('success'):
-                # Add UTC timestamp to response
+                # Add vietnam timestamp to response
                 if isinstance(result, dict):
-                    result["timestamp"] = now_iso()  # UTC ISO
+                    result["timestamp"] = now_iso()  # vietnam ISO
                 
                 if format == 'txt':
                     from flask import Response
@@ -270,7 +270,7 @@ class WhitelistController:
             return self._error_response("Failed to export domains", 500)
     
     def get_statistics(self):
-        """Get whitelist statistics - UTC ONLY"""
+        """Get whitelist statistics - vietnam ONLY"""
         try:
             # Call service method
             stats = self.service.get_statistics()
@@ -278,7 +278,7 @@ class WhitelistController:
             return jsonify({
                 'success': True,
                 'statistics': stats,
-                'timestamp': now_iso()  # UTC ISO
+                'timestamp': now_iso()  # vietnam ISO
             }), 200
             
         except Exception as e:
@@ -430,9 +430,9 @@ class WhitelistController:
             }), 500
     
     def _error_response(self, message: str, status_code: int) -> Tuple:
-        """Create error response - UTC ONLY"""
+        """Create error response - vietnam ONLY"""
         return jsonify({
             "success": False,
             "error": message,
-            "timestamp": now_iso()  # UTC ISO
+            "timestamp": now_iso()  # vietnam ISO
         }), status_code

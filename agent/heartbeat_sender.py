@@ -1,6 +1,6 @@
 """
 Heartbeat Sender - Gửi tín hiệu sống định kỳ lên server
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 import json
@@ -11,13 +11,13 @@ from typing import Dict, Optional
 import psutil  # For system metrics  
 import platform
 
-# Import time utilities - UTC ONLY
+# Import time utilities - vietnam ONLY
 from time_utils import now, now_iso, sleep
 
 logger = logging.getLogger("heartbeat_sender")
 
 class HeartbeatSender:
-    """Gửi heartbeat định kỳ lên server - UTC only"""
+    """Gửi heartbeat định kỳ lên server - vietnam only"""
     
     def __init__(self, config: Dict):
         self.config = config
@@ -94,14 +94,14 @@ class HeartbeatSender:
         logger.info("Heartbeat sender stopped")
     
     def _heartbeat_loop(self):
-        """Main heartbeat loop - UTC only"""
+        """Main heartbeat loop - vietnam only"""
         while self._running:
             try:
                 success = self._send_heartbeat()
                 
                 if success:
                     self._consecutive_failures = 0
-                    self._last_successful_heartbeat = now()  # UTC timestamp
+                    self._last_successful_heartbeat = now()  # vietnam timestamp
                     sleep_time = self.interval
                 else:
                     self._consecutive_failures += 1
@@ -121,15 +121,15 @@ class HeartbeatSender:
                 sleep(self.retry_interval)
     
     def _send_heartbeat(self) -> bool:
-        """Send heartbeat to server - UTC only"""
+        """Send heartbeat to server - vietnam only"""
         # Collect system metrics
         metrics = self._collect_metrics()
         
-        # Create heartbeat data với UTC timestamp
+        # Create heartbeat data với vietnam timestamp
         heartbeat_data = {
             "agent_id": self.agent_id,
             "token": self.agent_token,
-            "timestamp": now_iso(),  # UTC ISO timestamp
+            "timestamp": now_iso(),  # vietnam ISO timestamp
             "metrics": metrics,
             "status": "active",
             "platform": platform.system(),
@@ -170,7 +170,7 @@ class HeartbeatSender:
         return False
     
     def _collect_metrics(self) -> Dict:
-        """Collect system metrics - UTC only"""
+        """Collect system metrics - vietnam only"""
         try:
             # Get disk usage for root drive (cross-platform)
             if platform.system() == "Windows":
@@ -182,10 +182,10 @@ class HeartbeatSender:
                 "cpu_percent": round(psutil.cpu_percent(interval=0.1), 2),
                 "memory_percent": round(psutil.virtual_memory().percent, 2),
                 "disk_percent": round(psutil.disk_usage(disk_path).percent, 2),
-                "uptime_seconds": int(now() - psutil.boot_time()),  # UTC calculation
+                "uptime_seconds": int(now() - psutil.boot_time()),  # vietnam calculation
                 "network_connections": len(psutil.net_connections()),
                 "load_average": psutil.getloadavg() if hasattr(psutil, 'getloadavg') else None,
-                "timestamp": now_iso()  # UTC ISO timestamp
+                "timestamp": now_iso()  # vietnam ISO timestamp
             }
         except Exception as e:
             logger.warning(f"Error collecting metrics: {e}")
@@ -195,14 +195,14 @@ class HeartbeatSender:
                 "disk_percent": 0,
                 "uptime_seconds": 0,
                 "network_connections": 0,
-                "timestamp": now_iso()  # UTC ISO timestamp
+                "timestamp": now_iso()  # vietnam ISO timestamp
             }
     
     def get_status(self) -> Dict:
-        """Get heartbeat sender status - UTC only"""
+        """Get heartbeat sender status - vietnam only"""
         last_heartbeat_iso = None
         if self._last_successful_heartbeat:
-            # Convert UTC timestamp to ISO string
+            # Convert vietnam timestamp to ISO string
             last_heartbeat_iso = now_iso() if self._last_successful_heartbeat > 0 else "never"
         
         return {
@@ -211,7 +211,7 @@ class HeartbeatSender:
             "agent_id": self.agent_id,
             "consecutive_failures": self._consecutive_failures,
             "last_successful_heartbeat": last_heartbeat_iso,
-            "last_successful_timestamp": self._last_successful_heartbeat,  # UTC Unix timestamp
+            "last_successful_timestamp": self._last_successful_heartbeat,  # vietnam Unix timestamp
             "interval": self.interval,
-            "status_timestamp": now_iso()  # UTC ISO timestamp
+            "status_timestamp": now_iso()  # vietnam ISO timestamp
         }

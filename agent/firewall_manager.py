@@ -6,7 +6,7 @@ import socket
 import threading
 from typing import Dict, List, Optional, Set
 
-# Import time utilities - UTC ONLY
+# Import time utilities - vietnam ONLY
 from time_utils import now, now_iso, sleep
 
 # Cấu hình logger cho module này
@@ -365,8 +365,8 @@ class FirewallManager:
                 logger.debug(f"Allow rule already exists for {ip}")
                 return True
             
-            #  SIMPLE NAMING: Using time_utils for timestamp - UTC ONLY
-            timestamp = int(now())  # UTC Unix timestamp
+            #  SIMPLE NAMING: Using time_utils for timestamp - vietnam ONLY
+            timestamp = int(now())  # vietnam Unix timestamp
             rule_name = f"{self.rule_prefix}_Allow_{ip.replace('.', '_')}_{timestamp}"
             
             #  SIMPLE COMMAND: Just allow the IP, Windows handles the rest
@@ -379,7 +379,7 @@ class FirewallManager:
                 "protocol=any",
                 "enable=yes",
                 "profile=any",
-                f"description=ALLOW rule for whitelisted IP {ip} (Created: {now_iso()})"  # UTC ISO
+                f"description=ALLOW rule for whitelisted IP {ip} (Created: {now_iso()})"  # vietnam ISO
             ]
             
             result = subprocess.run(
@@ -692,7 +692,7 @@ class FirewallManager:
             "total_allowed": len(self.allowed_ips) + len(self.essential_ips),
             "rule_prefix": self.rule_prefix,
             "approach": "default_deny_with_allow_rules",
-            "status_timestamp": now_iso()  # UTC timestamp
+            "status_timestamp": now_iso()  # vietnam timestamp
         }
 
     def get_firewall_policy_status(self) -> Dict:
@@ -718,20 +718,20 @@ class FirewallManager:
                     "whitelist_mode_active": self.whitelist_mode_active,
                     "allowed_ips_count": len(self.allowed_ips),
                     "policy_output": output,
-                    "checked_at": now_iso()  # UTC timestamp
+                    "checked_at": now_iso()  # vietnam timestamp
                 }
                 
                 return status
             else:
                 return {
                     "error": f"Failed to get firewall status: {result.stderr}",
-                    "checked_at": now_iso()  # UTC timestamp
+                    "checked_at": now_iso()  # vietnam timestamp
                 }
                 
         except Exception as e:
             return {
                 "error": f"Exception getting firewall status: {e}",
-                "checked_at": now_iso()  # UTC timestamp
+                "checked_at": now_iso()  # vietnam timestamp
             }
 
     def validate_firewall_state(self) -> Dict[str, any]:
@@ -745,7 +745,7 @@ class FirewallManager:
                 "total_allowed_ips": len(self.allowed_ips),
                 "policy_verified": False,
                 "issues": [],
-                "validated_at": now_iso()  # UTC timestamp
+                "validated_at": now_iso()  # vietnam timestamp
             }
             
             # Check policy state
@@ -768,7 +768,7 @@ class FirewallManager:
             logger.error(f"Error validating firewall state: {e}")
             return {
                 "error": str(e),
-                "validated_at": now_iso()  # UTC timestamp
+                "validated_at": now_iso()  # vietnam timestamp
             }
 
     def test_whitelist_connectivity(self, sample_ips: List[str]) -> Dict[str, bool]:

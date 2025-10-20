@@ -2,7 +2,7 @@
 Time Utilities for Firewall Controller Agent 
 
 Simplified time management 
-- All timestamps in UTC
+- All timestamps in vietnam
 """
 
 import logging
@@ -16,18 +16,22 @@ logger = logging.getLogger("time_utils")
 # ========================================
 # CORE TIME FUNCTIONS 
 # ========================================
-
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 def now() -> float:
-    """Unix timestamp (always UTC)."""
+    """Unix timestamp (always vietnam)."""
     return time.time()
 
+def now_vietnam() -> datetime:
+    """Get current Vietnam datetime (Asia/Ho_Chi_Minh)."""
+    return datetime.now(VIETNAM_TZ)
+
 def now_iso() -> str:
-    """UTC time ISO with Z suffix."""
+    """vietnam time ISO with Z suffix."""
     return datetime.now(VIETNAM_TZ).isoformat()
 
 def now_server_compatible(ts: Optional[float] = None) -> str:
     """
-    Return UTC ISO timestamp.
+    Return vietnam ISO timestamp.
     """
     if ts is None:
         return now_iso()
