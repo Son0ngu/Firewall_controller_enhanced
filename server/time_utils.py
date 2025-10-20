@@ -24,10 +24,6 @@ def now_vietnam() -> datetime:
     """Get current Vietnam datetime (Asia/Ho_Chi_Minh)."""
     return datetime.now(VIETNAM_TZ)
 
-def now_vietnam() -> datetime:
-    """Backward compatible alias that returns Vietnam time."""
-    return now_vietnam()
-
 def now_iso() -> str:
     """Get current Vietnam time as ISO string"""
     return now_vietnam().isoformat()
@@ -42,10 +38,6 @@ def to_vietnam(dt: datetime) -> datetime:
         dt = dt.replace(tzinfo=VIETNAM_TZ)
 
     return dt.astimezone(VIETNAM_TZ)
-
-def to_vietnam(dt: datetime) -> datetime:
-    """Backward compatible alias for :func:`to_vietnam`."""
-    return to_vietnam(dt)
 
 def to_vietnam_naive(dt: datetime) -> datetime:
     """Convert datetime to Vietnam naive (for MongoDB storage)"""
