@@ -323,10 +323,12 @@ function renderItems(items) {
                 </div>
                 <div class="col-md-4 text-end">
                     <div class="btn-group btn-group-sm">
-                         <button class="btn btn-outline-danger btn-action"
+                        <button class="btn btn-outline-danger btn-action"
                                 data-action="remove"
-                            <i class="fas fa-trash me-1"></i>
-                            Remove
+                                data-item-id="${itemId}"
+                                title="Remove this item">
+                            <i class="fas fa-trash-alt me-1"></i>
+                            <span>Remove</span>
                         </button>
                     </div>
                 </div>
