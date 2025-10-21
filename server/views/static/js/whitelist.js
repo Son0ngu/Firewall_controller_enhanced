@@ -105,44 +105,9 @@ function refreshBulkActionsUI() {
         bulkActions.classList.remove('show');
     }
 
-    ['bulkActivateBtn', 'bulkDeactivateBtn', 'bulkDeleteBtn'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (btn) {
-            btn.disabled = !hasSelection;
-        }
-    });
-}
-
-async function bulkUpdateItems(active) {
-    if (selectedItems.size === 0) {
-        notify('warning', 'Select items before running bulk update.');
-        return;
-    }
-
-    const actionButtons = document.querySelectorAll('#bulkActions button');
-    actionButtons.forEach(btn => btn.disabled = true);
-
-    try {
-        const response = await fetch('/api/whitelist/bulk-update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                item_ids: Array.from(selectedItems),
-                active
-            })
-        });
-
-        const result = await handleApiResponse(response);
-        const updated = result.updated_count ?? selectedItems.size;
-
-        showSuccess(`${updated} item(s) ${active ? 'activated' : 'deactivated'} successfully.`);
-        selectedItems.clear();
-        await loadItems();
-    } catch (error) {
-        showError('Failed to update items: ' + error.message);
-    } finally {
-        actionButtons.forEach(btn => btn.disabled = false);
-        refreshBulkActionsUI();
+    const deleteBtn = document.getElementById('bulkDeleteBtn');
+    if (deleteBtn) {
+        deleteBtn.disabled = !hasSelection;
     }
 }
 
@@ -358,25 +323,8 @@ function renderItems(items) {
                 </div>
                 <div class="col-md-4 text-end">
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-${isActive ? 'warning' : 'success'} btn-action" 
-                                data-action="toggle" 
-                                data-item-id="${itemId}"
-                                data-active="${isActive}"
-                                title="${isActive ? 'Deactivate' : 'Activate'}">
-                            <i class="fas fa-${isActive ? 'pause' : 'play'} me-1"></i>
-                            ${isActive ? 'Pause' : 'Activate'}
-                        </button>
-                        <button class="btn btn-outline-primary btn-action" 
-                                data-action="edit" 
-                                data-item-id="${itemId}"
-                                title="Edit">
-                            <i class="fas fa-edit me-1"></i>
-                            Edit
-                        </button>
-                        <button class="btn btn-outline-danger btn-action" 
-                                data-action="remove" 
-                                data-item-id="${itemId}"
-                                title="Remove">
+                         <button class="btn btn-outline-danger btn-action"
+                                data-action="remove"
                             <i class="fas fa-trash me-1"></i>
                             Remove
                         </button>
@@ -436,55 +384,10 @@ function showBulkImportModal() {
 async function handleItemAction(event) {
     const action = event.currentTarget.dataset.action;
     const itemId = event.currentTarget.dataset.itemId;
-    const active = event.currentTarget.dataset.active === 'true';
-    
-    console.log('🎯 Item action:', { action, itemId, active });
-    
-    switch (action) {
-        case 'toggle':
-            await toggleItem(itemId, !active);
-            break;
-        case 'edit':
-            editItem(itemId);
-            break;
-        case 'remove':
-            await removeItem(itemId);
-            break;
-    }
-}
+    console.log('🎯 Item action:', { action, itemId });
 
-/**
- * Toggle item active status -  FIXED to call API
- */
-async function toggleItem(itemId, active) {
-    try {
-        console.log(' Toggling item:', itemId, 'to', active);
-
-        const response = await fetch('/api/whitelist/bulk-update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                item_ids: [itemId],
-                active
-            })
-        });
-
-        const result = await handleApiResponse(response);
-        if (result.success === false) {
-            throw new Error(result.error || 'Toggle failed');
-        }
-
-        const updated = result.updated_count ?? 1;
-        if (updated > 1) {
-            showSuccess(`${updated} items updated successfully.`);
-        } else {
-            showSuccess(`Item ${active ? 'activated' : 'deactivated'} successfully.`);
-        }
-
-        await loadItems();
-    } catch (error) {
-        console.error(' Error toggling item:', error);
-        showError('Failed to toggle item: ' + error.message);
+        if (action === 'remove') {
+        await removeItem(itemId);
     }
 }
 
@@ -700,8 +603,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Control buttons
     document.getElementById('refreshBtn').addEventListener('click', refreshItems);
     document.getElementById('bulkActionsBtn').addEventListener('click', toggleBulkActionsPanel);
-    document.getElementById('bulkActivateBtn').addEventListener('click', () => bulkUpdateItems(true));
-    document.getElementById('bulkDeactivateBtn').addEventListener('click', () => bulkUpdateItems(false));
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDeleteItems);
     
     // Scope selection handler
