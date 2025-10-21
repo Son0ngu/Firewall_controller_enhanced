@@ -4,6 +4,7 @@ vietnam ONLY - Clean and simple
 """
 
 from typing import Dict, List, Optional
+from datetime import datetime
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
@@ -12,8 +13,13 @@ import logging
 
 # Import time utilities - vietnam ONLY
 from time_utils import (
-    now_vietnam, to_vietnam_naive, parse_agent_timestamp, 
-    get_time_ago_string, calculate_age_seconds, format_datetime
+    now_vietnam,
+    to_vietnam,
+    to_vietnam_naive,
+    parse_agent_timestamp,
+    get_time_ago_string,
+    calculate_age_seconds,
+    format_datetime,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,16 +105,10 @@ class LogModel:
                 if "timestamp" in log and log["timestamp"]:
                     if isinstance(log["timestamp"], str):
                         vietnam_time = parse_agent_timestamp(log["timestamp"])  # vietnam parsing
+                    elif isinstance(log["timestamp"], datetime):
+                        vietnam_time = to_vietnam(log["timestamp"])
                     else:
-                        # Convert to vietnam
-                        from datetime import datetime, timezone
-                        if isinstance(log["timestamp"], datetime):
-                            if log["timestamp"].tzinfo is None:
-                                vietnam_time = log["timestamp"].replace(tzinfo=timezone.vietnam)
-                            else:
-                                vietnam_time = log["timestamp"].astimezone(timezone.vietnam)
-                        else:
-                            vietnam_time = now_vietnam()
+                        vietnam_time = now_vietnam()
                     
                     log["timestamp"] = vietnam_time
                     log["display_time"] = vietnam_time.strftime('%H:%M:%S')
@@ -180,17 +180,12 @@ class LogModel:
                 # Parse ISO string and convert to vietnam naive
                 vietnam_time = parse_agent_timestamp(timestamp)  # vietnam parsing
                 return vietnam_time.replace(tzinfo=None)
-            else:
+            elif isinstance(timestamp, datetime):
                 # Convert datetime to vietnam naive
-                from datetime import datetime, timezone
-                if isinstance(timestamp, datetime):
-                    if timestamp.tzinfo is None:
-                        vietnam_time = timestamp.replace(tzinfo=timezone.vietnam)
-                    else:
-                        vietnam_time = timestamp.astimezone(timezone.vietnam)
-                    return vietnam_time.replace(tzinfo=None)
-                else:
-                    return to_vietnam_naive(now_vietnam())
+                vietnam_time = to_vietnam(timestamp)
+                return vietnam_time.replace(tzinfo=None)
+            else:
+                return to_vietnam_naive(now_vietnam())
         except Exception as e:
             self.logger.warning(f"Failed to parse timestamp '{timestamp}': {e}, using current time")
             return to_vietnam_naive(now_vietnam())
@@ -224,16 +219,10 @@ class LogModel:
                 if 'timestamp' in log and log['timestamp']:
                     if isinstance(log['timestamp'], str):
                         vietnam_time = parse_agent_timestamp(log['timestamp'])  # vietnam parsing
+                    elif isinstance(log['timestamp'], datetime):
+                        vietnam_time = to_vietnam(log['timestamp'])   
                     else:
-                        # Convert to vietnam
-                        from datetime import datetime, timezone
-                        if isinstance(log['timestamp'], datetime):
-                            if log['timestamp'].tzinfo is None:
-                                vietnam_time = log['timestamp'].replace(tzinfo=timezone.vietnam)
-                            else:
-                                vietnam_time = log['timestamp'].astimezone(timezone.vietnam)
-                        else:
-                            vietnam_time = now_vietnam()
+                        vietnam_time = now_vietnam()
                     
                     log['timestamp'] = vietnam_time.isoformat()
                     log['display_time'] = vietnam_time.strftime('%Y-%m-%d %H:%M:%S')
@@ -263,16 +252,10 @@ class LogModel:
                 if 'timestamp' in log and log['timestamp']:
                     if isinstance(log['timestamp'], str):
                         vietnam_time = parse_agent_timestamp(log['timestamp'])  # vietnam parsing
+                    elif isinstance(log['timestamp'], datetime):
+                        vietnam_time = to_vietnam(log['timestamp'])
                     else:
-                        # Convert to vietnam
-                        from datetime import datetime, timezone
-                        if isinstance(log['timestamp'], datetime):
-                            if log['timestamp'].tzinfo is None:
-                                vietnam_time = log['timestamp'].replace(tzinfo=timezone.vietnam)
-                            else:
-                                vietnam_time = log['timestamp'].astimezone(timezone.vietnam)
-                        else:
-                            vietnam_time = now_vietnam()
+                         vietnam_time = now_vietnam()
                     
                     log['timestamp'] = vietnam_time.isoformat()
                     log['display_time'] = vietnam_time.strftime('%Y-%m-%d %H:%M:%S')
@@ -294,16 +277,10 @@ class LogModel:
                 # Convert to vietnam naive for MongoDB query
                 if isinstance(since, str):
                     since_vietnam = parse_agent_timestamp(since)  # vietnam parsing
+                elif isinstance(since, datetime):
+                    since_vietnam = to_vietnam(since)
                 else:
-                    from datetime import datetime, timezone
-                    if isinstance(since, datetime):
-                        if since.tzinfo is None:
-                            since_vietnam = since.replace(tzinfo=timezone.vietnam)
-                        else:
-                            since_vietnam = since.astimezone(timezone.vietnam)
-                    else:
-                        since_vietnam = now_vietnam()
-                since = since_vietnam.replace(tzinfo=None)
+                     since_vietnam = now_vietnam()
             
             query = {'timestamp': {'$gte': since}}
             

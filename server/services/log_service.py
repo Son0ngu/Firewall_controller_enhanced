@@ -5,11 +5,17 @@ vietnam ONLY - Clean and simple
 
 import logging
 from typing import Dict, List
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from models.log_model import LogModel
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, to_vietnam_naive, parse_agent_timestamp, now_iso
+from time_utils import (
+    now_iso,
+    now_vietnam,
+    parse_agent_timestamp,
+    to_vietnam,
+    to_vietnam_naive,
+)
 
 class LogService:
     """Service class for log business logic - vietnam ONLY"""
@@ -96,16 +102,10 @@ class LogService:
                             # Parse agent timestamp using vietnam parsing
                             if isinstance(log['timestamp'], str):
                                 agent_time = parse_agent_timestamp(log['timestamp'])  # vietnam parsing
+                            elif isinstance(log['timestamp'], datetime):
+                                agent_time = to_vietnam(log['timestamp'])
                             else:
-                                # Convert to vietnam
-                                from datetime import datetime, timezone
-                                if isinstance(log['timestamp'], datetime):
-                                    if log['timestamp'].tzinfo is None:
-                                        agent_time = log['timestamp'].replace(tzinfo=timezone.vietnam)
-                                    else:
-                                        agent_time = log['timestamp'].astimezone(timezone.vietnam)
-                                else:
-                                    agent_time = now_vietnam()
+                              agent_time = now_vietnam()
                             
                             # Convert to naive for MongoDB storage
                             processed_log['timestamp'] = agent_time.replace(tzinfo=None)
@@ -307,15 +307,10 @@ class LogService:
                     if log.get("timestamp"):
                         try:
                             timestamp = log["timestamp"]
-                            if hasattr(timestamp, 'isoformat'):
-                                # Convert to vietnam if needed
-                                if timestamp.tzinfo is None:
-                                    timestamp = timestamp.replace(tzinfo=timezone.vietnam)
-                                else:
-                                    timestamp = timestamp.astimezone(timezone.vietnam)
-                                formatted_log["timestamp"] = timestamp.isoformat()
+                            if isinstance(timestamp, datetime):
+                                formatted_log["timestamp"] = to_vietnam(timestamp).isoformat()
                             elif isinstance(timestamp, str):
-                                formatted_log["timestamp"] = timestamp
+                                formatted_log["timestamp"] = parse_agent_timestamp(timestamp).isoformat()
                             else:
                                 formatted_log["timestamp"] = str(timestamp)
                         except Exception as e:

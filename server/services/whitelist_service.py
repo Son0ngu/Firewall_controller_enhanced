@@ -5,11 +5,17 @@ vietnam ONLY - Clean and simple
 
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from models.whitelist_model import WhitelistModel
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, to_vietnam_naive, now_iso, parse_agent_timestamp
+from time_utils import (
+    now_iso,
+    now_vietnam,
+    parse_agent_timestamp,
+    to_vietnam,
+    to_vietnam_naive,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -354,10 +360,7 @@ class WhitelistService:
                         since_naive = since_vietnam.replace(tzinfo=None)
                     else:
                         if isinstance(since_datetime, datetime):
-                            if since_datetime.tzinfo is None:
-                                since_vietnam = since_datetime.replace(tzinfo=timezone.vietnam)
-                            else:
-                                since_vietnam = since_datetime.astimezone(timezone.vietnam)
+                            since_vietnam = to_vietnam(since_datetime)
                             since_naive = since_vietnam.replace(tzinfo=None)
                         else:
                             since_naive = to_vietnam_naive(now_vietnam())

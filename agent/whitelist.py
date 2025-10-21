@@ -21,11 +21,17 @@ import concurrent.futures
 import atexit
 from collections import OrderedDict, namedtuple
 from typing import Dict, Set, Optional, List, Tuple
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 # Time utilities - vietnam ONLY
-from time_utils import now, now_iso, sleep, is_cache_valid, cache_age
+from time_utils import (
+    cache_age,
+    is_cache_valid,
+    now,
+    now_iso,
+    now_server_compatible,
+    sleep,
+)
 
 # High-performance DNS libraries (cleaned imports)
 import dns.resolver
@@ -1081,7 +1087,7 @@ class WhitelistManager:
     
     def _timestamp_to_iso(self, timestamp: float) -> str:
         """Convert vietnam timestamp to ISO string"""
-        return datetime.fromtimestamp(timestamp, timezone.vietnam).isoformat().replace('+00:00', 'Z')
+        return now_server_compatible(timestamp)
     
     # ========================================
     # FIREWALL INTEGRATION (optimized calls)

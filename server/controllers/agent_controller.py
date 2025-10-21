@@ -4,13 +4,14 @@ vietnam ONLY - Clean and simple
 """
 
 import logging
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.agent_model import AgentModel
 from services.agent_service import AgentService
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, now_iso
+from time_utils import now_vietnam, now_iso, to_vietnam, parse_agent_timestamp
 
 class AgentController:
     """Controller for agent operations"""
@@ -458,16 +459,18 @@ class AgentController:
             for agent in agents:
                 last_heartbeat = agent.get("last_heartbeat")
                 if last_heartbeat:
-                    if last_heartbeat.tzinfo is None:
-                        last_heartbeat_tz = last_heartbeat.replace(tzinfo=current_time.tzinfo)
+                    if isinstance(last_heartbeat, str):
+                        last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)
+                    elif isinstance(last_heartbeat, datetime):
+                        last_heartbeat_vietnam = to_vietnam(last_heartbeat)
                     else:
-                        last_heartbeat_tz = last_heartbeat.astimezone(current_time.tzinfo)
-                    
-                    time_diff = (current_time - last_heartbeat_tz).total_seconds()
+                        last_heartbeat_vietnam = parse_agent_timestamp(str(last_heartbeat))
+
+                    time_diff = (current_time - last_heartbeat_vietnam).total_seconds()
                     
                     debug_info["agents"].append({
                         "hostname": agent.get("hostname"),
-                        "last_heartbeat": last_heartbeat.isoformat(),
+                        "last_heartbeat": last_heartbeat_vietnam.isoformat(),
                         "time_since_heartbeat": time_diff,
                         "status": "active" if time_diff < self.service.active_threshold else 
                                  "inactive" if time_diff < self.service.inactive_threshold else "offline"

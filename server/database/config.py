@@ -12,6 +12,9 @@ from pymongo import MongoClient
 # Import dotenv để load .env file
 from dotenv import load_dotenv
 
+#Time utilities - vietnam ONLY
+from time_utils import now_iso
+
 # Load .env file
 load_dotenv()
 
@@ -34,12 +37,6 @@ def get_env(key: str, default: Any = None) -> Any:
         except ValueError:
             return default
     return value
-
-def now_iso() -> str:
-    """Get current vietnam time as ISO string - local function to avoid circular import"""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.vietnam).isoformat()
-
 class Config:
     """Configuration class for the application - vietnam ONLY"""
     

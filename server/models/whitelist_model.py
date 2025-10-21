@@ -13,7 +13,7 @@ import logging
 import re
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, to_vietnam_naive, parse_agent_timestamp
+from time_utils import now_vietnam, to_vietnam, to_vietnam_naive, parse_agent_timestamp
 
 class WhitelistModel:
     """Model for whitelist data operations - vietnam ONLY"""
@@ -204,11 +204,15 @@ class WhitelistModel:
         for date_field in ["added_date", "created_at", "updated_at", "expiry_date", "last_used"]:
             if date_field in entry and entry[date_field]:
                 try:
-                    # Since we store as vietnam naive datetime, convert to vietnam timezone for display
-                    if hasattr(entry[date_field], 'strftime'):
-                        # Convert naive datetime to vietnam timezone
-                        from datetime import timezone
-                        vietnam_dt = entry[date_field].replace(tzinfo=timezone.vietnam)
+                    value = entry[date_field]
+                    if isinstance(value, datetime.datetime):
+                        vietnam_dt = to_vietnam(value)
+                    elif isinstance(value, str):
+                        vietnam_dt = parse_agent_timestamp(value)
+                    else:
+                        vietnam_dt = None
+
+                    if vietnam_dt:
                         
                         entry[f"{date_field}_formatted"] = vietnam_dt.strftime('%Y-%m-%d %H:%M:%S vietnam')
                         entry[f"{date_field}_iso"] = vietnam_dt.isoformat()
@@ -397,12 +401,8 @@ class WhitelistModel:
                     since_naive = since_vietnam.replace(tzinfo=None)  # vietnam naive for MongoDB
                 else:
                     # Convert datetime to vietnam naive
-                    from datetime import timezone
-                    if isinstance(since_date, datetime):
-                        if since_date.tzinfo is None:
-                            since_vietnam = since_date.replace(tzinfo=timezone.vietnam)
-                        else:
-                            since_vietnam = since_date.astimezone(timezone.vietnam)
+                    if isinstance(since_date, datetime.datetime):
+                        since_vietnam = to_vietnam(since_date)
                         since_naive = since_vietnam.replace(tzinfo=None)
                     else:
                         since_naive = to_vietnam_naive(now_vietnam())
@@ -424,8 +424,11 @@ class WhitelistModel:
                 # Add timestamp for sync - vietnam ISO format
                 if entry.get("added_date"):
                     # Convert naive datetime to vietnam timezone for ISO format
-                    from datetime import timezone
-                    vietnam_dt = entry["added_date"].replace(tzinfo=timezone.vietnam)
+                    added_value = entry["added_date"]
+                    if isinstance(added_value, datetime.datetime):
+                        vietnam_dt = to_vietnam(added_value)
+                    else:
+                        vietnam_dt = parse_agent_timestamp(str(added_value))
                     sync_entry["added_date"] = vietnam_dt.isoformat()
                 
                 sync_entries.append(sync_entry)

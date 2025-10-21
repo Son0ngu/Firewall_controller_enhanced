@@ -8,16 +8,21 @@ import time
 import secrets
 import uuid
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from bson import ObjectId
 from models.agent_model import AgentModel
 
 # Import time utilities - vietnam ONLY
 from time_utils import (
-    now_vietnam, to_vietnam_naive, now_iso, 
-    parse_agent_timestamp, calculate_age_seconds, 
-    format_datetime, get_time_ago_string
+    now_vietnam,
+    to_vietnam,
+    to_vietnam_naive,
+    now_iso,
+    parse_agent_timestamp,
+    calculate_age_seconds,
+    format_datetime,
+    get_time_ago_string,
 )
 
 class AgentService:
@@ -158,13 +163,8 @@ class AgentService:
                         if isinstance(last_heartbeat, str):
                             # Parse string heartbeat
                             last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)  # vietnam parsing
-                        elif isinstance(last_heartbeat, datetime):
-                            if last_heartbeat.tzinfo is None:
-                                # Naive datetime from MongoDB is vietnam, add timezone
-                                last_heartbeat_vietnam = last_heartbeat.replace(tzinfo=timezone.vietnam)
-                            else:
-                                # Has timezone - convert to vietnam
-                                last_heartbeat_vietnam = last_heartbeat.astimezone(timezone.vietnam)
+                        # Normalize to Vietnam timezone using shared utilities
+                            last_heartbeat_vietnam = to_vietnam(last_heartbeat)
                         else:
                             self.logger.warning(f"{hostname}: Unknown heartbeat type: {type(last_heartbeat)}")
                             agent['status'] = 'offline'
@@ -385,13 +385,11 @@ class AgentService:
                     if agent.get(time_field):
                         try:
                             timestamp = agent[time_field]
-                            if hasattr(timestamp, 'isoformat'):
-                                # Convert to vietnam if needed
-                                if timestamp.tzinfo is None:
-                                    timestamp = timestamp.replace(tzinfo=timezone.vietnam)
-                                else:
-                                    timestamp = timestamp.astimezone(timezone.vietnam)
-                                formatted_agent[time_field] = timestamp.isoformat()
+                            if isinstance(timestamp, datetime):
+                                vietnam_dt = to_vietnam(timestamp)
+                                formatted_agent[time_field] = vietnam_dt.isoformat()
+                            elif isinstance(timestamp, str):
+                                formatted_agent[time_field] = parse_agent_timestamp(timestamp).isoformat()
                             else:
                                 formatted_agent[time_field] = str(timestamp)
                         except Exception as e:
@@ -826,10 +824,7 @@ class AgentService:
                 
                 if last_heartbeat:
                     if isinstance(last_heartbeat, datetime):
-                        if last_heartbeat.tzinfo is None:
-                            last_heartbeat_vietnam = last_heartbeat.replace(tzinfo=timezone.vietnam)
-                        else:
-                            last_heartbeat_vietnam = last_heartbeat.astimezone(timezone.vietnam)
+                        last_heartbeat_vietnam = to_vietnam(last_heartbeat)
                         
                         time_diff = calculate_age_seconds(last_heartbeat_vietnam)
                         

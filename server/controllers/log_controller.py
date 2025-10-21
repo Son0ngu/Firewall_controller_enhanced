@@ -2,7 +2,7 @@
 Log Controller - handles log HTTP requests
 vietnam ONLY - Clean and simple
 """
-
+from datetime import timedelta
 from flask import Blueprint, request, jsonify, Response
 from typing import Dict, Tuple
 from models.log_model import LogModel
@@ -10,7 +10,7 @@ from services.log_service import LogService
 import logging
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_iso
+from time_utils import now_iso, now_vietnam, to_vietnam_naive
 
 class LogController:
     """Controller for log operations"""
@@ -145,9 +145,8 @@ class LogController:
             
             elif clear_action == 'old':
                 # Clear logs older than 30 days
-                from datetime import datetime, timedelta, timezone
-                thirty_days_ago = datetime.now(timezone.vietnam) - timedelta(days=30)
-                filters['timestamp'] = {'$lt': thirty_days_ago}
+                cutoff_time = to_vietnam_naive(now_vietnam() - timedelta(days=30))
+                filters['timestamp'] = {'$lt': cutoff_time}
             
             elif clear_action == 'filtered':
                 # Use provided filters (already set above)
