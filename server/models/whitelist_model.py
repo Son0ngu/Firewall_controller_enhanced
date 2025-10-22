@@ -13,7 +13,7 @@ import logging
 import re
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, to_vietnam, to_vietnam_naive, parse_agent_timestamp
+from time_utils import now_vietnam, to_vietnam, parse_agent_timestamp
 
 class WhitelistModel:
     """Model for whitelist data operations - vietnam ONLY"""
@@ -129,10 +129,10 @@ class WhitelistModel:
     def insert_entry(self, entry_data: Dict) -> str:
         """Insert a new whitelist entry - vietnam ONLY"""
         try:
-            # Use vietnam time for all timestamps - vietnam naive for MongoDB storage
-            current_time = to_vietnam_naive(now_vietnam())
+            # Use vietnam time for all timestamps
+            current_time = now_vietnam()
             
-            # Store all timestamps as naive datetime in MongoDB
+            # Store all timestamps as timezone-aware Vietnam datetimes
             entry_data["added_date"] = current_time
             entry_data["created_at"] = current_time
             entry_data["updated_at"] = current_time
@@ -243,7 +243,7 @@ class WhitelistModel:
     def cleanup_expired_entries(self) -> int:
         """Remove expired entries - vietnam ONLY"""
         try:
-            current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB comparison
+            current_time = now_vietnam()
             
             #  ADD: Debug log before cleanup
             expired_query = {"expiry_date": {"$lt": current_time}}
@@ -329,8 +329,8 @@ class WhitelistModel:
     def update_entry(self, entry_id: str, update_data: Dict) -> bool:
         """Update entry by ID - vietnam ONLY"""
         try:
-            # Add updated timestamp - vietnam naive for MongoDB
-            update_data["updated_at"] = to_vietnam_naive(now_vietnam())
+            # Add updated timestamp
+            update_data["updated_at"] = now_vietnam()
             
             result = self.collection.update_one(
                 {"_id": ObjectId(entry_id)},
@@ -395,19 +395,8 @@ class WhitelistModel:
             query = {"is_active": True}
             
             if since_date:
-                # Parse and convert to vietnam naive for database query
-                if isinstance(since_date, str):
-                    since_vietnam = parse_agent_timestamp(since_date)  # vietnam parsing
-                    since_naive = since_vietnam.replace(tzinfo=None)  # vietnam naive for MongoDB
-                else:
-                    # Convert datetime to vietnam naive
-                    if isinstance(since_date, datetime.datetime):
-                        since_vietnam = to_vietnam(since_date)
-                        since_naive = since_vietnam.replace(tzinfo=None)
-                    else:
-                        since_naive = to_vietnam_naive(now_vietnam())
-                
-                query["added_date"] = {"$gte": since_naive}
+                since_vietnam = parse_agent_timestamp(since_date)
+                query["added_date"] = {"$gte": since_vietnam}
             
             entries = list(self.collection.find(query).sort("added_date", ASCENDING))
             
@@ -423,15 +412,8 @@ class WhitelistModel:
                 
                 # Add timestamp for sync - vietnam ISO format
                 if entry.get("added_date"):
-                    # Convert naive datetime to vietnam timezone for ISO format
-                    added_value = entry["added_date"]
-                    if isinstance(added_value, datetime.datetime):
-                        vietnam_dt = to_vietnam(added_value)
-                    else:
-                        vietnam_dt = parse_agent_timestamp(str(added_value))
-                    sync_entry["added_date"] = vietnam_dt.isoformat()
-                
-                sync_entries.append(sync_entry)
+                    added_value = parse_agent_timestamp(entry["added_date"])
+                    sync_entry["added_date"] = added_value.isoformat()
             
             return sync_entries
             
@@ -445,8 +427,8 @@ class WhitelistModel:
             return []
         
         try:
-            # Set timestamps for all entries - vietnam naive for MongoDB
-            current_time = to_vietnam_naive(now_vietnam())
+            # Set timestamps for all entries
+            current_time = now_vietnam()
             
             for entry in entries:
                 entry["added_date"] = current_time

@@ -17,10 +17,8 @@ from models.agent_model import AgentModel
 from time_utils import (
     now_vietnam,
     to_vietnam,
-    to_vietnam_naive,
     now_iso,
     parse_agent_timestamp,
-    calculate_age_seconds,
     format_datetime,
     get_time_ago_string,
 )
@@ -70,8 +68,8 @@ class AgentService:
             agents = self.model.get_all_agents(query, limit=1)
             existing_agent = agents[0] if agents else None
             
-            # Use vietnam time for all timestamps - vietnam naive for MongoDB storage
-            current_time = to_vietnam_naive(now_vietnam())
+            # Use vietnam time for all timestamps
+            current_time = now_vietnam()
             
             if existing_agent:
                 # Update existing agent
@@ -159,31 +157,19 @@ class AgentService:
                     self.logger.info(f"{hostname}: Processing heartbeat {last_heartbeat} (type: {type(last_heartbeat)})")
                     
                     try:
-                        # Convert to vietnam if needed
-                        if isinstance(last_heartbeat, str):
-                            # Parse string heartbeat
-                            last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)  # vietnam parsing
-                        # Normalize to Vietnam timezone using shared utilities
-                            last_heartbeat_vietnam = to_vietnam(last_heartbeat)
-                        else:
-                            self.logger.warning(f"{hostname}: Unknown heartbeat type: {type(last_heartbeat)}")
-                            agent['status'] = 'offline'
-                            agent['time_since_heartbeat'] = 999
-                            continue
-                        
-                        # Calculate time difference in seconds
-                        time_diff_seconds = calculate_age_seconds(last_heartbeat_vietnam)
+                        last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)
+
+                        time_diff_seconds = (current_time - last_heartbeat_vietnam).total_seconds()
                         
                         self.logger.info(f"{hostname}: Time calculation:")
                         self.logger.info(f"   Current vietnam: {current_time}")
                         self.logger.info(f"   Heartbeat vietnam: {last_heartbeat_vietnam}")
                         self.logger.info(f"   Difference: {time_diff_seconds:.2f} seconds")
                         
-                        # Status calculation
-                        if time_diff_seconds <= self.active_threshold:      # 5 minutes = active
+                        if time_diff_seconds <= self.active_threshold:
                             status = 'active'
                             self.logger.info(f"{hostname}: {time_diff_seconds:.2f}s ≤ {self.active_threshold}s → ACTIVE")
-                        elif time_diff_seconds <= self.inactive_threshold:  # 30 minutes = inactive
+                        elif time_diff_seconds <= self.inactive_threshold:
                             status = 'inactive'
                             self.logger.info(f"{hostname}: {time_diff_seconds:.2f}s ≤ {self.inactive_threshold}s → INACTIVE")
                         else:                                               # > 30 minutes = offline
@@ -191,7 +177,9 @@ class AgentService:
                             self.logger.info(f"{hostname}: {time_diff_seconds:.2f}s > {self.inactive_threshold}s → OFFLINE")
                         
                         agent['status'] = status
-                        agent['time_since_heartbeat'] = time_diff_seconds / 60  # Convert to minutes for display
+                        agent['time_since_heartbeat'] = time_diff_seconds / 60
+                        agent['last_heartbeat'] = last_heartbeat_vietnam
+
                         
                         self.logger.info(f"{hostname}: FINAL → {time_diff_seconds:.2f}s = {status}")
                         
@@ -271,17 +259,14 @@ class AgentService:
             agent_timestamp = heartbeat_data.get("timestamp")
             if agent_timestamp:
                 try:
-                    # Use parse_agent_timestamp for vietnam parsing
-                    current_time = parse_agent_timestamp(agent_timestamp)
-                    # Convert to naive for MongoDB storage
-                    current_time_naive = current_time.replace(tzinfo=None)
-                    self.logger.info(f"Agent {agent_id} sent: '{agent_timestamp}' → parsed: {current_time}")
+                    heartbeat_time = parse_agent_timestamp(agent_timestamp)
+                    self.logger.info(f"Agent {agent_id} sent: '{agent_timestamp}' → parsed: {heartbeat_time}")
                     
                 except Exception as e:
                     self.logger.warning(f"Failed to parse agent timestamp '{agent_timestamp}': {e}")
-                    current_time_naive = to_vietnam_naive(now_vietnam())
+                    heartbeat_time = now_vietnam()
             else:
-                current_time_naive = to_vietnam_naive(now_vietnam())
+                heartbeat_time = now_vietnam()
         
             # Update heartbeat with parsed timestamp
             update_data = {
@@ -292,10 +277,10 @@ class AgentService:
                 "last_heartbeat_data": heartbeat_data,
                 "platform": heartbeat_data.get("platform"),
                 "os_info": heartbeat_data.get("os_info"),
-                "last_heartbeat": current_time_naive  # vietnam naive for MongoDB
+                "last_heartbeat": heartbeat_time
             }
             
-            self.logger.info(f"Setting heartbeat for {agent_id}: {current_time_naive}")
+            self.logger.info(f"Setting heartbeat for {agent_id}: {heartbeat_time}")
             
             success = self.model.update_heartbeat(agent_id, update_data)
             
@@ -506,7 +491,7 @@ class AgentService:
             ping_result = self._ping_ip_address(ip_address)
             
             # Use vietnam time for updates
-            current_time = to_vietnam_naive(now_vietnam())
+            current_time = now_vietnam()
             
             if ping_result["success"]:
                 # Success - update agent status to active
@@ -640,9 +625,9 @@ class AgentService:
             # Generate command ID
             command_id = str(uuid.uuid4())
             
-            # Create command document - vietnam naive for MongoDB
-            current_time = to_vietnam_naive(now_vietnam())
-            
+            # Create command document
+            current_time = now_vietnam()
+
             command_doc = {
                 "_id": ObjectId(),
                 "command_id": command_id,
@@ -680,8 +665,8 @@ class AgentService:
             if agent.get("agent_token") != token:
                 raise ValueError("Invalid token")
             
-            # Get pending commands - vietnam naive for MongoDB query
-            current_time = to_vietnam_naive(now_vietnam())
+            # Get pending commands
+            current_time = now_vietnam()
             
             commands = list(self.commands_collection.find({
                 "agent_id": agent_id,
@@ -718,8 +703,8 @@ class AgentService:
             if agent.get("agent_token") != token:
                 raise ValueError("Invalid token")
             
-            # Update command - vietnam naive for MongoDB
-            current_time = to_vietnam_naive(now_vietnam())
+            # Update command timestamps
+            current_time = now_vietnam()
             
             update_data = {
                 "status": status,
@@ -823,10 +808,9 @@ class AgentService:
                 }
                 
                 if last_heartbeat:
-                    if isinstance(last_heartbeat, datetime):
-                        last_heartbeat_vietnam = to_vietnam(last_heartbeat)
-                        
-                        time_diff = calculate_age_seconds(last_heartbeat_vietnam)
+                    try:
+                        last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)
+                        time_diff = (current_time - last_heartbeat_vietnam).total_seconds()
                         
                         agent_debug.update({
                             "last_heartbeat_vietnam": last_heartbeat_vietnam.isoformat(),
@@ -834,6 +818,8 @@ class AgentService:
                             "calculated_status": "active" if time_diff < self.active_threshold else 
                                                "inactive" if time_diff < self.inactive_threshold else "offline"
                         })
+                    except Exception as exc:
+                        agent_debug["error"] = str(exc)
                 
                 debug_data["agents"].append(agent_debug)
             

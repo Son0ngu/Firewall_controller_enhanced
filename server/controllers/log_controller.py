@@ -10,7 +10,7 @@ from services.log_service import LogService
 import logging
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_iso, now_vietnam, to_vietnam_naive
+from time_utils import now_iso, now_vietnam
 
 class LogController:
     """Controller for log operations"""
@@ -145,7 +145,7 @@ class LogController:
             
             elif clear_action == 'old':
                 # Clear logs older than 30 days
-                cutoff_time = to_vietnam_naive(now_vietnam() - timedelta(days=30))
+                cutoff_time = now_vietnam() - timedelta(days=30)
                 filters['timestamp'] = {'$lt': cutoff_time}
             
             elif clear_action == 'filtered':

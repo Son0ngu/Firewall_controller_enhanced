@@ -8,12 +8,13 @@ import secrets
 import logging
 from typing import Any, Optional
 from pymongo import MongoClient
+from bson.codec_options import CodecOptions
 
 # Import dotenv để load .env file
 from dotenv import load_dotenv
 
 #Time utilities - vietnam ONLY
-from time_utils import now_iso
+from time_utils import now_iso, VIETNAM_TZ
 
 # Load .env file
 load_dotenv()
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Global MongoDB client instance
 _mongo_client: Optional[MongoClient] = None
+_codec_options = CodecOptions(tz_aware=True, tzinfo=VIETNAM_TZ)
 
 def get_env(key: str, default: Any = None) -> Any:
     """Get value from environment variable with proper type conversion."""
@@ -129,7 +131,7 @@ def get_database(config: Config = None):
     
     # FIX: Call get_mongo_client with only config parameter
     client = get_mongo_client(config)
-    return client[config.MONGO_DBNAME]
+    return client.get_database(config.MONGO_DBNAME, codec_options=_codec_options)
 
 # Environment-specific configurations
 class DevelopmentConfig(Config):

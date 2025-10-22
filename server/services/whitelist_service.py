@@ -14,7 +14,6 @@ from time_utils import (
     now_vietnam,
     parse_agent_timestamp,
     to_vietnam,
-    to_vietnam_naive,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,8 +89,8 @@ class WhitelistService:
         if existing:
             raise ValueError("Entry already exists")
         
-        # Use vietnam time for timestamps - vietnam naive for MongoDB
-        current_time = to_vietnam_naive(now_vietnam())
+        # Use vietnam time for timestamps
+        current_time = now_vietnam()
         logger.info(f"Adding entry with vietnam timestamp: {current_time}")
         
         # Create processed entry
@@ -113,7 +112,7 @@ class WhitelistService:
             try:
                 # Parse expiry date using vietnam parsing
                 expiry_vietnam = parse_agent_timestamp(entry_data["expiry_date"])
-                processed_entry["expiry_date"] = expiry_vietnam.replace(tzinfo=None)  # vietnam naive for MongoDB
+                processed_entry["expiry_date"] = expiry_vietnam
                 
             except Exception as e:
                 logger.warning(f"Invalid expiry date format: {e}")
@@ -269,7 +268,7 @@ class WhitelistService:
                 "server_time": now_iso()  # vietnam ISO
             }
     
-    def _get_detailed_changes(self, since_naive: datetime) -> Dict:
+    def _get_detailed_changes(self, since_dt: datetime) -> Dict:
         """Get detailed changes since specified time - vietnam ONLY"""
         try:
             changes = {
@@ -291,12 +290,12 @@ class WhitelistService:
             # Get newly added entries
             added_query = {
                 "is_active": True,
-                "added_date": {"$gte": since_naive}
+                "added_date": {"$gte": since_dt}
             }
             added_entries = list(self.model.collection.find(added_query))
             
             #  ADD: Debug logging
-            self.logger.debug(f"Newly added since {since_naive}: {len(added_entries)}")
+            self.logger.debug(f"Newly added since {since_dt}: {len(added_entries)}")
             
             for entry in added_entries:
                 changes["added"].append({
@@ -311,12 +310,12 @@ class WhitelistService:
             # For soft deletes (is_active = False)
             deactivated_query = {
                 "is_active": False,
-                "updated_at": {"$gte": since_naive}
+                "updated_at": {"$gte": since_dt}
             }
             deactivated_entries = list(self.model.collection.find(deactivated_query))
             
             #  ADD: Debug logging
-            self.logger.debug(f"Deactivated since {since_naive}: {len(deactivated_entries)}")
+            self.logger.debug(f"Deactivated since {since_dt}: {len(deactivated_entries)}")
             
             for entry in deactivated_entries:
                 changes["removed"].append({
@@ -348,37 +347,28 @@ class WhitelistService:
                 "active_domains": []
             }
             
+            since_dt = None
+
             # Handle since parameter
             if since_datetime:
                 try:
                     sync_type = "incremental"
-                    current_time = to_vietnam_naive(now_vietnam())
-                    
-                    # Convert since to vietnam naive
-                    if isinstance(since_datetime, str):
-                        since_vietnam = parse_agent_timestamp(since_datetime)
-                        since_naive = since_vietnam.replace(tzinfo=None)
-                    else:
-                        if isinstance(since_datetime, datetime):
-                            since_vietnam = to_vietnam(since_datetime)
-                            since_naive = since_vietnam.replace(tzinfo=None)
-                        else:
-                            since_naive = to_vietnam_naive(now_vietnam())
-                    
-                    # Check if since is too old (more than 24 hours)
-                    hours_ago = (current_time - since_naive).total_seconds() / 3600
-                    
-                    if hours_ago > 24:  # More than 24 hours ago
+                    since_dt = parse_agent_timestamp(since_datetime)
+                    current_time = now_vietnam()
+
+                    hours_ago = (current_time - since_dt).total_seconds() / 3600
+
+                    if hours_ago > 24:
                         sync_type = "full"
+                        since_dt = None
                         self.logger.info(f"Since date too old ({hours_ago:.1f}h), switching to full sync")
-                        since_datetime = None
                     else:
-                        #  FIX: Get detailed changes for incremental sync
-                        changes_details = self._get_detailed_changes(since_naive)
+                        
+                        changes_details = self._get_detailed_changes(since_dt)
                         
                 except Exception as e:
                     self.logger.warning(f"Error processing since parameter: {e}")
-                    since_datetime = None
+                    since_dt = None
                     sync_type = "full"
             
             #  FIX: Logic để trả về domains cho agent
@@ -393,10 +383,10 @@ class WhitelistService:
                                f"Removed: {len(changes_details['removed'])}")
             else:
                 # Full sync: get all entries
-                entries = self.model.get_entries_for_sync(since_datetime)
+                entries = self.model.get_entries_for_sync(since_dt)
                 self.logger.info(f"Full sync: returning {len(entries)} domains")
             
-            current_time = to_vietnam_naive(now_vietnam())
+            current_time = now_vietnam()
             
             # Format entries for agent sync
             domains = []
@@ -469,7 +459,7 @@ class WhitelistService:
         if len(entries_data) > 1000:
             raise ValueError("Maximum 1000 entries allowed per bulk operation")
         
-        current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
+        current_time = now_vietnam()
         processed_entries = []
         errors = []
         
@@ -565,8 +555,8 @@ class WhitelistService:
             
             update_data['value'] = value
         
-        # Update timestamp - vietnam naive for MongoDB
-        update_data['updated_at'] = to_vietnam_naive(now_vietnam())
+        # Update timestamp
+        update_data['updated_at'] = now_vietnam()
         
         success = self.model.update_entry(entry_id, update_data)
         

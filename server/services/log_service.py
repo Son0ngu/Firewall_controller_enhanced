@@ -14,7 +14,6 @@ from time_utils import (
     now_vietnam,
     parse_agent_timestamp,
     to_vietnam,
-    to_vietnam_naive,
 )
 
 class LogService:
@@ -34,7 +33,7 @@ class LogService:
                 return {"success": False, "error": "No logs provided"}
             
             # Use vietnam time for server processing
-            current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
+            current_time = now_vietnam()
             
             # Process each log entry
             valid_logs = []
@@ -108,7 +107,7 @@ class LogService:
                               agent_time = now_vietnam()
                             
                             # Convert to naive for MongoDB storage
-                            processed_log['timestamp'] = agent_time.replace(tzinfo=None)
+                            processed_log['timestamp'] = agent_time
                             processed_log['timestamp_source'] = 'agent'
                             
                         except Exception as e:
@@ -241,7 +240,7 @@ class LogService:
                 # Time range filter - vietnam
                 if filters.get('time_range'):
                     time_range = filters['time_range']
-                    current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
+                    current_time = now_vietnam()
                     
                     if time_range == "1h":
                         since_time = current_time - timedelta(hours=1)
@@ -262,7 +261,7 @@ class LogService:
                     try:
                         start_date = parse_agent_timestamp(filters['start_date'])
                         query['timestamp'] = query.get('timestamp', {})
-                        query['timestamp']['$gte'] = to_vietnam_naive(start_date)
+                        query['timestamp']['$gte'] = parse_agent_timestamp(start_date)
                     except Exception as e:
                         self.logger.warning(f"Invalid start_date filter: {e}")
                 
@@ -270,7 +269,7 @@ class LogService:
                     try:
                         end_date = parse_agent_timestamp(filters['end_date'])
                         query['timestamp'] = query.get('timestamp', {})
-                        query['timestamp']['$lte'] = to_vietnam_naive(end_date)
+                        query['timestamp']['$lte'] = parse_agent_timestamp(end_date)
                     except Exception as e:
                         self.logger.warning(f"Invalid end_date filter: {e}")
             
@@ -526,7 +525,7 @@ class LogService:
         
         if filters.get('time_range'):
             time_range = filters['time_range']
-            current_time = to_vietnam_naive(now_vietnam())
+            current_time = now_vietnam()
             
             if time_range == "1h":
                 since_time = current_time - timedelta(hours=1)

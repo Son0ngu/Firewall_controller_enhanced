@@ -15,10 +15,8 @@ import logging
 from time_utils import (
     now_vietnam,
     to_vietnam,
-    to_vietnam_naive,
     parse_agent_timestamp,
     get_time_ago_string,
-    calculate_age_seconds,
     format_datetime,
 )
 
@@ -154,7 +152,7 @@ class LogModel:
         if not logs:
             return []
         
-        current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
+        current_time = now_vietnam()
         
         # Process timestamps for vietnam timezone
         for log in logs:
@@ -170,25 +168,16 @@ class LogModel:
         self.logger.info(f"Inserted {len(logs)} logs with vietnam timezone")
         return [str(id) for id in result.inserted_ids]
     
-    def _parse_timestamp(self, timestamp) -> object:
-        """Parse timestamp and convert to vietnam naive datetime"""
+    def _parse_timestamp(self, timestamp) -> datetime:
+        """Parse timestamp and convert to Vietnam aware datetime."""
         if timestamp is None:
-            return to_vietnam_naive(now_vietnam())
+            return now_vietnam()
         
         try:
-            if isinstance(timestamp, str):
-                # Parse ISO string and convert to vietnam naive
-                vietnam_time = parse_agent_timestamp(timestamp)  # vietnam parsing
-                return vietnam_time.replace(tzinfo=None)
-            elif isinstance(timestamp, datetime):
-                # Convert datetime to vietnam naive
-                vietnam_time = to_vietnam(timestamp)
-                return vietnam_time.replace(tzinfo=None)
-            else:
-                return to_vietnam_naive(now_vietnam())
+            return parse_agent_timestamp(timestamp)
         except Exception as e:
             self.logger.warning(f"Failed to parse timestamp '{timestamp}': {e}, using current time")
-            return to_vietnam_naive(now_vietnam())
+            return now_vietnam()
     
     def get_total_count(self) -> int:
         """Get total count of all logs"""
@@ -270,19 +259,12 @@ class LogModel:
         """Get logs summary statistics since a date in vietnam timezone"""
         try:
             if since is None:
-                # Default to last 24 hours in vietnam time
                 from datetime import timedelta
-                since = to_vietnam_naive(now_vietnam()) - timedelta(days=1)
+                since_dt = now_vietnam() - timedelta(days=1)
             else:
-                # Convert to vietnam naive for MongoDB query
-                if isinstance(since, str):
-                    since_vietnam = parse_agent_timestamp(since)  # vietnam parsing
-                elif isinstance(since, datetime):
-                    since_vietnam = to_vietnam(since)
-                else:
-                     since_vietnam = now_vietnam()
-            
-            query = {'timestamp': {'$gte': since}}
+                since_dt = parse_agent_timestamp(since)
+
+            query = {'timestamp': {'$gte': since_dt}}
             
             # Basic counts
             total_logs = self.collection.count_documents(query)
@@ -295,7 +277,7 @@ class LogModel:
                 'allowed_logs': allowed_logs,
                 'blocked_logs': blocked_logs,
                 'error_logs': error_logs,
-                'since': since.isoformat() if hasattr(since, 'isoformat') else str(since),
+                'since': since_dt.isoformat(),
                 'timezone': 'vietnam'  # Changed from 'vietnam+7'
             }
             

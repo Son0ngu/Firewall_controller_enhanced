@@ -11,7 +11,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, to_vietnam_naive
+from time_utils import now_vietnam, parse_agent_timestamp
 
 class AgentModel:
     """Model for agent data operations"""
@@ -42,7 +42,7 @@ class AgentModel:
         """Register a new agent (CREATE only, not update) - vietnam ONLY"""
         try:
             # Use vietnam time for registration
-            current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
+            current_time = now_vietnam()  # vietnam naive for MongoDB
             agent_data.update({
                 "registered_date": current_time,
                 "updated_date": current_time,
@@ -63,7 +63,7 @@ class AgentModel:
     def update_agent(self, agent_id: str, update_data: Dict) -> bool:
         """Update existing agent - vietnam ONLY"""
         try:
-            update_data["updated_date"] = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB
+            update_data["updated_date"] = now_vietnam()  
             result = self.collection.update_one(
                 {"agent_id": agent_id},
                 {"$set": update_data}
@@ -77,14 +77,13 @@ class AgentModel:
     def update_heartbeat(self, agent_id: str, update_data: Dict) -> bool:
         """Update agent heartbeat - vietnam ONLY"""
         try:
-            # Set proper heartbeat timestamp - vietnam naive for MongoDB
-            current_time = to_vietnam_naive(now_vietnam())
-            
-            update_data_with_heartbeat = {
-                **update_data,
-                "last_heartbeat": current_time,
-                "updated_date": current_time
-            }
+            heartbeat_value = update_data.get("last_heartbeat")
+            heartbeat_time = parse_agent_timestamp(heartbeat_value)
+            current_time = now_vietnam()
+
+            update_data_with_heartbeat = {**update_data}
+            update_data_with_heartbeat["last_heartbeat"] = heartbeat_time
+            update_data_with_heartbeat["updated_date"] = current_time
             
             result = self.collection.update_one(
                 {"agent_id": agent_id},
@@ -138,7 +137,7 @@ class AgentModel:
         """Get list of active agents - vietnam ONLY"""
         try:
             from datetime import timedelta
-            current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB comparison
+            current_time = now_vietnam()
             threshold = current_time - timedelta(minutes=inactive_threshold_minutes)
             return list(self.collection.find({
                 "last_heartbeat": {"$gte": threshold}
@@ -151,7 +150,7 @@ class AgentModel:
         """Get list of inactive agents - vietnam ONLY"""
         try:
             from datetime import timedelta
-            current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB comparison
+            current_time = now_vietnam()
             threshold = current_time - timedelta(minutes=inactive_threshold_minutes)
             return list(self.collection.find({
                 "last_heartbeat": {"$lt": threshold}
@@ -174,7 +173,7 @@ class AgentModel:
         """Get agent statistics - vietnam ONLY"""
         try:
             from datetime import timedelta
-            current_time = to_vietnam_naive(now_vietnam())  # vietnam naive for MongoDB comparison
+            current_time = now_vietnam()
             inactive_threshold = current_time - timedelta(minutes=inactive_threshold_minutes)
             
             pipeline = [
