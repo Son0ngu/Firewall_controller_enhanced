@@ -161,6 +161,16 @@ class AgentService:
 
                         time_diff_seconds = (current_time - last_heartbeat_vietnam).total_seconds()
                         
+                        if time_diff_seconds < 0:
+                            self.logger.warning(
+                                "%s: Heartbeat %s ahead of server time %s by %.2fs; clamping to 0",
+                                hostname,
+                                last_heartbeat_vietnam,
+                                current_time,
+                                abs(time_diff_seconds),
+                            )
+                            time_diff_seconds = 0.0
+
                         self.logger.info(f"{hostname}: Time calculation:")
                         self.logger.info(f"   Current vietnam: {current_time}")
                         self.logger.info(f"   Heartbeat vietnam: {last_heartbeat_vietnam}")
@@ -811,12 +821,14 @@ class AgentService:
                     try:
                         last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)
                         time_diff = (current_time - last_heartbeat_vietnam).total_seconds()
-                        
+                        adjusted_diff = max(time_diff, 0.0)
+
                         agent_debug.update({
                             "last_heartbeat_vietnam": last_heartbeat_vietnam.isoformat(),
-                            "time_diff_seconds": time_diff,
-                            "calculated_status": "active" if time_diff < self.active_threshold else 
-                                               "inactive" if time_diff < self.inactive_threshold else "offline"
+                            "time_diff_seconds": adjusted_diff,
+                            "raw_time_diff_seconds": time_diff,
+                            "calculated_status": "active" if adjusted_diff < self.active_threshold else
+                                               "inactive" if adjusted_diff < self.inactive_threshold else "offline"
                         })
                     except Exception as exc:
                         agent_debug["error"] = str(exc)

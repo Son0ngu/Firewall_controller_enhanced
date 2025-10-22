@@ -17,21 +17,19 @@ back and forth between naive datetimes any more.
 from __future__ import annotations
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 logger = logging.getLogger("server_time_utils")
 
 
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+FUTURE_DRIFT_TOLERANCE = timedelta(minutes=5)
 
 # =========================
 # Core helpers
 # =========================
 
-def now() -> float:
-    """Return the current Unix timestamp."""
-    return time.time()
 def now_vietnam() -> datetime:
     """Return the current datetime in Vietnam (timezone aware)."""
     return datetime.now(VIETNAM_TZ)
@@ -50,6 +48,58 @@ def to_vietnam(dt: datetime | None) -> datetime | None:
         return dt.replace(tzinfo=VIETNAM_TZ)
 
     return dt.astimezone(VIETNAM_TZ)
+
+
+def _normalise_future_timestamp(dt: datetime, *, reference: datetime | None = None) -> datetime:
+    """Clamp timestamps that sit unreasonably far in the future.
+
+    Some historical records were stored in UTC and then converted twice,
+    effectively pushing them ~7 hours ahead of the real heartbeat time. To
+    keep status calculations stable we detect that drift and either subtract
+    the timezone offset (when that fixes the problem) or clamp the value to
+    the current server time.
+    """
+
+    reference_time = reference or now_vietnam()
+    drift = dt - reference_time
+    drift_seconds = drift.total_seconds()
+
+    if drift_seconds <= FUTURE_DRIFT_TOLERANCE.total_seconds():
+        return dt
+
+    offset = dt.utcoffset()
+    if offset:
+        candidate = dt - offset
+        candidate_drift = candidate - reference_time
+        candidate_seconds = abs(candidate_drift.total_seconds())
+
+        if candidate_seconds < abs(drift_seconds):
+            if candidate_seconds <= FUTURE_DRIFT_TOLERANCE.total_seconds():
+                logger.warning(
+                    "Timestamp %s ahead of reference %s by %s; correcting by removing offset %s",
+                    dt,
+                    reference_time,
+                    drift,
+                    offset,
+                )
+            else:
+                logger.warning(
+                    "Timestamp %s ahead of reference %s by %s; removing offset %s leaves residual drift %s",
+                    dt,
+                    reference_time,
+                    drift,
+                    offset,
+                    candidate_drift,
+                )
+            return candidate
+
+    logger.warning(
+        "Timestamp %s ahead of reference %s by %s; clamping to reference",
+        dt,
+        reference_time,
+        drift,
+    )
+    return reference_time
 
 def _parse_with_known_formats(value: str) -> datetime | None:
     """Try to parse ``value`` using a list of known datetime formats."""
@@ -77,10 +127,12 @@ def parse_agent_timestamp(value: Any) -> datetime:
         return now_vietnam()
 
     if isinstance(value, datetime):
-        return to_vietnam(value)
+        parsed = to_vietnam(value)
+        return _normalise_future_timestamp(parsed)
 
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=VIETNAM_TZ)
+        parsed = datetime.fromtimestamp(value, tz=VIETNAM_TZ)
+        return _normalise_future_timestamp(parsed)
     
     try:
         text_value = str(value).strip()
@@ -94,11 +146,13 @@ def parse_agent_timestamp(value: Any) -> datetime:
     try:
         iso_ready = text_value.replace("Z", "+00:00")
         parsed = datetime.fromisoformat(iso_ready)
-        return to_vietnam(parsed)
+        parsed = to_vietnam(parsed)
+        return _normalise_future_timestamp(parsed)
     except ValueError:
         fallback = _parse_with_known_formats(text_value)
         if fallback is not None:
-            return fallback
+            parsed = to_vietnam(fallback)
+            return _normalise_future_timestamp(parsed)
 
         logger.warning("Unrecognised timestamp '%s', defaulting to current time", text_value)
         return now_vietnam()
@@ -127,29 +181,6 @@ def format_datetime(value: Any, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Error formatting datetime %r: %s", value, exc)
         return str(value)
-
-
-def format_timestamp(timestamp: float, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """Format a Unix timestamp using the Vietnam timezone."""
-    if timestamp is None:
-        return "N/A"
-    
-    try:
-        dt = datetime.fromtimestamp(timestamp, tz=VIETNAM_TZ)
-        return dt.strftime(fmt)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("Error formatting timestamp %r: %s", timestamp, exc)
-        return str(timestamp)
-
-def is_recent(value: Any, minutes: int = 5) -> bool:
-    """Return ``True`` if ``value`` occurred within ``minutes`` minutes."""
-    
-    try:
-        dt = parse_agent_timestamp(value)
-        return (now_vietnam() - dt).total_seconds() <= minutes * 60
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("Error checking recency for %r: %s", value, exc)
-        return False
 
 def calculate_age_seconds(value: Any) -> float:
     """Return the age of ``value`` in seconds relative to Vietnam time."""
@@ -180,13 +211,6 @@ def get_time_ago_string(value: Any) -> str:
 
     days = int(age_seconds / 86400)
     return f"{days} day{'s' if days != 1 else ''} ago"
-
-
-# ==========================
-# Compatibility aliases
-# ==========================
-
-parse_agent_timestamp_direct = parse_agent_timestamp
 
 
 if __name__ == "__main__":  # pragma: no cover - simple smoke test
