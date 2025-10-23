@@ -414,7 +414,9 @@ class WhitelistModel:
                 if entry.get("added_date"):
                     added_value = parse_agent_timestamp(entry["added_date"])
                     sync_entry["added_date"] = added_value.isoformat()
-            
+
+                sync_entries.append(sync_entry)
+                
             return sync_entries
             
         except Exception as e:
