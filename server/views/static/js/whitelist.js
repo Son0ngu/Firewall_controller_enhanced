@@ -45,6 +45,129 @@ const typeConfigs = {
     }
 };
 
+function isValidIPv4(ip) {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return false;
+    return parts.every(part => {
+        if (!/^\d+$/.test(part)) return false;
+        const value = Number(part);
+        return value >= 0 && value <= 255;
+    });
+}
+
+function isValidIPv4WithPrefix(value) {
+    const [ip, prefix] = value.split('/').map(part => part.trim());
+    if (!prefix) return false;
+    if (!/^\d+$/.test(prefix)) return false;
+    const prefixNum = Number(prefix);
+    return isValidIPv4(ip) && prefixNum >= 0 && prefixNum <= 32;
+}
+
+function isValidIPv4Range(value) {
+    const [start, end] = value.split('-').map(part => part.trim());
+    if (!start || !end) return false;
+    if (!isValidIPv4(start) || !isValidIPv4(end)) return false;
+    return true;
+}
+
+function isValidPortValue(port) {
+    if (!/^\d+$/.test(port)) return false;
+    const value = Number(port);
+    return value >= 1 && value <= 65535;
+}
+
+function validateValueByType(value, type) {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+
+    switch (type) {
+        case 'ip':
+            return isValidIPv4(trimmed) ||
+                (trimmed.includes('/') && isValidIPv4WithPrefix(trimmed)) ||
+                (trimmed.includes('-') && isValidIPv4Range(trimmed));
+        case 'url': {
+            const urlPattern = /^(https?:\/\/|ftp:\/\/)/i;
+            if (urlPattern.test(trimmed)) {
+                return true;
+            }
+            if (trimmed.startsWith('/') && trimmed.length > 1) {
+                return true;
+            }
+            if (trimmed.includes('/') && !/\s/.test(trimmed)) {
+                return true;
+            }
+            return false;
+        }
+        case 'port': {
+            const cleaned = trimmed.replace(/\s+/g, '');
+            if (cleaned.includes(',')) {
+                return cleaned.split(',').every(segment => isValidPortValue(segment));
+            }
+            if (cleaned.includes('-')) {
+                const [start, end] = cleaned.split('-').map(part => part.trim());
+                if (!isValidPortValue(start) || !isValidPortValue(end)) {
+                    return false;
+                }
+                return Number(start) <= Number(end);
+            }
+            return isValidPortValue(cleaned);
+        }
+        case 'process': {
+            const lowered = trimmed.toLowerCase();
+            const validExtensions = ['.exe', '.bat', '.cmd', '.sh', '.ps1', '.bin', '.app', '.service', '.msi'];
+            for (const ext of validExtensions) {
+                const escapedExt = ext.replace('.', '\\.');
+                const pattern = new RegExp(`${escapedExt}(?=\s|$|"|')`);
+                if (pattern.test(lowered)) {
+                    return true;
+                }
+                if (lowered.endsWith(ext)) {
+                    return true;
+                }
+            }
+            return lowered.endsWith('.*');
+        }
+        case 'domain': {
+            if (trimmed.toLowerCase() === 'localhost') {
+                return true;
+            }
+            const domainPattern = /^(\*\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-*]+)+$/;
+            return domainPattern.test(trimmed);
+        }
+        default:
+            return true;
+    }
+}
+
+function detectItemType(value) {
+    if (validateValueByType(value, 'ip')) {
+        return 'ip';
+    }
+    if (validateValueByType(value, 'url')) {
+        return 'url';
+    }
+    if (validateValueByType(value, 'port')) {
+        return 'port';
+    }
+    if (validateValueByType(value, 'process')) {
+        return 'process';
+    }
+    if (validateValueByType(value, 'domain')) {
+        return 'domain';
+    }
+    return null;
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+        reader.readAsText(file);
+    });
+}
+
+
 /**
  * Enhanced error handling for API responses
  */
@@ -380,6 +503,165 @@ function showBulkImportModal() {
     modal.show();
 }
 
+async function handleBulkImport() {
+    const importButton = document.getElementById('bulkImportBtn');
+    if (!importButton) {
+        showError('Bulk import button not found.');
+        return;
+    }
+
+    const originalButtonContent = importButton.innerHTML;
+    importButton.disabled = true;
+    importButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Importing...';
+
+    try {
+        const importMethod = document.querySelector('input[name="importMethod"]:checked')?.value || 'text';
+        const bulkType = document.getElementById('bulkType')?.value || 'auto';
+        const scope = document.getElementById('bulkScope')?.value || 'global';
+
+        let agentId = null;
+        if (scope === 'agent') {
+            const agentSelect = document.getElementById('bulkAgentSelect') || document.querySelector('#agentSelectGroup select');
+            agentId = agentSelect ? agentSelect.value : null;
+            if (!agentId) {
+                showError('Please select an agent before importing agent-specific items.');
+                return;
+            }
+        }
+
+        let rawLines = [];
+        if (importMethod === 'file') {
+            const fileInput = document.getElementById('bulkFile');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                showError('Please select a .txt or .csv file to import.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const fileContent = await readFileAsText(file);
+            rawLines = fileContent.split(/\r?\n/);
+        } else {
+            const textarea = document.getElementById('bulkTextarea');
+            if (!textarea) {
+                showError('Bulk import textarea not found.');
+                return;
+            }
+            rawLines = textarea.value.split(/\r?\n/);
+        }
+
+        const invalidEntries = [];
+        const items = [];
+
+        rawLines.forEach((line, index) => {
+            const value = line.trim();
+            if (!value) {
+                return;
+            }
+
+            let resolvedType = bulkType;
+            if (bulkType === 'auto') {
+                resolvedType = detectItemType(value);
+                if (!resolvedType) {
+                    invalidEntries.push({ line: index + 1, value });
+                    return;
+                }
+            } else if (!validateValueByType(value, resolvedType)) {
+                invalidEntries.push({ line: index + 1, value });
+                return;
+            }
+
+            const item = {
+                value,
+                type: resolvedType,
+                scope
+            };
+
+            if (scope === 'agent' && agentId) {
+                item.agent_id = agentId;
+            }
+
+            items.push(item);
+        });
+
+        if (items.length === 0) {
+            if (invalidEntries.length > 0) {
+                const invalidLines = invalidEntries.map(entry => entry.line).join(', ');
+                showError(`No valid entries found. Invalid input on line(s): ${invalidLines}.`);
+            } else {
+                showError('No whitelist items were provided for import.');
+            }
+            return;
+        }
+
+        if (invalidEntries.length > 0) {
+            const invalidLines = invalidEntries.map(entry => entry.line).join(', ');
+            showError(`Please fix invalid entries on line(s): ${invalidLines} before importing.`);
+            return;
+        }
+
+        const response = await fetch('/api/whitelist/bulk-add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
+
+        const result = await handleApiResponse(response);
+
+        showSuccess(result.message || `${items.length} item(s) imported successfully.`);
+
+        const textarea = document.getElementById('bulkTextarea');
+        if (textarea) {
+            textarea.value = '';
+        }
+
+        const fileInput = document.getElementById('bulkFile');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+
+        const bulkTypeSelect = document.getElementById('bulkType');
+        if (bulkTypeSelect) {
+            bulkTypeSelect.value = 'auto';
+        }
+
+        const bulkScopeSelect = document.getElementById('bulkScope');
+        if (bulkScopeSelect) {
+            bulkScopeSelect.value = 'global';
+        }
+
+        const textImportRadio = document.getElementById('textImport');
+        const fileImportRadio = document.getElementById('fileImport');
+        if (textImportRadio && fileImportRadio) {
+            textImportRadio.checked = true;
+            fileImportRadio.checked = false;
+        }
+
+        const textSection = document.getElementById('textImportSection');
+        const fileSection = document.getElementById('fileImportSection');
+        if (textSection && fileSection) {
+            textSection.style.display = 'block';
+            fileSection.style.display = 'none';
+        }
+
+        await loadItems();
+
+        const modalElement = document.getElementById('bulkImportModal');
+        if (modalElement) {
+            let modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (!modalInstance) {
+                modalInstance = new bootstrap.Modal(modalElement);
+            }
+            modalInstance.hide();
+        }
+    } catch (error) {
+        console.error('Error during bulk import:', error);
+        showError('Failed to import whitelist items: ' + error.message);
+    } finally {
+        importButton.disabled = false;
+        importButton.innerHTML = originalButtonContent;
+    }
+}
+
 /**
  * Handle item actions -  FIXED to call actual APIs
  */
@@ -606,6 +888,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('refreshBtn').addEventListener('click', refreshItems);
     document.getElementById('bulkActionsBtn').addEventListener('click', toggleBulkActionsPanel);
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDeleteItems);
+    document.getElementById('bulkImportBtn').addEventListener('click', handleBulkImport);
     
     // Scope selection handler
     document.getElementById('scopeSelect').addEventListener('change', function() {
