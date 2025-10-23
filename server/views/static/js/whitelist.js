@@ -599,7 +599,7 @@ async function handleBulkImport() {
             return;
         }
 
-        const response = await fetch('/api/whitelist/bulk-add', {
+        const response = await fetch('/api/whitelist/bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items })
