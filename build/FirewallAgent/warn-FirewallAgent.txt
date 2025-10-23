@@ -14,9 +14,8 @@ Types if import:
 IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for
             tracking down the missing module yourself. Thanks!
 
-missing module named pwd - imported by posixpath (delayed, conditional, optional), shutil (delayed, optional), tarfile (optional), pathlib._local (optional), subprocess (delayed, conditional, optional), netrc (delayed, optional), getpass (delayed, optional), psutil (optional)
-missing module named grp - imported by shutil (delayed, optional), tarfile (optional), pathlib._local (optional), subprocess (delayed, conditional, optional)
-missing module named 'collections.abc' - imported by traceback (top-level), typing (top-level), inspect (top-level), logging (top-level), importlib.resources.readers (top-level), selectors (top-level), tracemalloc (top-level), http.client (top-level), typing_extensions (top-level), asyncio.base_events (top-level), asyncio.coroutines (top-level), requests.compat (top-level), dns.immutable (top-level), aiodns (top-level), pycares (top-level), scapy.layers.dhcp (optional)
+missing module named pwd - imported by posixpath (delayed, conditional, optional), shutil (delayed, optional), tarfile (optional), pathlib (delayed, optional), subprocess (delayed, conditional, optional), netrc (delayed, conditional), getpass (delayed), psutil (optional)
+missing module named grp - imported by shutil (delayed, optional), tarfile (optional), pathlib (delayed, optional), subprocess (delayed, conditional, optional)
 missing module named _posixsubprocess - imported by subprocess (conditional), multiprocessing.util (delayed)
 missing module named fcntl - imported by subprocess (optional), scapy.arch.linux (top-level), scapy.arch.bpf.core (top-level), scapy.arch.bpf.supersocket (top-level), scapy.arch.libpcap (conditional), scapy.arch.unix (top-level), scapy.utils (delayed, optional), scapy.layers.tuntap (top-level)
 missing module named _frozen_importlib_external - imported by importlib._bootstrap (delayed), importlib (optional), importlib.abc (optional), zipimport (top-level)
@@ -95,3 +94,4 @@ missing module named js - imported by urllib3.contrib.emscripten.fetch (top-leve
 missing module named vms_lib - imported by platform (delayed, optional)
 missing module named 'java.lang' - imported by platform (delayed, optional)
 missing module named java - imported by platform (delayed)
+missing module named _winreg - imported by platform (delayed, optional)

@@ -3,6 +3,37 @@ import logging  # Thư viện ghi log để theo dõi hoạt động của modul
 import threading  # Thư viện hỗ trợ đa luồng để chạy bắt gói tin trong luồng riêng
 import re  #  ADD: Missing import for regex validation
 from typing import Callable, Dict, Optional  # Thư viện hỗ trợ kiểu dữ liệu tĩnh
+import os  #  ADD: Manage environment variables for Scapy cache
+import tempfile  #  ADD: Get hệ thống thư mục tạm thời
+
+# Cấu hình logger cho module này (cần trước khi cấu hình Scapy)
+logger = logging.getLogger("packet_sniffer")
+
+
+def _configure_scapy_cache():
+    """Đảm bảo Scapy sử dụng thư mục cache trong %TEMP%."""
+
+    try:
+        # Ưu tiên TEMP/TMP của Windows, fallback sang thư mục tạm của Python
+        temp_root = (
+            os.environ.get("TEMP")
+            or os.environ.get("TMP")
+            or tempfile.gettempdir()
+        )
+
+        cache_dir = os.path.join(temp_root, "scapy-cache")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # Ghi đè để chắc chắn bản .exe luôn dùng đúng thư mục cache
+        os.environ["SCAPY_CONFIG_DIR"] = cache_dir
+        os.environ["SCAPY_DATA_DIR"] = cache_dir
+
+        logger.debug("Scapy cache configured at %s", cache_dir)
+    except Exception as exc:  # pragma: no cover - chỉ log khi có sự cố hệ thống
+        logger.warning("Failed to configure Scapy cache directory: %s", exc)
+
+
+_configure_scapy_cache()
 
 # Import time utilities - vietnam ONLY
 from time_utils import now_iso, sleep
@@ -17,9 +48,6 @@ from scapy.layers.tls.extensions import ServerName  # Lớp xử lý phần mở
 from scapy.layers.tls.handshake import TLSClientHello  # Lớp xử lý bản tin ClientHello trong TLS
 from scapy.packet import Packet  # Lớp cơ sở cho các gói tin trong Scapy
 
-# Cấu hình logger cho module này
-# Sử dụng tên riêng để dễ dàng lọc log từ module này
-logger = logging.getLogger("packet_sniffer")
 
 class PacketSniffer:
     """
