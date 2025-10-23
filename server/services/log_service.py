@@ -446,7 +446,40 @@ class LogService:
                 "error": str(e),
                 "server_time": now_iso()  # vietnam ISO
             }
-    
+        
+        
+    def get_total_count(self) -> int:
+        """Get total count of logs via model wrapper - vietnam ONLY"""
+        try:
+            if hasattr(self.model, 'get_total_count'):
+                return self.model.get_total_count()
+            # Fallback to generic counter if specialized method missing
+            return self.model.count_logs({})
+        except Exception as e:
+            self.logger.error(f"Error getting total log count: {e}")
+            return 0
+
+    def get_count_by_action(self, action: str) -> int:
+        """Get count of logs for a specific action - vietnam ONLY"""
+        try:
+            if hasattr(self.model, 'get_count_by_action'):
+                return self.model.get_count_by_action(action)
+            return self.model.count_logs({'action': action})
+        except Exception as e:
+            self.logger.error(f"Error getting count for action {action}: {e}")
+            return 0
+
+    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
+        """Get recent logs via model wrapper - vietnam ONLY"""
+        try:
+            if hasattr(self.model, 'get_recent_logs'):
+                return self.model.get_recent_logs(limit=limit)
+            return self.model.find_logs(limit=limit, sort_field='timestamp')
+        except Exception as e:
+            self.logger.error(f"Error getting recent logs: {e}")
+            return []
+        
+
     def get_comprehensive_statistics(self, filters: Dict = None) -> Dict:
         """Get comprehensive log statistics - vietnam ONLY"""
         try:
