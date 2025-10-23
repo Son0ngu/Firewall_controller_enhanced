@@ -867,8 +867,8 @@ class FirewallManager:
             logger.debug("Loading existing firewall rules...")
             
             command = [
-                "netsh", "advfirewall", "firewall", "show", "rule",
-                "name=all", "verbose"
+                 "netsh", "advfirewall", "firewall", "show", "rule",
+    f"name={self.rule_prefix}*", "verbose",
             ]
             
             result = subprocess.run(

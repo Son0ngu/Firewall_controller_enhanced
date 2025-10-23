@@ -10,8 +10,14 @@ import tempfile  #  ADD: Get hệ thống thư mục tạm thời
 logger = logging.getLogger("packet_sniffer")
 
 
-def _configure_scapy_cache():
-    """Đảm bảo Scapy sử dụng thư mục cache trong %TEMP%."""
+def _configure_scapy_cache() -> Optional[str]:
+    """Đảm bảo Scapy sử dụng thư mục cache trong %TEMP%.
+
+    Trên một số hệ thống Windows bị khóa quyền ghi vào ``%USERPROFILE%\\.cache``,
+    việc import Scapy có thể ném ``PermissionError`` khi cố tạo file ``services``.
+    Hàm này chuyển toàn bộ cache/config/data của Scapy sang thư mục tạm bảo đảm
+    ghi được.
+    """
 
     try:
         # Ưu tiên TEMP/TMP của Windows, fallback sang thư mục tạm của Python
@@ -25,15 +31,23 @@ def _configure_scapy_cache():
         os.makedirs(cache_dir, exist_ok=True)
 
         # Ghi đè để chắc chắn bản .exe luôn dùng đúng thư mục cache
+        os.environ["SCAPY_CACHE_DIR"] = cache_dir
         os.environ["SCAPY_CONFIG_DIR"] = cache_dir
         os.environ["SCAPY_DATA_DIR"] = cache_dir
+        # Một số bản Scapy dùng biến XDG_CACHE_HOME/SCAPY_HOME khi chạy trên Windows
+        os.environ.setdefault("XDG_CACHE_HOME", cache_dir)
+        os.environ.setdefault("SCAPY_HOME", cache_dir)
 
         logger.debug("Scapy cache configured at %s", cache_dir)
+        return cache_dir
     except Exception as exc:  # pragma: no cover - chỉ log khi có sự cố hệ thống
         logger.warning("Failed to configure Scapy cache directory: %s", exc)
 
+        return None
+    
 
-_configure_scapy_cache()
+
+_SCAPY_CACHE_DIR = _configure_scapy_cache()
 
 # Import time utilities - vietnam ONLY
 from time_utils import now_iso, sleep
@@ -47,7 +61,16 @@ from scapy.packet import Raw  #  ADD: Missing Raw import
 from scapy.layers.tls.extensions import ServerName  # Lớp xử lý phần mở rộng ServerName trong TLS
 from scapy.layers.tls.handshake import TLSClientHello  # Lớp xử lý bản tin ClientHello trong TLS
 from scapy.packet import Packet  # Lớp cơ sở cho các gói tin trong Scapy
+from scapy.config import conf as scapy_conf  #  ADD: Điều chỉnh cache sau khi import
 
+
+if _SCAPY_CACHE_DIR:
+    try:
+        scapy_conf.cache_dir = _SCAPY_CACHE_DIR
+        # Đảm bảo thư mục tồn tại (phòng khi bị xóa sau khi cấu hình ở trên)
+        os.makedirs(scapy_conf.cache_dir, exist_ok=True)
+    except Exception as exc:  # pragma: no cover - ghi log nếu có sự cố bất thường
+        logger.warning("Could not set Scapy cache dir to %s: %s", _SCAPY_CACHE_DIR, exc)
 
 class PacketSniffer:
     """
