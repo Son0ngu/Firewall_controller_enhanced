@@ -1,0 +1,93 @@
+/* Base layout styles extracted from base.html */
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --danger-gradient: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+    --info-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+}
+
+.navbar {
+    background: var(--primary-gradient) !important;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.5rem;
+}
+
+.nav-link {
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.nav-link:hover {
+    transform: translateY(-2px);
+}
+
+main {
+    min-height: calc(100vh - 200px);
+}
+
+footer {
+    background: white !important;
+    border-top: 1px solid #e9ecef;
+    margin-top: 4rem;
+}
+
+.border-start-primary { border-left: 0.25rem solid #667eea !important; }
+.border-start-success { border-left: 0.25rem solid #28a745 !important; }
+.border-start-danger { border-left: 0.25rem solid #dc3545 !important; }
+.border-start-warning { border-left: 0.25rem solid #ffc107 !important; }
+.border-start-info { border-left: 0.25rem solid #17a2b8 !important; }
+.border-start-secondary { border-left: 0.25rem solid #6c757d !important; }
+
+.toast {
+    border-radius: 15px;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.btn,
+.card,
+.nav-link,
+.badge {
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+}
+
+.nav-link.active {
+    background: rgba(255, 255, 255, 0.2) !important;
+    border-radius: 8px;
+    font-weight: 600;
+}

@@ -3,32 +3,7 @@
 {% block title %}Page Not Found - Firewall Controller{% endblock %}
 
 {% block extra_css %}
-<style>
-    .error-page {
-        min-height: 60vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .error-illustration {
-        font-size: 8rem;
-        color: #6c757d;
-        opacity: 0.5;
-    }
-    .error-code {
-        font-size: 6rem;
-        font-weight: bold;
-        color: #dc3545;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-    }
-    .btn-home {
-        transition: all 0.3s ease;
-    }
-    .btn-home:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/error_404.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -133,54 +108,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-// Auto-redirect suggestion after 30 seconds
-let countdown = 30;
-let redirectTimer;
-
-function startRedirectCountdown() {
-    const countdownElement = document.createElement('div');
-    countdownElement.className = 'alert alert-info mt-4';
-    countdownElement.innerHTML = `
-        <i class="fas fa-info-circle me-2"></i>
-        <span id="countdown-text">Redirecting to dashboard in ${countdown} seconds...</span>
-        <button type="button" class="btn btn-sm btn-outline-info ms-2" onclick="cancelRedirect()">
-            Cancel
-        </button>
-    `;
-    
-    document.querySelector('.error-page .container').appendChild(countdownElement);
-    
-    redirectTimer = setInterval(() => {
-        countdown--;
-        document.getElementById('countdown-text').textContent = 
-            `Redirecting to dashboard in ${countdown} seconds...`;
-        
-        if (countdown <= 0) {
-            window.location.href = '/';
-        }
-    }, 1000);
-}
-
-function cancelRedirect() {
-    clearInterval(redirectTimer);
-    const countdownElement = document.querySelector('.alert-info');
-    if (countdownElement) {
-        countdownElement.remove();
-    }
-}
-
-// Start countdown after 10 seconds on page
-setTimeout(startRedirectCountdown, 10000);
-
-// Track 404 errors for analytics (optional)
-if (typeof gtag !== 'undefined') {
-    gtag('event', 'page_not_found', {
-        'page_location': window.location.href,
-        'page_title': document.title
-    });
-}
-
-console.log('404 Error: Page not found -', window.location.href);
-</script>
+<script src="{{ url_for('static', filename='js/error_404.js') }}" defer></script>
 {% endblock %}

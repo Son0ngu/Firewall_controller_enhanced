@@ -19,7 +19,7 @@ import signal
 import sys
 import threading
 import json
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, List
 
 # Network & system utilities
 import socket
@@ -78,6 +78,8 @@ agent_state = {
     "local_ip": None,
     "agent_id": None
 }
+
+AGENT_HOSTNAME = socket.gethostname().strip() or "Unknown Agent"
 
 # ========================================
 # CONFIGURATION VALIDATION
@@ -183,9 +185,7 @@ class IPDetector:
         self._ip_cache_ttl = 300  # 5 minutes
 
     def get_local_ip(self, force_refresh: bool = False) -> str:
-        """
-        UPDATED: Sử dụng UTC time_utils
-        """
+       
         current_time = now()  # UTC timestamp
         
         # Use cache validation from time_utils
@@ -500,10 +500,10 @@ def handle_domain_detection(record: Dict):
             action = "MONITORED"
             level = "INFO"
         
-        # UPDATED: Create enhanced log record với UTC timestamps
+        #Create enhanced log record với UTC timestamps
         enhanced_record = {
-            "timestamp": now_iso(),  # UTC ISO timestamp
-            "timestamp_unix": now(),  # UTC Unix timestamp
+            "timestamp": now_iso(),
+            "timestamp_unix": now(),
             "agent_id": config.get("agent_id", "unknown"),
             "level": level,
             "action": action,
@@ -519,7 +519,9 @@ def handle_domain_detection(record: Dict):
             "domain_allowed": domain_allowed,
             "ip_allowed": ip_allowed,
             "source": "domain_detection",
-            "agent_uptime": uptime_string()
+            "agent_uptime": uptime_string(),
+            "agent_host": AGENT_HOSTNAME,
+            "hostname": AGENT_HOSTNAME
         }
         
         # Queue log với error handling
@@ -610,7 +612,7 @@ def initialize_components():
             logger.info("Heartbeat sender initialized")
         
         # 7. Initialize CommandProcessor
-        logger.info("⚡ Initializing command processor...")
+        logger.info("Initializing command processor...")
         command_processor = CommandProcessor()
         
         # Start command polling if registered
@@ -636,7 +638,7 @@ def initialize_components():
 def start_command_polling():
     """Khởi động command polling thread"""
     def polling_loop():
-        logger.info("🎮 Command polling started")
+        logger.info("Command polling started")
         
         while running:
             try:
@@ -858,6 +860,8 @@ def main():
                 "firewall_mode": config["firewall"]["mode"],
                 "timestamp": now_iso(),  # UTC ISO
                 "timestamp_unix": now(),  # UTC Unix timestamp
+                "agent_host": AGENT_HOSTNAME,
+                "host_name": AGENT_HOSTNAME
             }
             log_sender.queue_log(startup_log)
         
@@ -891,17 +895,17 @@ def main():
     finally:
         cleanup()
 
-# ========================================
-# SERVICE RUNNER (Simplified)
-# ========================================
+# ===============
+# SERVICE RUNNER
+# ===============
 
 def run_as_service():
     """Enhanced Windows Service implementation"""
     try:
-        import servicemanager
-        import win32event
-        import win32service
-        import win32serviceutil
+        import servicemanager # type: ignore
+        import win32event # type: ignore
+        import win32service # type: ignore
+        import win32serviceutil # type: ignore
         
         class AgentService(win32serviceutil.ServiceFramework):
             _svc_name_ = "FirewallControllerAgent"

@@ -1,0 +1,1199 @@
+//  SINGLE VARIABLE DECLARATION BLOCK
+let logsData = [];
+let selectedLogs = new Set();
+let allTimeStats = {};
+let currentFilter = {
+    time: 'all',
+    level: '',
+    agent: '',
+    search: '',
+    limit: 100
+};
+let currentClearAction = null;
+
+function normalizeAgentField(value) {
+    if (value === null || value === undefined) return '';
+    const str = typeof value === 'string' ? value : value.toString?.() || '';
+    return str.trim();
+}
+
+function extractAgentFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+    const candidates = [
+        obj.display_name,
+        obj.host_name,
+        obj.hostname,
+        obj.machine_name,
+        obj.device_name,
+        obj.agent_name,
+        obj.name,
+        obj.label
+    ];
+    for (const candidate of candidates) {
+        const normalized = normalizeAgentField(candidate);
+        if (normalized) return normalized;
+    }
+    return '';
+}
+
+function getAgentDisplayName(log) {
+    return log.agent_host || log.hostname || log.host_name || log.agent_id || 'Unknown Agent';
+}
+
+/**
+ *  Load FULL statistics với better error handling
+ */
+async function loadFullStatistics() {
+    try {
+        console.log(' Loading full statistics...');
+        
+        const params = new URLSearchParams();
+        if (currentFilter.level) params.append('level', currentFilter.level);
+        if (currentFilter.agent) params.append('agent_id', currentFilter.agent);
+        if (currentFilter.search) params.append('search', currentFilter.search);
+        if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
+        
+        const url = `/api/logs/stats?${params.toString()}`;
+        console.log(' Fetching statistics from:', url);
+        
+        const response = await fetch(url);
+        console.log(' Statistics response status:', response.status);
+        
+        if (response.ok) {
+            const responseText = await response.text();
+            console.log(' Raw statistics response:', responseText.substring(0, 500));
+            
+            try {
+                allTimeStats = JSON.parse(responseText);
+                console.log(' Statistics loaded:', allTimeStats);
+                return allTimeStats;
+            } catch (parseError) {
+                console.error(' Statistics JSON parse error:', parseError);
+                console.log(' Response text:', responseText);
+            }
+        } else {
+            console.error(' Failed to load statistics:', response.status, await response.text());
+        }
+    } catch (error) {
+        console.error(' Error loading statistics:', error);
+    }
+    
+    // Fallback statistics
+    return {
+        success: false,
+        total: 0,
+        allowed: 0,
+        blocked: 0,
+        warnings: 0
+    };
+}
+
+/**
+ *  Update statistics display với fallback handling
+ */
+async function updateStatistics() {
+    try {
+        console.log(' Updating statistics display...');
+        
+        await loadFullStatistics();
+        
+        console.log(' Statistics data:', allTimeStats);
+        
+        if (allTimeStats && allTimeStats.success) {
+            const hasFilters = currentFilter.time !== 'all' || 
+                              currentFilter.level || 
+                              currentFilter.agent || 
+                              currentFilter.search;
+            
+            console.log(' Has filters:', hasFilters);
+            
+            // Update display elements
+            const totalEl = document.getElementById('totalLogsCount');
+            const allowedEl = document.getElementById('allowedLogsCount');
+            const blockedEl = document.getElementById('blockedLogsCount');
+            const warningsEl = document.getElementById('warningLogsCount');
+            
+            if (totalEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    totalEl.innerHTML = `${(allTimeStats.filtered_total || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.total || 0).toLocaleString()}</small>`;
+                } else {
+                    totalEl.textContent = (allTimeStats.total || 0).toLocaleString();
+                }
+                console.log(' Updated total count:', totalEl.textContent);
+            }
+            
+            if (allowedEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    allowedEl.innerHTML = `${(allTimeStats.filtered_allowed || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.allowed || 0).toLocaleString()}</small>`;
+                } else {
+                    allowedEl.textContent = (allTimeStats.allowed || 0).toLocaleString();
+                }
+                console.log(' Updated allowed count:', allowedEl.textContent);
+            }
+            
+            if (blockedEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    blockedEl.innerHTML = `${(allTimeStats.filtered_blocked || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.blocked || 0).toLocaleString()}</small>`;
+                } else {
+                    blockedEl.textContent = (allTimeStats.blocked || 0).toLocaleString();
+                }
+                console.log(' Updated blocked count:', blockedEl.textContent);
+            }
+            
+            if (warningsEl) {
+                if (hasFilters && allTimeStats.has_filters) {
+                    warningsEl.innerHTML = `${(allTimeStats.filtered_warnings || 0).toLocaleString()}<small class="text-muted d-block" style="font-size:0.7rem;">of ${(allTimeStats.warnings || 0).toLocaleString()}</small>`;
+                } else {
+                    warningsEl.textContent = (allTimeStats.warnings || 0).toLocaleString();
+                }
+                console.log(' Updated warnings count:', warningsEl.textContent);
+            }
+            
+            // Update log count
+            const logCountEl = document.getElementById('logCount');
+            if (logCountEl) {
+                logCountEl.textContent = `${logsData.length.toLocaleString()} displayed`;
+            }
+            
+        } else {
+            console.log(' Using fallback statistics calculation');
+            // Fallback: calculate from current logs data
+            const total = logsData.length;
+            const allowed = logsData.filter(log => (log.level === 'ALLOWED' || log.action === 'ALLOWED')).length;
+            const blocked = logsData.filter(log => (log.level === 'BLOCKED' || log.action === 'BLOCKED')).length;
+            const warnings = logsData.filter(log => log.level === 'WARNING').length;
+            
+            document.getElementById('totalLogsCount').innerHTML = `${total.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('allowedLogsCount').innerHTML = `${allowed.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('blockedLogsCount').innerHTML = `${blocked.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('warningLogsCount').innerHTML = `${warnings.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
+            document.getElementById('logCount').textContent = `${total.toLocaleString()} displayed`;
+        }
+        
+    } catch (error) {
+        console.error(' Error updating statistics:', error);
+        // Emergency fallback
+        document.getElementById('totalLogsCount').textContent = logsData.length.toLocaleString();
+        document.getElementById('allowedLogsCount').textContent = '0';
+        document.getElementById('blockedLogsCount').textContent = '0';
+        document.getElementById('warningLogsCount').textContent = '0';
+        document.getElementById('logCount').textContent = `${logsData.length.toLocaleString()} displayed`;
+    }
+}
+
+/**
+ *  Load logs function
+ */
+async function loadLogs() {
+    try {
+        console.log(' Loading logs with filter:', currentFilter);
+        
+        const params = new URLSearchParams();
+        if (currentFilter.level) params.append('level', currentFilter.level);
+        if (currentFilter.agent) params.append('agent_id', currentFilter.agent);
+        if (currentFilter.search) params.append('search', currentFilter.search);
+        if (currentFilter.time !== 'all') params.append('time_range', currentFilter.time);
+        params.append('limit', currentFilter.limit);
+        
+        const url = `/api/logs?${params.toString()}`;
+        console.log(' Fetching from URL:', url);
+        
+        const response = await fetch(url);
+        console.log(' Response status:', response.status);
+        console.log(' Response headers:', response.headers.get('content-type'));
+        
+        if (response.ok) {
+            const responseText = await response.text();
+            console.log(' Raw response length:', responseText.length);
+            console.log(' Raw response start:', responseText.substring(0, 200));
+            
+            try {
+                const data = JSON.parse(responseText);
+                console.log(' Parsed JSON successfully');
+                console.log(' Response structure:', {
+                    success: data.success,
+                    hasLogs: !!data.logs,
+                    logsLength: data.logs ? data.logs.length : 0,
+                    total: data.total,
+                    keys: Object.keys(data)
+                });
+                
+                if (data.logs && Array.isArray(data.logs)) {
+                    logsData = data.logs;
+                    console.log(' Logs data assigned:', logsData.length, 'items');
+                    
+                    if (logsData.length > 0) {
+                        console.log(' First log sample:', JSON.stringify(logsData[0], null, 2));
+                    }
+                    
+                    renderLogs(logsData);
+                    await updateStatistics();
+                } else {
+                    console.error(' No valid logs array in response');
+                    console.log(' Full response:', data);
+                    showError('Invalid response format - no logs array');
+                }
+            } catch (parseError) {
+                console.error(' JSON parse error:', parseError);
+                console.log(' Response text:', responseText.substring(0, 500));
+                showError('Failed to parse server response');
+            }
+        } else {
+            const errorText = await response.text();
+            console.error(' Failed to load logs:', response.status, errorText);
+            showError(`Failed to load logs: ${response.status}`);
+        }
+        
+    } catch (error) {
+        console.error(' Error loading logs:', error);
+        showError('Error loading logs: ' + error.message);
+        await updateStatistics();
+    }
+}
+
+/**
+ *  Filter change handler
+ */
+function onFilterChange() {
+    loadLogs();
+}
+
+/**
+ *  Render logs
+ */
+function renderLogs(logs) {
+    console.log('🎨 renderLogs called with:', logs ? logs.length : 0, 'logs');
+    
+    const container = document.getElementById('logsContainer');
+    
+    if (!container) {
+        console.error(' Logs container not found');
+        return;
+    }
+    
+    if (!logs || !Array.isArray(logs) || logs.length === 0) {
+        console.log(' No logs to render');
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-file-alt"></i>
+                <h5>No logs found</h5>
+                <p class="text-muted">No log entries match your current filters.</p>
+                <button class="btn btn-outline-primary btn-sm" onclick="clearFilters()">
+                    <i class="fas fa-filter"></i> Clear Filters
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    console.log(' Starting to render', logs.length, 'logs');
+    container.innerHTML = '';
+    
+    let renderedCount = 0;
+    
+    logs.forEach((log, index) => {
+        try {
+            //  Enhanced data extraction with better fallbacks
+            console.log(` Processing log ${index}:`, log);
+            
+            const timestamp = log.timestamp ? 
+                (typeof log.timestamp === 'string' ? 
+                    new Date(log.timestamp).toLocaleString('vi-VN') : 
+                    log.timestamp.toLocaleString ? log.timestamp.toLocaleString('vi-VN') : log.timestamp
+                ) : 
+                'Unknown';
+                
+            const level = (log.level || log.action || 'INFO').toString().toUpperCase();
+            const action = (log.action || 'UNKNOWN').toString().toUpperCase();
+            
+            //  FIX: Better data extraction with multiple fallbacks
+            const domain = log.domain || log.destination || log.url || 'N/A';
+            const source_ip = log.source_ip || log.src_ip || log.client_ip || 'N/A';
+            const dest_ip = log.dest_ip || log.ip || log.destination_ip || 'N/A';
+            const agentId = (log.agent_id || log.agent || '').toString();
+            const agentHost = getAgentDisplayName(log);
+            const protocol = log.protocol || 'N/A';
+            const port = log.port ? log.port.toString() : 'N/A';
+            const message = log.message || `${action}: ${domain}`;
+            const logId = log._id || log.id || index.toString();
+            
+            const logElement = document.createElement('div');
+            logElement.className = 'p-3 border-bottom log-item';
+            logElement.dataset.level = level.toLowerCase();
+            logElement.dataset.agent = `${agentId} ${agentHost}`.toLowerCase();
+            logElement.dataset.search = `${source_ip} ${dest_ip} ${domain} ${message}`.toLowerCase();
+            
+            logElement.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <input type="checkbox" class="form-check-input log-checkbox" value="${logId}">
+                    </div>
+                    <div class="col">
+                        <div class="d-flex align-items-start justify-content-between">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="log-level ${level}">${level}</span>
+                                    <span class="log-timestamp ms-2">${timestamp}</span>
+                                    <span class="log-agent ms-2">${agentHost}</span>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-1">
+                                            <small class="text-muted">Domain:</small>
+                                            <strong class="ms-1">${domain}</strong>
+                                        </div>
+                                        <div class="mb-1">
+                                            <small class="text-muted">Source:</small>
+                                            <span class="log-ip ms-1">${source_ip}</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-1">
+                                            <small class="text-muted">Destination:</small>
+                                            <span class="log-ip ms-1">${dest_ip}</span>
+                                        </div>
+                                        <div class="mb-1">
+                                            <small class="text-muted">Protocol:</small>
+                                            <span class="log-action ms-1">${protocol}:${port}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                ${message && message !== `${action}: ${domain}` ? `
+                                    <div class="log-details mt-2">
+                                        <small class="text-muted">Details:</small>
+                                        <div class="mt-1">${message}</div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            <div class="ms-3">
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                            type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void(0)" 
+                                               onclick="showLogDetails('${logId}')">
+                                                <i class="fas fa-eye me-2"></i>View Details
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void(0)" 
+                                               onclick="exportSingleLog('${logId}')">
+                                                <i class="fas fa-download me-2"></i>Export
+                                            </a>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a class="dropdown-item text-danger" href="javascript:void(0)" 
+                                               onclick="clearSingleLog('${logId}')">
+                                                <i class="fas fa-trash me-2"></i>Delete
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(logElement);
+            renderedCount++;
+            
+        } catch (error) {
+            console.error(` Error rendering log ${index}:`, error, log);
+        }
+    });
+    
+    // Add event listeners for checkboxes
+    container.querySelectorAll('.log-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateSelectedLogs);
+    });
+    
+    console.log(` Successfully rendered ${renderedCount}/${logs.length} logs`);
+}
+
+/**
+ *  Clear confirmation
+ */
+function showClearConfirmation(action, count = 0, message = '') {
+    currentClearAction = action;
+    
+    // Check if modal elements exist
+    const modalTitle = document.getElementById('clearModalTitle');
+    const modalMessage = document.getElementById('clearModalMessage');
+    const checkbox = document.getElementById('confirmClearCheckbox');
+    const confirmBtn = document.getElementById('modalConfirmClearBtn');
+    
+    if (!modalTitle || !modalMessage || !checkbox || !confirmBtn) {
+        console.error(' Modal elements not found');
+        return;
+    }
+    
+    let title, modalMessageText;
+    
+    switch (action) {
+        case 'all':
+            title = 'Clear All Logs?';
+            modalMessageText = `This will permanently delete all system logs and cannot be undone.`;
+            break;
+        case 'selected':
+            title = `Clear ${count} Selected Logs?`;
+            modalMessageText = `This will permanently delete the ${count} selected logs and cannot be undone.`;
+            break;
+        case 'old':
+            title = 'Clear Old Logs?';
+            modalMessageText = 'This will permanently delete all logs older than 30 days and cannot be undone.';
+            break;
+        case 'single':
+            title = 'Clear This Log?';
+            modalMessageText = 'This will permanently delete this log entry and cannot be undone.';
+            break;
+        default:
+            title = 'Clear Logs?';
+            modalMessageText = message || 'This action cannot be undone.';
+    }
+    
+    modalTitle.textContent = title;
+    modalMessage.textContent = modalMessageText;
+    
+    // Reset checkbox and button
+    checkbox.checked = false;
+    confirmBtn.disabled = true;
+    
+    const modal = new bootstrap.Modal(document.getElementById('clearConfirmModal'));
+    modal.show();
+}
+
+/**
+ *  Perform clear action - FIXED
+ */
+async function performClearAction() {
+    if (!currentClearAction) return;
+    
+    const confirmBtn = document.getElementById('modalConfirmClearBtn');
+    if (!confirmBtn) return;
+    
+    const originalText = confirmBtn.innerHTML;
+    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Clearing...';
+    confirmBtn.disabled = true;
+    
+    try {
+        let requestBody = {};
+        let successMessage = '';
+        
+        switch (currentClearAction) {
+            case 'all':
+                requestBody = { action: 'all' };
+                successMessage = 'All logs cleared successfully';
+                break;
+                
+            case 'selected':
+                const selectedLogIds = Array.from(selectedLogs);
+                requestBody = { 
+                    action: 'selected',
+                    log_ids: selectedLogIds 
+                };
+                successMessage = `${selectedLogIds.length} selected logs cleared successfully`;
+                break;
+                
+            case 'old':
+                requestBody = { action: 'old' };
+                successMessage = 'Old logs cleared successfully';
+                break;
+                
+            case 'single':
+                if (currentClearAction.logId) {
+                    requestBody = { 
+                        action: 'selected',
+                        log_ids: [currentClearAction.logId] 
+                    };
+                    successMessage = 'Log cleared successfully';
+                }
+                break;
+                
+            default:
+                requestBody = { action: 'all' };
+                successMessage = 'Logs cleared successfully';
+        }
+        
+        console.log(' Clearing logs with:', requestBody);
+        
+        //  FIX: Use correct URL
+        const response = await fetch('/api/logs/clear', {
+            method: 'DELETE',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        console.log(' Clear response status:', response.status);
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log(' Clear result:', result);
+            
+            if (result.success) {
+                const actualDeleted = result.deleted_count || 0;
+                
+                if (actualDeleted > 0) {
+                    showNotification('success', `${actualDeleted} logs cleared successfully`);
+                    
+                    // Reload data
+                    await loadLogs();
+                    
+                    // Clear selection
+                    selectedLogs.clear();
+                    updateSelectedLogs();
+                    
+                } else {
+                    showNotification('info', 'No logs were found to clear');
+                }
+                
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('clearConfirmModal'));
+                if (modal) modal.hide();
+                
+            } else {
+                throw new Error(result.error || 'Failed to clear logs');
+            }
+        } else {
+            const errorText = await response.text();
+            console.error(' Clear failed:', response.status, errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+    } catch (error) {
+        console.error(' Error clearing logs:', error);
+        showNotification('danger', `Failed to clear logs: ${error.message}`);
+    } finally {
+        confirmBtn.innerHTML = originalText;
+        confirmBtn.disabled = false;
+        currentClearAction = null;
+    }
+}
+
+/**
+ *  Single log clear
+ */
+function clearSingleLog(logId) {
+    currentClearAction = { action: 'single', logId: logId };
+    showClearConfirmation('single');
+}
+
+/**
+ *  Filter logs
+ */
+function filterLogs() {
+    const searchTerm = currentFilter.search.toLowerCase();
+    const levelFilter = currentFilter.level;
+    const agentFilter = currentFilter.agent;
+    const logItems = document.querySelectorAll('.log-item');
+    
+    logItems.forEach(item => {
+        const level = item.dataset.level;
+        const agent = item.dataset.agent;
+        const searchText = item.dataset.search;
+        
+        const matchesSearch = !searchTerm || searchText.includes(searchTerm);
+        const matchesLevel = !levelFilter || level === levelFilter.toLowerCase();
+        const matchesAgent = !agentFilter || agent.includes(agentFilter.toLowerCase());
+        
+        if (matchesSearch && matchesLevel && matchesAgent) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+/**
+ *  Show log details
+ */
+function showLogDetails(logId) {
+    const log = logsData.find(l => (l._id || l.id || logsData.indexOf(l).toString()) === logId);
+    if (!log) return;
+    
+    const modal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
+    const content = document.getElementById('logDetailsContent');
+    
+    if (!content) return;
+    
+    content.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="fw-bold mb-3">Basic Information</h6>
+                <table class="table table-sm">
+                    <tr><td class="fw-semibold">Timestamp:</td><td>${log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown'}</td></tr>
+                    <tr><td class="fw-semibold">Level:</td><td><span class="log-level ${log.level || 'INFO'}">${log.level || log.action || 'INFO'}</span></td></tr>
+                    <tr><td class="fw-semibold">Source IP:</td><td><code>${log.source_ip || log.ip || 'Unknown'}</code></td></tr>
+                    <tr><td class="fw-semibold">Destination:</td><td>${log.destination || log.domain || log.url || 'N/A'}</td></tr>
+                    <tr><td class="fw-semibold">Agent:</td><td><span class="log-agent">${getAgentDisplayName(log)}</span></td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6 class="fw-bold mb-3">Additional Details</h6>
+                <table class="table table-sm">
+                    <tr><td class="fw-semibold">Protocol:</td><td>${log.protocol || 'Unknown'}</td></tr>
+                    <tr><td class="fw-semibold">Port:</td><td>${log.port || log.destination_port || 'Unknown'}</td></tr>
+                    <tr><td class="fw-semibold">Size:</td><td>${log.size || log.packet_size || 'Unknown'}</td></tr>
+                    <tr><td class="fw-semibold">Action:</td><td>${log.action || 'Unknown'}</td></tr>
+                    <tr><td class="fw-semibold">Rule ID:</td><td>${log.rule_id || 'N/A'}</td></tr>
+                </table>
+            </div>
+        </div>
+        ${log.message ? `
+            <div class="mt-3">
+                <h6 class="fw-bold">Message</h6>
+                <div class="alert alert-light">
+                    <code>${log.message}</code>
+                </div>
+            </div>
+        ` : ''}
+    `;
+    
+    modal.show();
+}
+
+/**
+ *  Export functionality
+ */
+function exportLogs(logs = logsData) {
+    const csvContent = [
+        ['Timestamp', 'Level', 'Source IP', 'Destination', 'Agent', 'Message'].join(','),
+        ...logs.map(log => [
+            log.timestamp || '',
+            log.level || log.action || '',
+            log.source_ip || log.ip || '',
+            log.destination || log.domain || log.url || '',
+            log.agent_id || log.agent || '',
+            (log.message || '').replace(/,/g, ';')
+        ].join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `firewall-logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    
+    showNotification('success', `Exported ${logs.length} logs successfully`);
+}
+
+function exportSingleLog(logId) {
+    const log = logsData.find(l => (l._id || l.id || logsData.indexOf(l).toString()) === logId);
+    if (log) {
+        exportLogs([log]);
+    }
+}
+
+/**
+ *  Utility functions
+ */
+function refreshLogs() {
+    const button = document.getElementById('refreshBtn');
+    if (button) {
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        button.disabled = true;
+        
+        loadLogs().finally(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+        });
+    }
+}
+
+function clearFilters() {
+    currentFilter = { time: 'all', level: '', agent: '', search: '', limit: 100 };
+    
+    const searchInput = document.getElementById('log-search');
+    const levelFilter = document.getElementById('level-filter');
+    const agentFilter = document.getElementById('agent-filter');
+    
+    if (searchInput) searchInput.value = '';
+    if (levelFilter) levelFilter.value = '';
+    if (agentFilter) agentFilter.value = '';
+    
+    document.querySelector('.time-pill.active')?.classList.remove('active');
+    document.querySelector('[data-time="all"]')?.classList.add('active');
+    
+    loadLogs();
+}
+
+function selectAllLogs() {
+    const selectAllCheckbox = document.getElementById('selectAllLogs');
+    const logCheckboxes = document.querySelectorAll('.log-checkbox');
+    
+    if (selectAllCheckbox) {
+        logCheckboxes.forEach(cb => {
+            cb.checked = selectAllCheckbox.checked;
+        });
+        updateSelectedLogs();
+    }
+}
+
+function updateSelectedLogs() {
+    const checkboxes = document.querySelectorAll('.log-checkbox:checked');
+    selectedLogs.clear();
+    
+    checkboxes.forEach(cb => selectedLogs.add(cb.value));
+    
+    const selectedCountEl = document.getElementById('selectedCount');
+    if (selectedCountEl) {
+        selectedCountEl.textContent = selectedLogs.size;
+    }
+    
+    const bulkActions = document.getElementById('bulkActions');
+    if (bulkActions) {
+        if (selectedLogs.size > 0) {
+            bulkActions.classList.add('show');
+        } else {
+            bulkActions.classList.remove('show');
+        }
+    }
+    
+    // Update select all checkbox state
+    const totalCheckboxes = document.querySelectorAll('.log-checkbox').length;
+    const selectAllCheckbox = document.getElementById('selectAllLogs');
+    
+    if (selectAllCheckbox) {
+        if (selectedLogs.size === 0) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = false;
+        } else if (selectedLogs.size === totalCheckboxes) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = true;
+        } else {
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+}
+
+function showError(message) {
+    const container = document.getElementById('logsContainer');
+    if (container) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                <h5 class="text-danger">Error Loading Logs</h5>
+                <p class="text-muted">${message}</p>
+                <button class="btn btn-primary" onclick="refreshLogs()">
+                    <i class="fas fa-redo me-2"></i>Try Again
+                </button>
+            </div>
+        `;
+    }
+}
+
+function showNotification(type, message) {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+/**
+ *  SINGLE INITIALIZATION
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    console.log(' Initializing logs management...');
+    
+    // Time filter pills
+    document.querySelectorAll('.time-pill').forEach(pill => {
+        pill.addEventListener('click', function() {
+            document.querySelector('.time-pill.active')?.classList.remove('active');
+            this.classList.add('active');
+            currentFilter.time = this.dataset.time;
+            onFilterChange();
+        });
+    });
+    
+    // Search and filters
+    const searchInput = document.getElementById('log-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            currentFilter.search = this.value;
+            filterLogs();
+        });
+    }
+    
+    const levelFilter = document.getElementById('level-filter');
+    if (levelFilter) {
+        levelFilter.addEventListener('change', function() {
+            currentFilter.level = this.value;
+            onFilterChange();
+        });
+    }
+    
+    const agentFilter = document.getElementById('agent-filter');
+    if (agentFilter) {
+        agentFilter.addEventListener('change', function() {
+            currentFilter.agent = this.value;
+            onFilterChange();
+        });
+    }
+    
+    const limitSelect = document.getElementById('limit-select');
+    if (limitSelect) {
+        limitSelect.addEventListener('change', function() {
+            currentFilter.limit = parseInt(this.value);
+            loadLogs();
+        });
+    }
+    
+    // Control buttons
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshLogs);
+    }
+    
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => exportLogs());
+    }
+    
+    // Select all functionality
+    const selectAllLogs = document.getElementById('selectAllLogs');
+    if (selectAllLogs) {
+        selectAllLogs.addEventListener('change', selectAllLogs);
+    }
+    
+    // Clear functionality
+    const clearSelectedBtn = document.getElementById('clearSelectedBtn');
+    if (clearSelectedBtn) {
+        clearSelectedBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (selectedLogs.size === 0) {
+                showNotification('warning', 'No logs selected');
+                return;
+            }
+            showClearConfirmation('selected', selectedLogs.size);
+        });
+    }
+    
+    const clearOldLogsBtn = document.getElementById('clearOldLogsBtn');
+    if (clearOldLogsBtn) {
+        clearOldLogsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            showClearConfirmation('old');
+        });
+    }
+    
+    const clearAllLogsBtn = document.getElementById('clearAllLogsBtn');
+    if (clearAllLogsBtn) {
+        clearAllLogsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            showClearConfirmation('all');
+        });
+    }
+    
+    // Bulk actions
+    const bulkClearBtn = document.getElementById('bulkClearBtn');
+    if (bulkClearBtn) {
+        bulkClearBtn.addEventListener('click', function() {
+            if (selectedLogs.size === 0) {
+                showNotification('warning', 'No logs selected');
+                return;
+            }
+            showClearConfirmation('selected', selectedLogs.size);
+        });
+    }
+    
+    const bulkExportBtn = document.getElementById('bulkExportBtn');
+    if (bulkExportBtn) {
+        bulkExportBtn.addEventListener('click', function() {
+            const selectedLogsData = logsData.filter(log => 
+                selectedLogs.has(log._id || log.id || logsData.indexOf(log).toString())
+            );
+            exportLogs(selectedLogsData);
+        });
+    }
+    
+    // Modal confirmation
+    const confirmClearCheckbox = document.getElementById('confirmClearCheckbox');
+    if (confirmClearCheckbox) {
+        confirmClearCheckbox.addEventListener('change', function() {
+            const confirmBtn = document.getElementById('modalConfirmClearBtn');
+            if (confirmBtn) {
+                confirmBtn.disabled = !this.checked;
+            }
+        });
+    }
+    
+    const modalConfirmClearBtn = document.getElementById('modalConfirmClearBtn');
+    if (modalConfirmClearBtn) {
+        modalConfirmClearBtn.addEventListener('click', performClearAction);
+    }
+    
+    // Load initial data
+    console.log(' Loading initial data...');
+    loadLogs();
+    
+    // Emergency fallback
+    setTimeout(() => {
+        if (!logsData || logsData.length === 0) {
+            console.log('🚨 No logs loaded after 3 seconds, running emergency test');
+            emergencyTest();
+        }
+    }, 3000);
+    
+    console.log(' Logs management initialized');
+});
+
+// Socket.IO for real-time updates
+try {
+    if (typeof io !== 'undefined') {
+        const socket = io();
+        
+        socket.on('connect', function() {
+            console.log('🔌 Connected for real-time updates');
+        });
+        
+        socket.on('new_log', function(logData) {
+            console.log(' New log received:', logData);
+            logsData.unshift(logData);
+            logsData = logsData.slice(0, currentFilter.limit);
+            updateStatistics();
+            renderLogs(logsData);
+        });
+        
+        socket.on('logs_cleared', function(data) {
+            console.log(' Logs cleared:', data);
+            showNotification('info', `${data.count} logs were cleared`);
+            loadLogs();
+        });
+        
+    } else {
+        console.log(' Socket.IO not available');
+    }
+} catch (error) {
+    console.error(' Socket.IO error:', error);
+}
+
+//  Add emergency test function
+function emergencyTest() {
+    console.log('🚨 Running emergency test');
+    
+    // Test direct API call
+    fetch('/api/logs?limit=5')
+        .then(response => {
+            console.log(' Emergency test response status:', response.status);
+            return response.text();
+        })
+        .then(text => {
+            console.log(' Emergency test response text length:', text.length);
+            console.log(' Emergency test response start:', text.substring(0, 300));
+            
+            try {
+                const data = JSON.parse(text);
+                console.log(' Emergency test parsed data:', data);
+                
+                if (data.logs) {
+                    console.log(' Emergency test logs count:', data.logs.length);
+                    renderLogs(data.logs);
+                }
+            } catch (e) {
+                console.error(' Emergency test parse error:', e);
+            }
+        })
+        .catch(error => {
+            console.error(' Emergency test error:', error);
+        });
+}
+
+//  Add test render function
+function testRender() {
+    console.log(' Testing render with sample data');
+    
+    const sampleLogs = [
+        {
+            _id: 'test1',
+            timestamp: new Date().toISOString(),
+            level: 'ALLOWED',
+            action: 'ALLOWED',
+            domain: 'google.com',
+            source_ip: '192.168.1.100',
+            dest_ip: '8.8.8.8',
+            agent_id: 'test-agent',
+            protocol: 'TCP',
+            port: '443',
+            message: 'Test log entry'
+        },
+        {
+            _id: 'test2',
+            timestamp: new Date().toISOString(),
+            level: 'BLOCKED',
+            action: 'BLOCKED',
+            domain: 'malicious-site.com',
+            source_ip: '192.168.1.100',
+            dest_ip: '1.2.3.4',
+            agent_id: 'test-agent',
+            protocol: 'TCP',
+            port: '80',
+            message: 'Test blocked entry'
+        }
+    ];
+    
+    console.log(' Rendering sample logs:', sampleLogs);
+    renderLogs(sampleLogs);
+}
+
+function renderLogItem(log, index) {
+    const logId = log._id || log.id || index.toString();
+    
+    //  FIX: Enhanced protocol display
+    let protocolDisplay = log.protocol || 'unknown';
+    let portDisplay = log.port || 'unknown';
+    
+    if (protocolDisplay !== 'unknown' && portDisplay !== 'unknown') {
+        protocolDisplay = `${protocolDisplay}:${portDisplay}`;
+    } else if (protocolDisplay === 'unknown' && portDisplay !== 'unknown') {
+        protocolDisplay = `Port ${portDisplay}`;
+    }
+    
+    //  FIX: Enhanced source IP display
+    let sourceDisplay = log.source_ip || 'unknown';
+    if (sourceDisplay === 'unknown') {
+        sourceDisplay = '<span class="text-muted">Local</span>';
+    } else {
+        sourceDisplay = `<span class="log-ip">${sourceDisplay}</span>`;
+    }
+    
+    //  FIX: Enhanced destination display
+    let destinationDisplay = log.destination || log.domain || log.dest_ip || 'unknown';
+    if (log.service_type && log.service_type !== 'unknown') {
+        destinationDisplay += `<small class="text-muted ms-1">(${log.service_type})</small>`;
+    }
+    
+    const agentId = (log.agent_id || log.agent || '').toString();
+    const agentHost = getAgentDisplayName(log);
+    
+    return `
+        <div class="log-item p-3 border-bottom" data-log-id="${logId}" 
+             data-level="${(log.level || 'info').toLowerCase()}"
+             data-agent="${`${agentId} ${agentHost}`.toLowerCase()}"
+             data-search="${(log.domain || '' + log.destination || '' + log.source_ip || '' + log.message || '').toLowerCase()}">
+            
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <input type="checkbox" class="form-check-input log-checkbox" value="${logId}">
+                </div>
+                
+                <div class="col-auto">
+                    <span class="log-level ${log.level || 'INFO'}">${log.level || 'INFO'}</span>
+                </div>
+                
+                <div class="col-2">
+                    <div class="log-timestamp">${formatTimestamp(log.timestamp)}</div>
+                    <small class="text-muted">${log.display_time || formatTime(log.timestamp)}</small>
+                </div>
+                
+                <div class="col-3">
+                    <div class="fw-medium">${destinationDisplay}</div>
+                    ${log.dest_ip && log.dest_ip !== 'unknown' ? `
+                        <small class="text-muted d-block">
+                            <i class="fas fa-arrow-right me-1"></i>${log.dest_ip}
+                        </small>
+                    ` : ''}
+                </div>
+                
+                <div class="col-2">
+                    <div class="small">
+                        <div class="mb-1">
+                            <i class="fas fa-network-wired me-1"></i>
+                            Protocol<span class="log-action ms-1">${protocolDisplay}</span>
+                        </div>
+                        <div>
+                            <i class="fas fa-desktop me-1"></i>
+                            Source${sourceDisplay}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-2">
+                    <span class="log-agent">${agentHost}</span>
+                    ${log.process_name ? `
+                        <small class="d-block text-muted mt-1">
+                            <i class="fas fa-cog me-1"></i>${log.process_name}
+                        </small>
+                    ` : ''}
+                </div>
+                
+                <div class="col-auto">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="showLogDetails('${logId}')">
+                                <i class="fas fa-info-circle me-2"></i>View Details
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="exportSingleLog('${logId}')">
+                                <i class="fas fa-download me-2"></i>Export
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="#" onclick="clearSingleLog('${logId}')">
+                                <i class="fas fa-trash me-2"></i>Delete
+                            </a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            ${log.message && log.message !== 'Log entry' ? `
+                <div class="log-details mt-2">
+                    <i class="fas fa-comment-alt me-2"></i>${log.message}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+//  ADD: Helper functions
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'Unknown';
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleString('vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    } catch (e) {
+        return timestamp.toString();
+    }
+}
+
+function formatTime(timestamp) {
+    if (!timestamp) return '00:00:00';
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('vi-VN');
+    } catch (e) {
+        return '00:00:00';
+    }
+}

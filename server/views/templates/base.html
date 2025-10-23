@@ -13,99 +13,7 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <style>
-        :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            --danger-gradient: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
-            --info-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        
-        body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-        }
-        
-        .navbar {
-            background: var(--primary-gradient) !important;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
-        }
-        
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.5rem;
-        }
-        
-        .nav-link {
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .nav-link:hover {
-            transform: translateY(-2px);
-        }
-        
-        main {
-            min-height: calc(100vh - 200px);
-        }
-        
-        footer {
-            background: white !important;
-            border-top: 1px solid #e9ecef;
-            margin-top: 4rem;
-        }
-        
-        .border-start-primary { border-left: 0.25rem solid #667eea !important; }
-        .border-start-success { border-left: 0.25rem solid #28a745 !important; }
-        .border-start-danger { border-left: 0.25rem solid #dc3545 !important; }
-        .border-start-warning { border-left: 0.25rem solid #ffc107 !important; }
-        .border-start-info { border-left: 0.25rem solid #17a2b8 !important; }
-        .border-start-secondary { border-left: 0.25rem solid #6c757d !important; }
-        
-        .toast {
-            border-radius: 15px;
-            border: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        
-        /* Smooth transitions for all interactive elements */
-        .btn, .card, .nav-link, .badge {
-            transition: all 0.3s ease;
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-        
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
-        }
-
-        .nav-link.active {
-            background: rgba(255,255,255,0.2) !important;
-            border-radius: 8px;
-            font-weight: 600;
-        }
-    </style>
+   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}"> 
     
     {% block extra_css %}{% endblock %}
 </head>
@@ -182,79 +90,10 @@
     <!-- Socket.IO -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.0/socket.io.js"></script>
     
-    {% block extra_js %}{% endblock %}
     
-    <!-- Global notification system -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer">
     </div>
-    
-    <script>
-        // Enhanced notification system
-        function showNotification(type, message, duration = 5000) {
-            const toastContainer = document.getElementById('toastContainer');
-            const toastId = 'toast-' + Date.now();
-            
-            const icons = {
-                'success': 'fas fa-check-circle',
-                'danger': 'fas fa-exclamation-circle',
-                'warning': 'fas fa-exclamation-triangle',
-                'info': 'fas fa-info-circle',
-                'primary': 'fas fa-bell'
-            };
-            
-            const toastHtml = `
-                <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
-                    <div class="d-flex">
-                        <div class="toast-body">
-                            <i class="${icons[type] || icons['info']} me-2"></i>
-                            ${message}
-                        </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-                    </div>
-                </div>
-            `;
-            
-            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-            
-            const toastElement = document.getElementById(toastId);
-            const toast = new bootstrap.Toast(toastElement, {delay: duration});
-            toast.show();
-            
-            toastElement.addEventListener('hidden.bs.toast', function() {
-                toastElement.remove();
-            });
-        }
-        
-        // Add loading state utilities
-        function showLoading(element) {
-            if (element) {
-                element.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Loading...';
-                element.disabled = true;
-            }
-        }
-        
-        function hideLoading(element, originalText) {
-            if (element) {
-                element.innerHTML = originalText;
-                element.disabled = false;
-            }
-        }
-        
-        // Global error handler
-        window.addEventListener('error', function(e) {
-            console.error('Global error:', e.error);
-            showNotification('danger', 'An unexpected error occurred. Please refresh the page.');
-        });
-        
-        // Add smooth page transitions
-        document.addEventListener('DOMContentLoaded', function() {
-            document.body.style.opacity = '0';
-            document.body.style.transition = 'opacity 0.3s ease';
-            
-            setTimeout(() => {
-                document.body.style.opacity = '1';
-            }, 100);
-        });
-    </script>
+ <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>

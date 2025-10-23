@@ -9,12 +9,13 @@ urllib3>=1.26.0
 
 # System monitoring and process management
 psutil>=5.9.0
-netifaces>=0.11.0
 
 # Date and time handling
 python-dateutil>=2.8.0
 
-# Network interface management (cross-platform)
-netifaces>=0.11.0
 #Tương tác với các API Windows, đặc biệt khi bạn viết Windows Service bằng Python
 pywin32
+requests
+
+# Network interface management (cross-platform)
+netifaces>=0.11.0

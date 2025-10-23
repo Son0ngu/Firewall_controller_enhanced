@@ -6,14 +6,14 @@ from typing import Dict, List
 
 import requests
 
-# Import time utilities - UTC ONLY
+# Import time utilities - vietnam ONLY
 from time_utils import now, now_iso, sleep
 
 # Cấu hình logger
 logger = logging.getLogger("log_sender")
 
 class LogSender:
-    """Gửi log từ agent lên server trung tâm - UTC ONLY"""
+    """Gửi log từ agent lên server trung tâm - vietnam ONLY"""
     
     def __init__(self, config: Dict):
         """Khởi tạo log sender với cấu hình cơ bản"""
@@ -47,8 +47,8 @@ class LogSender:
         # Khởi tạo định danh agent
         self.agent_id = config.get("agent_id", self._generate_agent_id())
         
-        #  Thêm tracking thời gian - using time_utils UTC only
-        self.last_send_time = now()  # UTC timestamp
+        #  Thêm tracking thời gian - using time_utils vietnam only
+        self.last_send_time = now()  # vietnam timestamp
         
         logger.info(f"LogSender initialized with agent_id: {self.agent_id}")
         logger.info(f"Will send logs to: {', '.join(self.server_urls)}")
@@ -82,7 +82,7 @@ class LogSender:
         logger.info("Log sender stopped")
     
     def queue_log(self, log_data: Dict) -> bool:
-        """Thêm log vào hàng đợi để gửi - UTC only"""
+        """Thêm log vào hàng đợi để gửi - vietnam only"""
         try:
             #  FIX: Serialize datetime objects trước khi queue
             serialized_log = self._serialize_log_data(log_data.copy())
@@ -92,7 +92,7 @@ class LogSender:
                 serialized_log["agent_id"] = self.agent_id
                 
             if "timestamp" not in serialized_log:
-                serialized_log["timestamp"] = now_iso()  # UTC ISO timestamp
+                serialized_log["timestamp"] = now_iso()  # vietnam ISO timestamp
         
             # Thêm log vào hàng đợi
             self.log_queue.put_nowait(serialized_log)
@@ -105,7 +105,7 @@ class LogSender:
             return False
     
     def _serialize_log_data(self, log_data: Dict) -> Dict:
-        """Serialize datetime objects và ensure all fields có value - UTC only"""
+        """Serialize datetime objects và ensure all fields có value - vietnam only"""
         try:
             serialized = {}
             
@@ -129,9 +129,9 @@ class LogSender:
                 else:
                     serialized[key] = value
             
-            #  FIX: Ensure essential fields exist - UTC only
+            #  FIX: Ensure essential fields exist - vietnam only
             essential_fields = {
-                "timestamp": now_iso(),  # UTC ISO timestamp
+                "timestamp": now_iso(),  # vietnam ISO timestamp
                 "agent_id": self.agent_id,
                 "level": "INFO",
                 "action": "UNKNOWN",
@@ -152,9 +152,9 @@ class LogSender:
             
         except Exception as e:
             logger.error(f"Error serializing log data: {e}")
-            #  Fallback: return complete basic log data - UTC only
+            #  Fallback: return complete basic log data - vietnam only
             return {
-                "timestamp": now_iso(),  # UTC ISO timestamp
+                "timestamp": now_iso(),  # vietnam ISO timestamp
                 "agent_id": self.agent_id,
                 "level": "ERROR",
                 "action": "ERROR",
@@ -171,11 +171,11 @@ class LogSender:
             }
     
     def _sender_loop(self):
-        """Vòng lặp gửi log theo định kỳ với tối ưu hóa - UTC only"""
+        """Vòng lặp gửi log theo định kỳ với tối ưu hóa - vietnam only"""
         while self.running:
             try:
-                #  Thêm logic gửi định kỳ - using time_utils UTC only
-                current_time = now()  # UTC timestamp
+                #  Thêm logic gửi định kỳ - using time_utils vietnam only
+                current_time = now()  # vietnam timestamp
                 queue_size = self.log_queue.qsize()
                 
                 # Gửi nếu đủ batch_size HOẶC đã qua send_interval
@@ -225,7 +225,7 @@ class LogSender:
             self._send_batch(logs)
     
     def _send_batch(self, logs: List[Dict]) -> bool:
-        """Gửi một batch log lên server - UTC only"""
+        """Gửi một batch log lên server - vietnam only"""
         if not self.server_urls:
             logger.error("Server URL not configured")
             return False
@@ -241,11 +241,11 @@ class LogSender:
                     serialized_logs.append(clean_log)
                 except Exception as e:
                     logger.error(f"Failed to serialize log: {e}")
-                    #  Create fallback log entry - UTC only
+                    #  Create fallback log entry - vietnam only
                     fallback_log = {
                         "message": f"Log serialization failed: {str(e)}",
                         "level": "error",
-                        "timestamp": now_iso(),  # UTC ISO timestamp
+                        "timestamp": now_iso(),  # vietnam ISO timestamp
                         "agent_id": self.agent_id,
                         "original_log_preview": str(log)[:200] + "..." if len(str(log)) > 200 else str(log)
                     }
@@ -318,7 +318,7 @@ class LogSender:
         return f"{hostname}-{mac}"
 
     def get_status(self) -> Dict:
-        """Get log sender status - UTC only"""
+        """Get log sender status - vietnam only"""
         return {
             "running": self.running,
             "agent_id": self.agent_id,
@@ -326,7 +326,7 @@ class LogSender:
             "max_queue_size": self.max_queue_size,
             "batch_size": self.batch_size,
             "send_interval": self.send_interval,
-            "last_send_time": self.last_send_time,  # UTC Unix timestamp
+            "last_send_time": self.last_send_time,  # vietnam Unix timestamp
             "server_urls": self.server_urls,
-            "status_timestamp": now_iso()  # UTC ISO timestamp
+            "status_timestamp": now_iso()  # vietnam ISO timestamp
         }

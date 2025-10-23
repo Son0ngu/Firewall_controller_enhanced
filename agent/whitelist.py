@@ -1,6 +1,6 @@
 """
 Enhanced Whitelist Manager for Firewall Controller Agent
-UTC ONLY - Clean, optimized implementation with dnspython and aiodns
+vietnam ONLY - Clean, optimized implementation with dnspython and aiodns
 
 Key improvements:
 - LRU Cache with minimal lock contention
@@ -21,11 +21,17 @@ import concurrent.futures
 import atexit
 from collections import OrderedDict, namedtuple
 from typing import Dict, Set, Optional, List, Tuple
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-# Time utilities - UTC ONLY
-from time_utils import now, now_iso, sleep, is_cache_valid, cache_age
+# Time utilities - vietnam ONLY
+from time_utils import (
+    cache_age,
+    is_cache_valid,
+    now,
+    now_iso,
+    now_server_compatible,
+    sleep,
+)
 
 # High-performance DNS libraries (cleaned imports)
 import dns.resolver
@@ -562,7 +568,7 @@ class WhitelistManager:
         self.current_resolved_ips: Set[str] = set()
         self.previous_resolved_ips: Set[str] = set()
         
-        # Timestamps - all UTC
+        # Timestamps - all vietnam
         self.last_updated: Optional[float] = None
         self.last_successful_sync: Optional[float] = None
         self.startup_sync_completed = False
@@ -1080,8 +1086,8 @@ class WhitelistManager:
             return None
     
     def _timestamp_to_iso(self, timestamp: float) -> str:
-        """Convert UTC timestamp to ISO string"""
-        return datetime.fromtimestamp(timestamp, timezone.utc).isoformat().replace('+00:00', 'Z')
+        """Convert vietnam timestamp to ISO string"""
+        return now_server_compatible(timestamp)
     
     # ========================================
     # FIREWALL INTEGRATION (optimized calls)
@@ -1558,5 +1564,5 @@ class WhitelistManager:
                 "total_servers": len(self.server_urls),
                 "performance_mode": "high_performance_lru_parallel_dns_fixed",
                 "current_time": now_iso(),
-                "dns_available": True  # Since we removed DNS_AVAILABLE variable
+                "dns_available": True  
             }

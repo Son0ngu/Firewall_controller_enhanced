@@ -3,8 +3,53 @@ import logging  # Thư viện ghi log để theo dõi hoạt động của modul
 import threading  # Thư viện hỗ trợ đa luồng để chạy bắt gói tin trong luồng riêng
 import re  #  ADD: Missing import for regex validation
 from typing import Callable, Dict, Optional  # Thư viện hỗ trợ kiểu dữ liệu tĩnh
+import os  #  ADD: Manage environment variables for Scapy cache
+import tempfile  #  ADD: Get hệ thống thư mục tạm thời
 
-# Import time utilities - UTC ONLY
+# Cấu hình logger cho module này (cần trước khi cấu hình Scapy)
+logger = logging.getLogger("packet_sniffer")
+
+
+def _configure_scapy_cache() -> Optional[str]:
+    """Đảm bảo Scapy sử dụng thư mục cache trong %TEMP%.
+
+    Trên một số hệ thống Windows bị khóa quyền ghi vào ``%USERPROFILE%\\.cache``,
+    việc import Scapy có thể ném ``PermissionError`` khi cố tạo file ``services``.
+    Hàm này chuyển toàn bộ cache/config/data của Scapy sang thư mục tạm bảo đảm
+    ghi được.
+    """
+
+    try:
+        # Ưu tiên TEMP/TMP của Windows, fallback sang thư mục tạm của Python
+        temp_root = (
+            os.environ.get("TEMP")
+            or os.environ.get("TMP")
+            or tempfile.gettempdir()
+        )
+
+        cache_dir = os.path.join(temp_root, "scapy-cache")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # Ghi đè để chắc chắn bản .exe luôn dùng đúng thư mục cache
+        os.environ["SCAPY_CACHE_DIR"] = cache_dir
+        os.environ["SCAPY_CONFIG_DIR"] = cache_dir
+        os.environ["SCAPY_DATA_DIR"] = cache_dir
+        # Một số bản Scapy dùng biến XDG_CACHE_HOME/SCAPY_HOME khi chạy trên Windows
+        os.environ.setdefault("XDG_CACHE_HOME", cache_dir)
+        os.environ.setdefault("SCAPY_HOME", cache_dir)
+
+        logger.debug("Scapy cache configured at %s", cache_dir)
+        return cache_dir
+    except Exception as exc:  # pragma: no cover - chỉ log khi có sự cố hệ thống
+        logger.warning("Failed to configure Scapy cache directory: %s", exc)
+
+        return None
+    
+
+
+_SCAPY_CACHE_DIR = _configure_scapy_cache()
+
+# Import time utilities - vietnam ONLY
 from time_utils import now_iso, sleep
 
 # Import các module từ thư viện Scapy để bắt và phân tích gói tin mạng
@@ -16,10 +61,16 @@ from scapy.packet import Raw  #  ADD: Missing Raw import
 from scapy.layers.tls.extensions import ServerName  # Lớp xử lý phần mở rộng ServerName trong TLS
 from scapy.layers.tls.handshake import TLSClientHello  # Lớp xử lý bản tin ClientHello trong TLS
 from scapy.packet import Packet  # Lớp cơ sở cho các gói tin trong Scapy
+from scapy.config import conf as scapy_conf  #  ADD: Điều chỉnh cache sau khi import
 
-# Cấu hình logger cho module này
-# Sử dụng tên riêng để dễ dàng lọc log từ module này
-logger = logging.getLogger("packet_sniffer")
+
+if _SCAPY_CACHE_DIR:
+    try:
+        scapy_conf.cache_dir = _SCAPY_CACHE_DIR
+        # Đảm bảo thư mục tồn tại (phòng khi bị xóa sau khi cấu hình ở trên)
+        os.makedirs(scapy_conf.cache_dir, exist_ok=True)
+    except Exception as exc:  # pragma: no cover - ghi log nếu có sự cố bất thường
+        logger.warning("Could not set Scapy cache dir to %s: %s", _SCAPY_CACHE_DIR, exc)
 
 class PacketSniffer:
     """
@@ -183,9 +234,9 @@ class PacketSniffer:
             
             #  FIX: Nếu tìm thấy tên miền hoặc có kết nối đáng chú ý, tạo record
             if domain or dst_port in [80, 443, 53]:
-                #  FIX: Create complete record with all required fields - UTC only
+                #  FIX: Create complete record with all required fields - vietnam only
                 record = {
-                    "timestamp": now_iso(),  # UTC ISO timestamp
+                    "timestamp": now_iso(),  # vietnam ISO timestamp
                     "domain": domain,
                     "src_ip": src_ip,
                     "dest_ip": dst_ip,

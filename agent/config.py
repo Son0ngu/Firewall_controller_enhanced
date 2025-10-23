@@ -1,7 +1,7 @@
 """
 Configuration module for the Firewall Controller Agent.
 
- UPDATED: Sử dụng time_utils cho consistent time management - UTC ONLY
+ UPDATED: Sử dụng time_utils cho consistent time management - VIETNAMTIME ONLY
 
 This module loads and provides access to all configuration parameters needed by the agent.
 Configuration can be sourced from environment variables, a configuration file, or defaults.
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-#  Import time_utils - UTC ONLY
+#  Import time_utils - VIETNAMTIME ONLY
 from time_utils import now, now_iso
 
 # Cấu hình logging cho chính module cấu hình
@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 
 def load_config() -> Dict[str, Any]:
     """
-     UPDATED: Load configuration với UTC timestamps only
+     UPDATED: Load configuration với VIETNAMTIME timestamps only
     
     Load configuration from multiple sources, with the following precedence:
     1. Environment variables
@@ -136,9 +136,9 @@ def load_config() -> Dict[str, Any]:
     Returns:
         Dict: Complete configuration dictionary
     """
-    load_start_time = now()  # UTC timestamp
+    load_start_time = now()  # VIETNAMTIME timestamp
     
-    logger.info(f" Loading configuration at {now_iso()}")  # UTC ISO
+    logger.info(f" Loading configuration at {now_iso()}")  # VIETNAMTIME ISO
     
     # Khởi đầu với cấu hình mặc định
     config = DEFAULT_CONFIG.copy()
@@ -153,10 +153,10 @@ def load_config() -> Dict[str, Any]:
     if env_config:
         _deep_update(config, env_config)
     
-    #  Add configuration metadata với UTC timestamps only
+    #  Add configuration metadata với vietnam timestamps only
     config["_metadata"] = {
-        "loaded_at": now_iso(),           # UTC ISO
-        "loaded_timestamp": now(),        # UTC Unix timestamp
+        "loaded_at": now_iso(),           # vietnam ISO
+        "loaded_timestamp": now(),        # vietnam Unix timestamp
         "load_duration": now() - load_start_time,  # Duration in seconds
         "config_source": _get_config_source(file_config, env_config)
     }
@@ -172,7 +172,7 @@ def load_config() -> Dict[str, Any]:
 
 def _load_from_file() -> Optional[Dict[str, Any]]:
     """
-     UPDATED: Load from file với UTC timestamps only
+     UPDATED: Load from file với vietnam timestamps only
     
     Returns:
         Optional[Dict]: Configuration from file, or None if no file found
@@ -188,7 +188,7 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
     for path in config_paths:
         try:
             if path.exists():
-                file_load_start = now()  # UTC timestamp
+                file_load_start = now()  # vietnam timestamp
                 logger.info(f" Loading configuration from {path}")
                 
                 with open(path, "r") as f:
@@ -274,9 +274,9 @@ def _deep_update(base_dict: Dict, update_dict: Dict) -> None:
 
 def _validate_config(config: Dict) -> None:
     """
-     UPDATED: Enhanced validation với UTC timestamps only
+     UPDATED: Enhanced validation với vietnam timestamps only
     """
-    validation_start = now()  # UTC timestamp
+    validation_start = now()  # vietnam timestamp
     validation_issues = []
     
     # Validate server URL
@@ -300,9 +300,9 @@ def _validate_config(config: Dict) -> None:
             config["firewall"]["mode"] = "monitor"
             config["firewall"]["enabled"] = False
     
-    #  Add validation metadata với UTC timestamps only
+    #  Add validation metadata với vietnam timestamps only
     config["_metadata"]["validation"] = {
-        "validated_at": now_iso(),        # UTC ISO
+        "validated_at": now_iso(),        # vietnam ISO
         "validation_duration": now() - validation_start,  # Duration in seconds
         "issues_found": len(validation_issues),
         "issues": validation_issues
@@ -318,7 +318,7 @@ def _validate_config(config: Dict) -> None:
 
 def get_config() -> Dict[str, Any]:
     """
-     UPDATED: Get config với UTC timestamps only
+     UPDATED: Get config với vietnam timestamps only
     
     Returns:
         Dict: Complete configuration dictionary
@@ -327,166 +327,10 @@ def get_config() -> Dict[str, Any]:
     if _config is None:
         _config = load_config()
     else:
-        #  Update last accessed time - UTC only
-        _config["_metadata"]["last_accessed"] = now_iso()  # UTC ISO
+        #  Update last accessed time - vietnam only
+        _config["_metadata"]["last_accessed"] = now_iso()  # vietnam ISO
     
     return _config
-
-
-def save_config(config: Dict[str, Any], path: Optional[str] = None) -> bool:
-    """
-     UPDATED: Save config với UTC timestamps only
-    
-    Args:
-        config: Configuration dictionary to save
-        path: Path to save to, defaults to the first path in CONFIG_PATHS
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    save_start_time = now()  # UTC timestamp
-    
-    if path is None:
-        path = os.environ.get("FIREWALL_CONTROLLER_CONFIG", str(CONFIG_PATHS[0]))
-    
-    try:
-        # Đảm bảo thư mục tồn tại
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        
-        #  Add save metadata với UTC timestamps only
-        config_to_save = config.copy()
-        config_to_save["_metadata"]["saved_at"] = now_iso()      # UTC ISO
-        config_to_save["_metadata"]["saved_timestamp"] = now()   # UTC Unix timestamp
-        
-        # Ghi file cấu hình
-        with open(path, "w") as f:
-            json.dump(config_to_save, f, indent=2)
-        
-        save_duration = now() - save_start_time
-        logger.info(f" Configuration saved to {path} in {save_duration:.3f}s")
-        return True
-        
-    except Exception as e:
-        save_duration = now() - save_start_time
-        logger.error(f" Error saving configuration to {path} after {save_duration:.3f}s: {str(e)}")
-        return False
-
-
-def get_default_config() -> Dict[str, Any]:
-    """
-     UPDATED: Default configuration với UTC timestamps only
-    """
-    # Auto-detect firewall mode based on admin privileges
-    firewall_mode = _detect_optimal_firewall_mode()
-    firewall_enabled = _has_admin_privileges()
-    
-    config = {
-        # Server configuration
-        "server": {
-            "urls": [
-                "https://firewall-controller.onrender.com",
-                "http://localhost:5000"
-            ],
-            "url": "https://firewall-controller.onrender.com",
-            "connect_timeout": 15,
-            "read_timeout": 45,
-            "retry_interval": 60,
-            "max_retries": 5,
-        },
-        
-        # Auth configuration
-        "auth": {
-            "api_key": "",
-            "auth_method": "none",
-            "jwt_refresh_interval": 3600,
-        },
-        
-        # Whitelist configuration
-        "whitelist": {
-            "auto_sync": True,
-            "sync_on_startup": True,
-            "update_interval": 300,
-            "retry_interval": 60,
-            "max_retries": 3,
-            "timeout": 30,
-            "auto_sync_firewall": firewall_enabled,
-            "resolve_ips_on_startup": firewall_enabled,
-            "ip_cache_ttl": 300,
-            "ip_refresh_interval": 600,
-            "require_server_domains": True,
-            "allow_empty_whitelist": False
-        },
-        
-        # Packet capture configuration  
-        "packet_capture": {
-            "engine": "scapy",
-            "filter": "outbound and (tcp.DstPort == 80 or tcp.DstPort == 443)",
-            "buffer_size": 4096,
-            "packet_limit": 0,
-            "interfaces": [],
-            "snaplen": 1500,
-        },
-        
-        # Logging configuration
-        "logging": {
-            "level": "INFO",
-            "file": "agent.log", 
-            "max_size": 10485760,
-            "backup_count": 5,
-            "log_to_console": True,
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            
-            "sender": {
-                "enabled": True,
-                "batch_size": 100,
-                "max_queue_size": 1000,
-                "send_interval": 30,
-                "failures_before_warn": 3,
-            }
-        },
-        
-        # Auto-detected firewall configuration
-        "firewall": {
-            "enabled": firewall_enabled,
-            "mode": firewall_mode,
-            "rule_prefix": "FirewallController",
-            "cleanup_on_exit": firewall_enabled,
-            "create_allow_rules": firewall_enabled,
-            "create_default_block": firewall_enabled,
-            "allow_essential_ips": True,
-            "allow_private_networks": False,
-            "rule_priority_offset": 100,
-        },
-        
-        # Heartbeat configuration
-        "heartbeat": {
-            "enabled": True,
-            "interval": 20,
-            "timeout": 10,
-            "retry_interval": 5,
-            "max_failures": 3
-        },
-        
-        # General configuration
-        "general": {
-            "agent_name": "",
-            "startup_delay": 0,
-            "check_admin": False,
-            "debug": False,
-        }
-    }
-    
-    #  Add creation metadata với UTC timestamps only
-    config["_metadata"] = {
-        "created_at": now_iso(),          # UTC ISO
-        "created_timestamp": now(),       # UTC Unix timestamp
-        "config_type": "default",
-        "admin_privileges": firewall_enabled,
-        "detected_mode": firewall_mode
-    }
-    
-    return config
-
 
 def _detect_optimal_firewall_mode() -> str:
     """Tự động phát hiện firewall mode tối ưu dựa trên quyền admin"""
@@ -536,25 +380,6 @@ def _get_config_source(file_config: Optional[Dict], env_config: Dict) -> str:
     sources.append("defaults")
     
     return " + ".join(sources)
-
-
-def get_config_info() -> Dict:
-    """
-     UPDATED: Get configuration metadata và info với UTC timestamps only
-    
-    Returns:
-        Dict: Configuration metadata
-    """
-    config = get_config()
-    
-    return {
-        "current_time": now_iso(),   # UTC ISO
-        "config_metadata": config.get("_metadata", {}),
-        "admin_privileges": _has_admin_privileges(),
-        "optimal_mode": _detect_optimal_firewall_mode(),
-        "config_file_paths": [str(p) for p in CONFIG_PATHS],
-        "env_config_prefix": "FC_"
-    }
 
 # Khởi tạo biến cấu hình toàn cục
 _config = None

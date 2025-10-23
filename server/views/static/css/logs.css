@@ -1,0 +1,283 @@
+.logs-hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 20px;
+    padding: 3rem 2rem;
+    color: white;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.logs-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: 30px 30px;
+    animation: float 15s infinite linear;
+}
+
+.logs-hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+.log-card {
+    background: white;
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transition: all 0.3s ease;
+    margin-bottom: 1rem;
+}
+
+.log-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+}
+
+.log-level {
+    padding: 0.3rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    min-width: 70px;
+    justify-content: center;
+}
+
+.log-level.ALLOWED {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.log-level.BLOCKED {
+    background: linear-gradient(135deg, #f8d7da 0%, #f1c2c7 100%);
+    color: #721c24;
+    border: 1px solid #f1c2c7;
+}
+
+.log-level.WARNING {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.log-level.INFO {
+    background: linear-gradient(135deg, #cce7ff 0%, #b8daff 100%);
+    color: #004085;
+    border: 1px solid #b8daff;
+}
+
+.log-level.ERROR {
+    background: linear-gradient(135deg, #f8d7da 0%, #f1c2c7 100%);
+    color: #721c24;
+    border: 1px solid #f1c2c7;
+}
+
+.stats-card {
+    background: white;
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transition: all 0.3s ease;
+}
+
+.stats-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 25px rgba(0,0,0,0.12);
+}
+
+.stats-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.stats-icon.success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }
+.stats-icon.danger { background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%); color: white; }
+.stats-icon.warning { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
+.stats-icon.primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+
+.stats-number {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.stats-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.filter-card {
+    background: white;
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    margin-bottom: 2rem;
+}
+
+.form-control, .form-select {
+    border-radius: 10px;
+    border: 1px solid #e3e6f0;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.log-timestamp {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-family: 'Courier New', monospace;
+}
+
+.log-ip {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    background: #f8f9fa;
+    padding: 0.2rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.log-action {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 8px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+.auto-refresh-indicator {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8rem;
+    color: #28a745;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+}
+
+@keyframes float {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    100% { transform: translate(-30px, -30px) rotate(360deg); }
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 4rem;
+    opacity: 0.3;
+    margin-bottom: 1.5rem;
+}
+
+.log-details {
+    font-size: 0.85rem;
+    color: #6c757d;
+    background: #f8f9fa;
+    padding: 0.8rem;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+    margin-top: 0.5rem;
+}
+
+.log-agent {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    color: #1565c0;
+    border: 1px solid #bbdefb;
+}
+
+.bulk-actions {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: none;
+}
+
+.bulk-actions.show {
+    display: block;
+}
+
+.time-filter-pills {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.time-pill {
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    color: #6c757d;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.8rem;
+}
+
+.time-pill:hover, .time-pill.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.clear-warning {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border: 1px solid #ffeaa7;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: none;
+}
+
+.clear-warning.show {
+    display: block;
+}
+
+.btn-clear {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+    border: none;
+    color: white;
+    transition: all 0.3s ease;
+}
+
+.btn-clear:hover {
+    background: linear-gradient(135deg, #ee5a24 0%, #ff3838 100%);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(238, 90, 36, 0.4);
+}
+
+.dropdown-toggle::after {
+    margin-left: 0.5rem;
+}

@@ -1,16 +1,17 @@
 """
 Agent Controller - handles agent HTTP requests
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 import logging
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from typing import Dict, Tuple
 from models.agent_model import AgentModel
 from services.agent_service import AgentService
 
-# Import time utilities - UTC ONLY
-from time_utils import now_utc, now_iso
+# Import time utilities - vietnam ONLY
+from time_utils import now_vietnam, now_iso, to_vietnam, parse_agent_timestamp
 
 class AgentController:
     """Controller for agent operations"""
@@ -144,7 +145,7 @@ class AgentController:
                 client_ip
             )
             
-            #  IMPROVED: Enhanced SocketIO broadcast với detailed info - UTC only
+            #  IMPROVED: Enhanced SocketIO broadcast với detailed info - vietnam only
             if self.socketio:
                 agent = self.model.find_by_agent_id(data['agent_id'])
                 
@@ -175,7 +176,7 @@ class AgentController:
             return self._error_response("Failed to process heartbeat", 500)
     
     def list_agents(self):
-        """List all agents with filtering - COMPLETE VERSION - UTC only"""
+        """List all agents with filtering - COMPLETE VERSION - vietnam only"""
         try:
             self.logger.info(" List agents called")
             
@@ -199,7 +200,7 @@ class AgentController:
             total_count = len(filtered_agents)
             agents_list = filtered_agents[pagination['skip']:pagination['skip']+pagination['limit']]
             
-            # Format for API response - UTC only
+            # Format for API response - vietnam only
             formatted_agents = []
             for agent in agents_list:
                 last_heartbeat_iso = None
@@ -274,7 +275,7 @@ class AgentController:
             success = self.service.delete_agent(agent_id)
             
             if success:
-                #  THÊM: Broadcast deletion qua SocketIO - UTC only
+                #  THÊM: Broadcast deletion qua SocketIO - vietnam only
                 if self.socketio:
                     self.socketio.emit("agent_deleted", {
                         "agent_id": agent_id,
@@ -302,7 +303,7 @@ class AgentController:
             # Call service method
             command_id = self.service.send_command(agent_id, data, "admin")
             
-            # Broadcast command creation via SocketIO - UTC only
+            # Broadcast command creation via SocketIO - vietnam only
             if self.socketio:
                 agent = self.model.find_by_agent_id(agent_id)
                 self.socketio.emit("command_created", {
@@ -423,7 +424,7 @@ class AgentController:
                 data.get('execution_time')
             )
             
-            # Broadcast update via SocketIO - UTC only
+            # Broadcast update via SocketIO - vietnam only
             if self.socketio:
                 agent = self.model.find_by_agent_id(data['agent_id'])
                 self.socketio.emit("command_status_update", {
@@ -441,9 +442,9 @@ class AgentController:
             return self._error_response("Failed to update command result", 500)
 
     def debug_status(self):
-        """Debug endpoint để kiểm tra status calculation - UTC only"""
+        """Debug endpoint để kiểm tra status calculation - vietnam only"""
         try:
-            current_time = now_utc()
+            current_time = now_vietnam()
             agents = self.model.get_all_agents({}, limit=100)
             
             debug_info = {
@@ -458,16 +459,18 @@ class AgentController:
             for agent in agents:
                 last_heartbeat = agent.get("last_heartbeat")
                 if last_heartbeat:
-                    if last_heartbeat.tzinfo is None:
-                        last_heartbeat_tz = last_heartbeat.replace(tzinfo=current_time.tzinfo)
+                    if isinstance(last_heartbeat, str):
+                        last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)
+                    elif isinstance(last_heartbeat, datetime):
+                        last_heartbeat_vietnam = to_vietnam(last_heartbeat)
                     else:
-                        last_heartbeat_tz = last_heartbeat.astimezone(current_time.tzinfo)
-                    
-                    time_diff = (current_time - last_heartbeat_tz).total_seconds()
+                        last_heartbeat_vietnam = parse_agent_timestamp(str(last_heartbeat))
+
+                    time_diff = (current_time - last_heartbeat_vietnam).total_seconds()
                     
                     debug_info["agents"].append({
                         "hostname": agent.get("hostname"),
-                        "last_heartbeat": last_heartbeat.isoformat(),
+                        "last_heartbeat": last_heartbeat_vietnam.isoformat(),
                         "time_since_heartbeat": time_diff,
                         "status": "active" if time_diff < self.service.active_threshold else 
                                  "inactive" if time_diff < self.service.inactive_threshold else "offline"
@@ -525,7 +528,7 @@ class AgentController:
 
     # Add method:
     def debug_timezone_issue(self):
-        """Debug timezone calculation issue - now UTC only"""
+        """Debug timezone calculation issue - now vietnam only"""
         try:
             debug_result = self.service.debug_timezone_issue()
             return jsonify({
@@ -546,7 +549,7 @@ class AgentController:
             # Call service method
             result = self.service.ping_agent(agent_id)
             
-            # Broadcast ping result via SocketIO - UTC only
+            # Broadcast ping result via SocketIO - vietnam only
             if self.socketio:
                 agent = self.model.find_by_agent_id(agent_id)
                 self.socketio.emit("agent_ping_result", {

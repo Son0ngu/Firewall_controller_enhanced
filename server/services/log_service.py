@@ -1,18 +1,23 @@
 """
 Log Service - Business logic for log operations
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 import logging
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta, timezone
+from typing import Dict, List
+from datetime import datetime, timedelta
 from models.log_model import LogModel
 
-# Import time utilities - UTC ONLY
-from time_utils import now_utc, to_utc_naive, parse_agent_timestamp, now_iso
+# Import time utilities - vietnam ONLY
+from time_utils import (
+    now_iso,
+    now_vietnam,
+    parse_agent_timestamp,
+    to_vietnam,
+)
 
 class LogService:
-    """Service class for log business logic - UTC ONLY"""
+    """Service class for log business logic - vietnam ONLY"""
     
     def __init__(self, log_model: LogModel, socketio=None):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -20,15 +25,15 @@ class LogService:
         self.socketio = socketio
     
     def receive_logs(self, logs_data: Dict, agent_id: str = None) -> Dict:
-        """Receive and process logs from agents - UTC ONLY"""
+        """Receive and process logs from agents - vietnam ONLY"""
         try:
             # Extract logs from data
             logs = logs_data.get('logs', [])
             if not logs:
                 return {"success": False, "error": "No logs provided"}
             
-            # Use UTC time for server processing
-            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+            # Use vietnam time for server processing
+            current_time = now_vietnam()
             
             # Process each log entry
             valid_logs = []
@@ -78,7 +83,8 @@ class LogService:
                         "connection_type": log.get("connection_type", "outbound"),
                         "service_type": log.get("service_type", "unknown"),
                         "process_name": log.get("process_name"),
-                        "process_pid": log.get("process_pid")
+                        "process_pid": log.get("process_pid"),
+                        "agent_host": log.get("agent_host") or log.get("hostname") or log.get("host_name") or "Unknown Agent"
                     }
                     
                     # Format display fields
@@ -89,25 +95,19 @@ class LogService:
                     
                     processed_log["source_display"] = source_ip if source_ip != "unknown" else "Local"
                     
-                    # Timestamp processing - UTC ONLY
+                    # Timestamp processing - vietnam ONLY
                     if 'timestamp' in log and log['timestamp']:
                         try:
-                            # Parse agent timestamp using UTC parsing
+                            # Parse agent timestamp using vietnam parsing
                             if isinstance(log['timestamp'], str):
-                                agent_time = parse_agent_timestamp(log['timestamp'])  # UTC parsing
+                                agent_time = parse_agent_timestamp(log['timestamp'])  # vietnam parsing
+                            elif isinstance(log['timestamp'], datetime):
+                                agent_time = to_vietnam(log['timestamp'])
                             else:
-                                # Convert to UTC
-                                from datetime import datetime, timezone
-                                if isinstance(log['timestamp'], datetime):
-                                    if log['timestamp'].tzinfo is None:
-                                        agent_time = log['timestamp'].replace(tzinfo=timezone.utc)
-                                    else:
-                                        agent_time = log['timestamp'].astimezone(timezone.utc)
-                                else:
-                                    agent_time = now_utc()
+                              agent_time = now_vietnam()
                             
                             # Convert to naive for MongoDB storage
-                            processed_log['timestamp'] = agent_time.replace(tzinfo=None)
+                            processed_log['timestamp'] = agent_time
                             processed_log['timestamp_source'] = 'agent'
                             
                         except Exception as e:
@@ -172,7 +172,7 @@ class LogService:
             # Store in database
             inserted_ids = self.model.insert_logs(valid_logs)
             
-            # Real-time broadcast via Socket.IO - UTC only
+            # Real-time broadcast via Socket.IO - vietnam only
             if self.socketio:
                 for log in valid_logs[-5:]:  # Broadcast last 5 logs
                     # Format for frontend
@@ -188,7 +188,8 @@ class LogService:
                         'dest_ip': log.get('dest_ip', 'unknown'),
                         'protocol': log.get('protocol', 'unknown'),
                         'port': str(log.get('port', 'unknown')),
-                        'message': log.get('message', 'Log entry')
+                        'message': log.get('message', 'Log entry'),
+                        'agent_host': log.get('agent_host', 'Unknown Agent')
                     }
                     self.socketio.emit('new_log', broadcast_log)
             
@@ -199,7 +200,7 @@ class LogService:
                 "message": f"Successfully processed {len(valid_logs)} logs",
                 "inserted_ids": inserted_ids,
                 "processed_count": len(valid_logs),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
         except Exception as e:
@@ -207,11 +208,11 @@ class LogService:
             return {
                 "success": False, 
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def get_all_logs(self, filters: Dict = None, limit: int = 100, offset: int = 0) -> Dict:
-        """Get all logs with filtering - UTC ONLY"""
+        """Get all logs with filtering - vietnam ONLY"""
         try:
             # Build query from filters
             query = {}
@@ -236,10 +237,10 @@ class LogService:
                         {'message': {'$regex': search_term, '$options': 'i'}}
                     ]
                 
-                # Time range filter - UTC
+                # Time range filter - vietnam
                 if filters.get('time_range'):
                     time_range = filters['time_range']
-                    current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+                    current_time = now_vietnam()
                     
                     if time_range == "1h":
                         since_time = current_time - timedelta(hours=1)
@@ -255,12 +256,12 @@ class LogService:
                     if since_time:
                         query["timestamp"] = {"$gte": since_time}
                 
-                # Date range filters - UTC
+                # Date range filters - vietnam
                 if filters.get('start_date'):
                     try:
                         start_date = parse_agent_timestamp(filters['start_date'])
                         query['timestamp'] = query.get('timestamp', {})
-                        query['timestamp']['$gte'] = to_utc_naive(start_date)
+                        query['timestamp']['$gte'] = parse_agent_timestamp(start_date)
                     except Exception as e:
                         self.logger.warning(f"Invalid start_date filter: {e}")
                 
@@ -268,7 +269,7 @@ class LogService:
                     try:
                         end_date = parse_agent_timestamp(filters['end_date'])
                         query['timestamp'] = query.get('timestamp', {})
-                        query['timestamp']['$lte'] = to_utc_naive(end_date)
+                        query['timestamp']['$lte'] = parse_agent_timestamp(end_date)
                     except Exception as e:
                         self.logger.warning(f"Invalid end_date filter: {e}")
             
@@ -297,22 +298,18 @@ class LogService:
                         "protocol": log.get("protocol", "unknown"),
                         "port": str(log.get("port", "unknown")),
                         "message": log.get("message", "Log entry"),
-                        "source": log.get("source", "agent")
+                        "source": log.get("source", "agent"),
+                        "agent_host": log.get("agent_host") or log.get("hostname") or log.get("host_name") or "Unknown Agent"
                     }
                     
-                    # Handle timestamps - UTC only
+                    # Handle timestamps - vietnam only
                     if log.get("timestamp"):
                         try:
                             timestamp = log["timestamp"]
-                            if hasattr(timestamp, 'isoformat'):
-                                # Convert to UTC if needed
-                                if timestamp.tzinfo is None:
-                                    timestamp = timestamp.replace(tzinfo=timezone.utc)
-                                else:
-                                    timestamp = timestamp.astimezone(timezone.utc)
-                                formatted_log["timestamp"] = timestamp.isoformat()
+                            if isinstance(timestamp, datetime):
+                                formatted_log["timestamp"] = to_vietnam(timestamp).isoformat()
                             elif isinstance(timestamp, str):
-                                formatted_log["timestamp"] = timestamp
+                                formatted_log["timestamp"] = parse_agent_timestamp(timestamp).isoformat()
                             else:
                                 formatted_log["timestamp"] = str(timestamp)
                         except Exception as e:
@@ -337,7 +334,7 @@ class LogService:
                 "offset": offset,
                 "has_more": offset + limit < total_count,
                 "success": True,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
             self.logger.info(f"Returning {len(formatted_logs)} formatted logs")
@@ -352,11 +349,11 @@ class LogService:
                 "error": str(e), 
                 "logs": [], 
                 "total": 0,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def clear_logs(self, filters: Dict = None) -> Dict:
-        """Clear logs with optional filters - UTC ONLY"""
+        """Clear logs with optional filters - vietnam ONLY"""
         try:
             query = {}
             
@@ -382,7 +379,7 @@ class LogService:
                 "success": True,
                 "message": f"Deleted {deleted_count} logs",
                 "deleted_count": deleted_count,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
             
         except Exception as e:
@@ -391,11 +388,11 @@ class LogService:
                 "success": False,
                 "error": str(e),
                 "deleted_count": 0,
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
     
     def export_logs(self, filters: Dict = None, format: str = 'json') -> Dict:
-        """Export logs in specified format - UTC ONLY"""
+        """Export logs in specified format - vietnam ONLY"""
         try:
             # Get all logs matching filters (no pagination for export)
             result = self.get_all_logs(filters, limit=10000, offset=0)
@@ -430,7 +427,7 @@ class LogService:
                     "data": output.getvalue(),
                     "count": len(logs),
                     "format": format,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
             else:
                 # JSON format
@@ -439,7 +436,7 @@ class LogService:
                     "data": logs,
                     "count": len(logs),
                     "format": format,
-                    "server_time": now_iso()  # UTC ISO
+                    "server_time": now_iso()  # vietnam ISO
                 }
                 
         except Exception as e:
@@ -447,11 +444,44 @@ class LogService:
             return {
                 "success": False,
                 "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()  # vietnam ISO
             }
-    
+        
+        
+    def get_total_count(self) -> int:
+        """Get total count of logs via model wrapper - vietnam ONLY"""
+        try:
+            if hasattr(self.model, 'get_total_count'):
+                return self.model.get_total_count()
+            # Fallback to generic counter if specialized method missing
+            return self.model.count_logs({})
+        except Exception as e:
+            self.logger.error(f"Error getting total log count: {e}")
+            return 0
+
+    def get_count_by_action(self, action: str) -> int:
+        """Get count of logs for a specific action - vietnam ONLY"""
+        try:
+            if hasattr(self.model, 'get_count_by_action'):
+                return self.model.get_count_by_action(action)
+            return self.model.count_logs({'action': action})
+        except Exception as e:
+            self.logger.error(f"Error getting count for action {action}: {e}")
+            return 0
+
+    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
+        """Get recent logs via model wrapper - vietnam ONLY"""
+        try:
+            if hasattr(self.model, 'get_recent_logs'):
+                return self.model.get_recent_logs(limit=limit)
+            return self.model.find_logs(limit=limit, sort_field='timestamp')
+        except Exception as e:
+            self.logger.error(f"Error getting recent logs: {e}")
+            return []
+        
+
     def get_comprehensive_statistics(self, filters: Dict = None) -> Dict:
-        """Get comprehensive log statistics - UTC ONLY"""
+        """Get comprehensive log statistics - vietnam ONLY"""
         try:
             self.logger.info(f"Calculating comprehensive statistics with filters: {filters}")
             
@@ -479,12 +509,13 @@ class LogService:
                     "filtered_warnings": self.model.count_logs({**query, "level": "WARNING"})
                 }
             
-            # Combine results
+            # Combine stats
             result = {
                 **total_stats,
                 **filtered_stats,
                 "has_filters": has_filters,
-                "server_time": now_iso()  # UTC ISO
+                "success": True,
+                "server_time": now_iso()
             }
             
             self.logger.info(f"Statistics result: {result}")
@@ -493,42 +524,41 @@ class LogService:
         except Exception as e:
             self.logger.error(f"Error getting comprehensive statistics: {e}")
             return {
+                "success": False,
+                "error": str(e),
                 "total": 0,
                 "allowed": 0,
                 "blocked": 0,
                 "warnings": 0,
-                "has_filters": False,
-                "error": str(e),
-                "server_time": now_iso()  # UTC ISO
+                "server_time": now_iso()
             }
     
     def _build_query_from_filters(self, filters: Dict) -> Dict:
-        """Build MongoDB query from filters - UTC ONLY"""
+        """Build MongoDB query from filters"""
         query = {}
         
-        if filters.get("level"):
-            query["level"] = filters["level"]
+        if filters.get('level'):
+            query['level'] = filters['level']
         
-        if filters.get("action"):
-            query["action"] = filters["action"]
+        if filters.get('action'):
+            query['action'] = filters['action']
         
-        if filters.get("agent_id"):
-            query["agent_id"] = filters["agent_id"]
+        if filters.get('agent_id'):
+            query['agent_id'] = filters['agent_id']
         
-        if filters.get("search"):
-            search_term = filters["search"]
-            query["$or"] = [
-                {"domain": {"$regex": search_term, "$options": "i"}},
-                {"destination": {"$regex": search_term, "$options": "i"}},
-                {"source_ip": {"$regex": search_term, "$options": "i"}},
-                {"dest_ip": {"$regex": search_term, "$options": "i"}},
-                {"message": {"$regex": search_term, "$options": "i"}}
+        if filters.get('search'):
+            search_term = filters['search']
+            query['$or'] = [
+                {'domain': {'$regex': search_term, '$options': 'i'}},
+                {'destination': {'$regex': search_term, '$options': 'i'}},
+                {'source_ip': {'$regex': search_term, '$options': 'i'}},
+                {'dest_ip': {'$regex': search_term, '$options': 'i'}},
+                {'message': {'$regex': search_term, '$options': 'i'}}
             ]
         
-        # Time range filter - UTC
-        if filters.get("time_range"):
-            time_range = filters["time_range"]
-            current_time = to_utc_naive(now_utc())  # UTC naive for MongoDB
+        if filters.get('time_range'):
+            time_range = filters['time_range']
+            current_time = now_vietnam()
             
             if time_range == "1h":
                 since_time = current_time - timedelta(hours=1)
@@ -544,78 +574,4 @@ class LogService:
             if since_time:
                 query["timestamp"] = {"$gte": since_time}
         
-        # Date range filter - UTC
-        if filters.get("start_date") or filters.get("end_date"):
-            date_query = {}
-            if filters.get("start_date"):
-                try:
-                    start_dt = parse_agent_timestamp(filters["start_date"])
-                    # Convert to naive for MongoDB query
-                    date_query["$gte"] = start_dt.replace(tzinfo=None)
-                except Exception:
-                    pass
-            
-            if filters.get("end_date"):
-                try:
-                    end_dt = parse_agent_timestamp(filters["end_date"])
-                    # Convert to naive for MongoDB query
-                    date_query["$lte"] = end_dt.replace(tzinfo=None)
-                except Exception:
-                    pass
-            
-            if date_query:
-                query["timestamp"] = date_query
-        
-        self.logger.debug(f"Built query from filters {filters}: {query}")
         return query
-    
-    def get_total_count(self) -> int:
-        """Get total log count"""
-        try:
-            return self.model.count_logs({})
-        except Exception as e:
-            self.logger.error(f"Error getting total count: {e}")
-            return 0
-    
-    def get_count_by_action(self, action: str) -> int:
-        """Get count by action type"""
-        try:
-            query = {"action": action.upper()}
-            return self.model.count_logs(query)
-        except Exception as e:
-            self.logger.error(f"Error getting count by action: {e}")
-            return 0
-    
-    def get_recent_logs(self, limit: int = 10) -> List[Dict]:
-        """Get recent logs - UTC ONLY"""
-        try:
-            logs = self.model.find_all_logs({}, limit=limit, offset=0)
-            
-            # Format for display
-            formatted_logs = []
-            for log in logs:
-                formatted_log = {
-                    "timestamp": log.get("timestamp"),
-                    "domain": log.get("domain", "unknown"),
-                    "action": log.get("action", "UNKNOWN"),
-                    "agent_id": log.get("agent_id", "unknown"),
-                    "level": log.get("level", "INFO")
-                }
-                
-                # Format timestamp for display - UTC
-                if log.get("timestamp"):
-                    try:
-                        if hasattr(log["timestamp"], 'strftime'):
-                            formatted_log["display_time"] = log["timestamp"].strftime("%H:%M:%S")
-                        else:
-                            formatted_log["display_time"] = str(log["timestamp"])[:8]
-                    except:
-                        formatted_log["display_time"] = "00:00:00"
-                
-                formatted_logs.append(formatted_log)
-            
-            return formatted_logs
-            
-        except Exception as e:
-            self.logger.error(f"Error getting recent logs: {e}")
-            return []

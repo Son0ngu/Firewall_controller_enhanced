@@ -1,6 +1,6 @@
 """
 Main Flask application with MVC architecture
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 #  QUAN TRỌNG: Monkey patch PHẢI ở đầu tiên, trước tất cả imports khác
@@ -21,7 +21,7 @@ from flask_cors import CORS
 #  Import từ config.py (không phải database/config.py)
 from database.config import get_config, get_mongo_client, get_database, validate_config, close_mongo_client
 
-# Import time utilities - UTC ONLY
+# Import time utilities - vietnam ONLY
 from time_utils import now_iso, format_datetime, parse_agent_timestamp
 
 #  Import MVC components với absolute imports
@@ -74,16 +74,16 @@ def create_app():
     config = get_config()
     app.config.from_object(config)
     
-    #  Add template filters using time_utils - UTC ONLY
+    #  Add template filters using time_utils - vietnam ONLY
     @app.template_filter('format_datetime')
-    def format_datetime_filter(dt, format='%Y-%m-%d %H:%M:%S UTC'):
-        """Format datetime for template using time_utils - UTC ONLY"""
+    def format_datetime_filter(dt, format='%Y-%m-%d %H:%M:%S vietnam'):
+        """Format datetime for template using time_utils - vietnam ONLY"""
         if dt is None:
             return 'N/A'
         if isinstance(dt, str):
             try:
-                # Parse ISO string using UTC parsing
-                dt = parse_agent_timestamp(dt)  # UTC parsing
+                # Parse ISO string using vietnam parsing
+                dt = parse_agent_timestamp(dt)  # vietnam parsing
             except:
                 return dt
         return format_datetime(dt, format)
@@ -226,11 +226,11 @@ def register_controllers(app, socketio, db):
         return None, None
 
 def register_main_routes(app, log_service, agent_service):
-    """Register main web routes - UTC ONLY"""
+    """Register main web routes - vietnam ONLY"""
     
     @app.route('/')
     def index():
-        """Dashboard route with statistics - UTC ONLY"""
+        """Dashboard route with statistics - vietnam ONLY"""
         try:
             # Get dashboard statistics
             stats = {
@@ -290,35 +290,35 @@ def register_main_routes(app, log_service, agent_service):
     
     @app.route('/api/health')
     def health_check():
-        """Health check endpoint - UTC ONLY"""
+        """Health check endpoint - vietnam ONLY"""
         return jsonify({
             "status": "healthy",
             "version": "1.0.0",
             "architecture": "MVC",
-            "timestamp": now_iso()  # UTC ISO
+            "timestamp": now_iso()  # vietnam ISO
         }), 200
     
     @app.route('/api/config')
     def get_client_config():
-        """Client configuration endpoint - UTC ONLY"""
+        """Client configuration endpoint - vietnam ONLY"""
         return jsonify({
             "socketio_enabled": True,
             "version": "1.0.0",
             "architecture": "MVC",
             "environment": os.environ.get('FLASK_ENV', 'production'),
-            "timezone": "UTC",
-            "server_time": now_iso()  # UTC ISO
+            "timezone": "vietnam",
+            "server_time": now_iso()  # vietnam ISO
         }), 200
 
 def register_error_handlers(app):
-    """Register error handlers - UTC ONLY"""
+    """Register error handlers - vietnam ONLY"""
     
     @app.errorhandler(404)
     def not_found(e):
         if request.path.startswith('/api/'):
             return jsonify({
                 "error": "Not found",
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             }), 404
         return render_template('404.html'), 404
     
@@ -328,21 +328,21 @@ def register_error_handlers(app):
         if request.path.startswith('/api/'):
             return jsonify({
                 "error": "Internal server error",
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             }), 500
         return render_template('500.html'), 500
 
 def register_socketio_events(socketio):
-    """Register Socket.IO events - UTC ONLY"""
+    """Register Socket.IO events - vietnam ONLY"""
     
     @socketio.on('connect')
     def handle_connect():
         logger.info(f"Client connected: {request.sid} at {now_iso()}")
-        # Send welcome message with UTC timestamp
+        # Send welcome message with vietnam timestamp
         socketio.emit('server_message', {
             'type': 'welcome',
             'message': 'Connected to Firewall Controller',
-            'timestamp': now_iso()  # UTC ISO
+            'timestamp': now_iso()  # vietnam ISO
         }, room=request.sid)
     
     @socketio.on('disconnect')
@@ -351,10 +351,10 @@ def register_socketio_events(socketio):
     
     @socketio.on('ping')
     def handle_ping(data):
-        """Handle ping from client - UTC ONLY"""
+        """Handle ping from client - vietnam ONLY"""
         logger.debug(f"Ping received from {request.sid}")
         socketio.emit('pong', {
-            'timestamp': now_iso(),  # UTC ISO
+            'timestamp': now_iso(),  # vietnam ISO
             'client_data': data
         }, room=request.sid)
 
@@ -370,7 +370,7 @@ if __name__ == "__main__":
         logger.info(f" Server: {config.HOST}:{config.PORT}")
         logger.info(f" Architecture: Model-View-Controller")
         logger.info(f" Database: {config.MONGO_DBNAME}")
-        logger.info(f" Timezone: UTC (Clean & Simple)")
+        logger.info(f" Timezone: vietnam (Clean & Simple)")
         
         #  FIX: Disable reloader để tránh double initialization
         socketio.run(

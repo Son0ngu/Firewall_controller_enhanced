@@ -1,6 +1,6 @@
 """
 Configuration and Database Client for Firewall Controller Server
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
 
 import os
@@ -8,9 +8,13 @@ import secrets
 import logging
 from typing import Any, Optional
 from pymongo import MongoClient
+from bson.codec_options import CodecOptions
 
 # Import dotenv để load .env file
 from dotenv import load_dotenv
+
+#Time utilities - vietnam ONLY
+from time_utils import now_iso, VIETNAM_TZ
 
 # Load .env file
 load_dotenv()
@@ -20,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Global MongoDB client instance
 _mongo_client: Optional[MongoClient] = None
+_codec_options = CodecOptions(tz_aware=True, tzinfo=VIETNAM_TZ)
 
 def get_env(key: str, default: Any = None) -> Any:
     """Get value from environment variable with proper type conversion."""
@@ -34,14 +39,8 @@ def get_env(key: str, default: Any = None) -> Any:
         except ValueError:
             return default
     return value
-
-def now_iso() -> str:
-    """Get current UTC time as ISO string - local function to avoid circular import"""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
-
 class Config:
-    """Configuration class for the application - UTC ONLY"""
+    """Configuration class for the application - vietnam ONLY"""
     
     # Flask core settings
     SECRET_KEY = get_env('SECRET_KEY', secrets.token_hex(32))
@@ -77,7 +76,7 @@ class Config:
     PORT = int(get_env('PORT', 5000))
 
 def get_mongo_client(config):
-    """Get MongoDB client with optimized settings - UTC logging"""
+    """Get MongoDB client with optimized settings - vietnam logging"""
     global _mongo_client
     
     if _mongo_client is None:
@@ -114,7 +113,7 @@ def get_mongo_client(config):
     return _mongo_client
 
 def close_mongo_client():
-    """Close MongoDB client - UTC logging"""
+    """Close MongoDB client - vietnam logging"""
     global _mongo_client
     if _mongo_client:
         _mongo_client.close()
@@ -132,16 +131,16 @@ def get_database(config: Config = None):
     
     # FIX: Call get_mongo_client with only config parameter
     client = get_mongo_client(config)
-    return client[config.MONGO_DBNAME]
+    return client.get_database(config.MONGO_DBNAME, codec_options=_codec_options)
 
 # Environment-specific configurations
 class DevelopmentConfig(Config):
-    """Development configuration - UTC ONLY"""
+    """Development configuration - vietnam ONLY"""
     DEBUG = True
     LOG_LEVEL = 'DEBUG'
 
 class ProductionConfig(Config):
-    """Production configuration - UTC ONLY"""
+    """Production configuration - vietnam ONLY"""
     DEBUG = False
     LOG_LEVEL = 'WARNING'
     
@@ -150,7 +149,7 @@ class ProductionConfig(Config):
     MONGO_SERVER_SELECTION_TIMEOUT_MS = 3000
 
 class TestingConfig(Config):
-    """Testing configuration - UTC ONLY"""
+    """Testing configuration - vietnam ONLY"""
     TESTING = True
     DEBUG = True
     MONGO_DBNAME = 'test_firewall_controller'
@@ -169,7 +168,7 @@ def get_config_by_name(config_name: str = None) -> Config:
     return configs.get(config_name, Config)()
 
 def validate_config(config: Config = None) -> bool:
-    """Validate configuration settings - UTC logging"""
+    """Validate configuration settings - vietnam logging"""
     if config is None:
         config = get_config()
     
@@ -203,7 +202,7 @@ def validate_config(config: Config = None) -> bool:
         return False
 
 def get_connection_info() -> dict:
-    """Get MongoDB connection information with UTC timestamp"""
+    """Get MongoDB connection information with vietnam timestamp"""
     try:
         if _mongo_client is None:
             return {
@@ -229,7 +228,7 @@ def get_connection_info() -> dict:
         }
 
 def log_config_status(config: Config = None):
-    """Log current configuration status with UTC timestamps"""
+    """Log current configuration status with vietnam timestamps"""
     if config is None:
         config = get_config()
     

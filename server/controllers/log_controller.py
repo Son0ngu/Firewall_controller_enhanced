@@ -1,16 +1,16 @@
 """
 Log Controller - handles log HTTP requests
-UTC ONLY - Clean and simple
+vietnam ONLY - Clean and simple
 """
-
+from datetime import timedelta
 from flask import Blueprint, request, jsonify, Response
 from typing import Dict, Tuple
 from models.log_model import LogModel
 from services.log_service import LogService
 import logging
 
-# Import time utilities - UTC ONLY
-from time_utils import now_iso
+# Import time utilities - vietnam ONLY
+from time_utils import now_iso, now_vietnam
 
 class LogController:
     """Controller for log operations"""
@@ -145,9 +145,8 @@ class LogController:
             
             elif clear_action == 'old':
                 # Clear logs older than 30 days
-                from datetime import datetime, timedelta, timezone
-                thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-                filters['timestamp'] = {'$lt': thirty_days_ago}
+                cutoff_time = now_vietnam() - timedelta(days=30)
+                filters['timestamp'] = {'$lt': cutoff_time}
             
             elif clear_action == 'filtered':
                 # Use provided filters (already set above)
@@ -161,12 +160,12 @@ class LogController:
             result = self.service.clear_logs(filters)
             
             if result.get("success"):
-                # Emit real-time update - UTC only
+                # Emit real-time update - vietnam only
                 if self.socketio:
                     self.socketio.emit('logs_cleared', {
                         'action': clear_action,
                         'deleted_count': result.get('deleted_count', 0),
-                        'timestamp': now_iso()  # UTC ISO
+                        'timestamp': now_iso()  # vietnam ISO
                     })
                 
                 return jsonify(result), 200
@@ -227,7 +226,7 @@ class LogController:
                 "filtered_blocked": stats.get("filtered_blocked", 0),
                 "filtered_warnings": stats.get("filtered_warnings", 0),
                 "has_filters": stats.get("has_filters", False),
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             }), 200
             
         except Exception as e:
@@ -239,7 +238,7 @@ class LogController:
                 "allowed": 0,
                 "blocked": 0,
                 "warnings": 0,
-                "timestamp": now_iso()  # UTC ISO
+                "timestamp": now_iso()  # vietnam ISO
             }), 500
     
     def get_statistics(self):
@@ -279,9 +278,9 @@ class LogController:
         return filters
     
     def _error_response(self, message: str, status_code: int) -> Tuple:
-        """Create error response - UTC only"""
+        """Create error response - vietnam only"""
         return jsonify({
             "success": False,
             "error": message,
-            "timestamp": now_iso()  # UTC ISO
+            "timestamp": now_iso()  # vietnam ISO
         }), status_code

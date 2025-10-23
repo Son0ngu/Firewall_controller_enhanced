@@ -1,253 +1,222 @@
-"""
-Clean Server Time Utilities - UTC ONLY
-Simplified time management - chỉ sử dụng UTC:
-- All timestamps in UTC
-- No timezone confusion
-- Clean and simple
+"""Utility helpers for working with Vietnam local time.
+
+All components (server, agent, background jobs) operate using the same
+Vietnam timezone.  To keep things simple we deal exclusively with
+timezone-aware ``datetime`` instances that carry the ``Asia/Ho_Chi_Minh``
+offset.  The helpers in this module therefore focus on three tasks:
+
+* provide "now" helpers for convenience,
+* normalise arbitrary timestamp inputs so that calculations always work on the
+  same timezone, and
+* offer lightweight formatting utilities for presenting timestamps.
+
+Because everything already speaks the same timezone there is no need to convert
+back and forth between naive datetimes any more.
 """
 
-import time
+from __future__ import annotations
 import logging
-from datetime import datetime, timezone
-from typing import Optional
-
+import time
+from datetime import datetime, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
 logger = logging.getLogger("server_time_utils")
 
-# ========================================
-# CORE TIME FUNCTIONS - UTC ONLY
-# ========================================
 
-def now() -> float:
-    """Get current timestamp (Unix time)"""
-    return time.time()
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+FUTURE_DRIFT_TOLERANCE = timedelta(minutes=5)
 
-def now_utc() -> datetime:
-    """Get current UTC datetime"""
-    return datetime.now(timezone.utc)
+# =========================
+# Core helpers
+# =========================
+
+def now_vietnam() -> datetime:
+    """Return the current datetime in Vietnam (timezone aware)."""
+    return datetime.now(VIETNAM_TZ)
 
 def now_iso() -> str:
-    """Get current UTC time as ISO string"""
-    return now_utc().isoformat()
+    """Return the current Vietnam time as an ISO 8601 string."""
+    return now_vietnam().isoformat()
 
-def to_utc(dt: datetime) -> datetime:
-    """Convert any datetime to UTC"""
+def to_vietnam(dt: datetime | None) -> datetime | None:
+    """Ensure ``dt`` is expressed in the Vietnam timezone."""
+
     if dt is None:
         return None
     
     if dt.tzinfo is None:
-        # Assume UTC if no timezone
-        dt = dt.replace(tzinfo=timezone.utc)
-    
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=VIETNAM_TZ)
 
-def to_utc_naive(dt: datetime) -> datetime:
-    """Convert datetime to UTC naive (for MongoDB storage)"""
-    if dt is None:
-        return None
-    
-    utc_dt = to_utc(dt)
-    return utc_dt.replace(tzinfo=None)
+    return dt.astimezone(VIETNAM_TZ)
 
-def parse_agent_timestamp(iso_string: str) -> datetime:
+
+def _normalise_future_timestamp(dt: datetime, *, reference: datetime | None = None) -> datetime:
+    """Clamp timestamps that sit unreasonably far in the future.
+
+    Some historical records were stored in UTC and then converted twice,
+    effectively pushing them ~7 hours ahead of the real heartbeat time. To
+    keep status calculations stable we detect that drift and either subtract
+    the timezone offset (when that fixes the problem) or clamp the value to
+    the current server time.
     """
-    Parse agent timestamp - always return UTC datetime
-    """
-    try:
-        if not isinstance(iso_string, str):
-            iso_string = str(iso_string)
-        
-        logger.debug(f"Parsing agent timestamp: '{iso_string}'")
-        
-        # Handle ISO format with timezone
-        if 'T' in iso_string and ('+' in iso_string or 'Z' in iso_string):
-            dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
-            return dt.astimezone(timezone.utc)  # Always convert to UTC
-        elif 'T' in iso_string:
-            # ISO without timezone - assume UTC
-            dt = datetime.fromisoformat(iso_string)
-            return dt.replace(tzinfo=timezone.utc)
-        else:
-            # Handle simple formats
-            formats_to_try = ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S']
-            for fmt in formats_to_try:
-                try:
-                    dt = datetime.strptime(iso_string, fmt)
-                    return dt.replace(tzinfo=timezone.utc)  # Assume UTC
-                except ValueError:
-                    continue
-            
-            logger.warning(f"No format matched for '{iso_string}', using current time")
-            return now_utc()
-            
-    except Exception as e:
-        logger.warning(f"Failed to parse agent timestamp '{iso_string}': {e}")
-        return now_utc()
 
-# ========================================
-# FORMATTING FUNCTIONS - UTC ONLY
-# ========================================
+    reference_time = reference or now_vietnam()
+    drift = dt - reference_time
+    drift_seconds = drift.total_seconds()
 
-def format_datetime(dt, format='%Y-%m-%d %H:%M:%S') -> str:
-    """Format datetime object to string (UTC)"""
-    if dt is None:
-        return 'N/A'
-    
-    if isinstance(dt, str):
+    if drift_seconds <= FUTURE_DRIFT_TOLERANCE.total_seconds():
+        return dt
+
+    offset = dt.utcoffset()
+    if offset:
+        candidate = dt - offset
+        candidate_drift = candidate - reference_time
+        candidate_seconds = abs(candidate_drift.total_seconds())
+
+        if candidate_seconds < abs(drift_seconds):
+            if candidate_seconds <= FUTURE_DRIFT_TOLERANCE.total_seconds():
+                logger.warning(
+                    "Timestamp %s ahead of reference %s by %s; correcting by removing offset %s",
+                    dt,
+                    reference_time,
+                    drift,
+                    offset,
+                )
+            else:
+                logger.warning(
+                    "Timestamp %s ahead of reference %s by %s; removing offset %s leaves residual drift %s",
+                    dt,
+                    reference_time,
+                    drift,
+                    offset,
+                    candidate_drift,
+                )
+            return candidate
+
+    logger.warning(
+        "Timestamp %s ahead of reference %s by %s; clamping to reference",
+        dt,
+        reference_time,
+        drift,
+    )
+    return reference_time
+
+def _parse_with_known_formats(value: str) -> datetime | None:
+    """Try to parse ``value`` using a list of known datetime formats."""
+
+    formats_to_try = [
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+    ]
+
+    for fmt in formats_to_try:
         try:
-            dt = parse_agent_timestamp(dt)
-        except:
-            return dt
-    
-    if not isinstance(dt, datetime):
-        return str(dt)
+            parsed = datetime.strptime(value, fmt)
+            return parsed.replace(tzinfo=VIETNAM_TZ)
+        except ValueError:
+            continue
+
+    return None
+
+
+def parse_agent_timestamp(value: Any) -> datetime:
+    """Normalise any timestamp sent by an agent to Vietnam local time."""
+
+    if value is None:
+        return now_vietnam()
+
+    if isinstance(value, datetime):
+        parsed = to_vietnam(value)
+        return _normalise_future_timestamp(parsed)
+
+    if isinstance(value, (int, float)):
+        parsed = datetime.fromtimestamp(value, tz=VIETNAM_TZ)
+        return _normalise_future_timestamp(parsed)
     
     try:
-        # Convert to UTC if needed
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
-        
-        return dt.strftime(format)
-    except Exception as e:
-        logger.warning(f"Error formatting datetime {dt}: {e}")
-        return str(dt)
+        text_value = str(value).strip()
+    except Exception:  # pragma: no cover - defensive
+        logger.warning("Failed to convert %r to string when parsing timestamp", value)
+        return now_vietnam()
 
-def format_timestamp(timestamp: float, format='%Y-%m-%d %H:%M:%S') -> str:
-    """Format Unix timestamp to string (UTC)"""
-    if timestamp is None:
-        return 'N/A'
+    if not text_value:
+        return now_vietnam()
+
+    try:
+        iso_ready = text_value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(iso_ready)
+        parsed = to_vietnam(parsed)
+        return _normalise_future_timestamp(parsed)
+    except ValueError:
+        fallback = _parse_with_known_formats(text_value)
+        if fallback is not None:
+            parsed = to_vietnam(fallback)
+            return _normalise_future_timestamp(parsed)
+
+        logger.warning("Unrecognised timestamp '%s', defaulting to current time", text_value)
+        return now_vietnam()
+    
+# =========================
+# Formatting helpers
+# =========================
+
+def format_datetime(value: Any, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    """Format ``value`` (string or datetime) using Vietnam local time."""
+
+    if value is None:
+        return "N/A"
+
+    if not isinstance(value, datetime):
+
+        try:
+            value = parse_agent_timestamp(value)
+        except Exception:  # pragma: no cover - defensive
+            return str(value)
+    else:
+        value = to_vietnam(value)
     
     try:
-        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-        return dt.strftime(format)
-    except Exception as e:
-        logger.warning(f"Error formatting timestamp {timestamp}: {e}")
-        return str(timestamp)
+        return value.strftime(fmt)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Error formatting datetime %r: %s", value, exc)
+        return str(value)
 
-def is_recent(dt: datetime, minutes: int = 5) -> bool:
-    """Check if datetime is recent (within specified minutes) - UTC"""
-    if dt is None:
-        return False
-    
+def calculate_age_seconds(value: Any) -> float:
+    """Return the age of ``value`` in seconds relative to Vietnam time."""
+
     try:
-        # Convert to UTC if needed
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
-        
-        current = now_utc()
-        time_diff = current - dt
-        return time_diff.total_seconds() <= (minutes * 60)
-        
-    except Exception as e:
-        logger.warning(f"Error checking if recent {dt}: {e}")
-        return False
-
-def calculate_age_seconds(dt: datetime) -> float:
-    """Calculate age of datetime in seconds - UTC"""
-    if dt is None:
+        dt = parse_agent_timestamp(value)
+        return (now_vietnam() - dt).total_seconds()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Error calculating age for %r: %s", value, exc)
         return 0.0
-    
-    try:
-        # Convert to UTC if needed
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
-        
-        current = now_utc()
-        time_diff = current - dt
-        return time_diff.total_seconds()
-        
-    except Exception as e:
-        logger.warning(f"Error calculating age for {dt}: {e}")
-        return 0.0
 
-def get_time_ago_string(dt: datetime) -> str:
-    """Get human-readable "time ago" string - UTC"""
-    if dt is None:
-        return 'N/A'
-    
-    try:
-        age_seconds = calculate_age_seconds(dt)
-        
-        if age_seconds < 60:
-            return f"{int(age_seconds)} seconds ago"
-        elif age_seconds < 3600:
-            minutes = int(age_seconds / 60)
-            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-        elif age_seconds < 86400:
-            hours = int(age_seconds / 3600)
-            return f"{hours} hour{'s' if hours != 1 else ''} ago"
-        else:
-            days = int(age_seconds / 86400)
-            return f"{days} day{'s' if days != 1 else ''} ago"
-            
-    except Exception as e:
-        logger.warning(f"Error getting time ago for {dt}: {e}")
-        return str(dt)
+def get_time_ago_string(value: Any) -> str:
+    """Return a human readable "time ago" string for ``value``."""
 
-# ========================================
-# CACHE & VALIDATION - UTC ONLY
-# ========================================
+    age_seconds = calculate_age_seconds(value)
 
-def is_cache_valid(timestamp: float, ttl: float) -> bool:
-    """Check if cache timestamp is still valid - UTC"""
-    if not timestamp:
-        return False
-    current_time = now()
-    return (current_time - timestamp) < ttl
+    if age_seconds <= 0:
+        return "just now"
 
-def cache_age(timestamp: float) -> float:
-    """Get cache age in seconds - UTC"""
-    if not timestamp:
-        return float('inf')
-    return now() - timestamp
+    if age_seconds < 60:
+        return f"{int(age_seconds)} seconds ago"
+    if age_seconds < 3600:
+        minutes = int(age_seconds / 60)
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    if age_seconds < 86400:
+        hours = int(age_seconds / 3600)
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
 
-# ========================================
-# DEBUG FUNCTIONS - UTC ONLY
-# ========================================
+    days = int(age_seconds / 86400)
+    return f"{days} day{'s' if days != 1 else ''} ago"
 
-def get_time_info() -> dict:
-    """Get comprehensive time information for debugging - UTC only"""
-    current_utc = now_utc()
-    
-    return {
-        "current_utc": current_utc.isoformat(),
-        "current_timestamp": now(),
-        "timezone": "UTC"
-    }
 
-def debug_time_info():
-    """Print time debug information - UTC only"""
-    info = get_time_info()
-    print("    Server Time Debug Info (UTC ONLY):")
-    print(f"   UTC Time: {info['current_utc']}")
-    print(f"   Timestamp: {info['current_timestamp']}")
-    print(f"   Timezone: {info['timezone']}")
-
-# ========================================
-# ALIASES FOR COMPATIBILITY
-# ========================================
-
-# Keep old function names for backward compatibility but make them UTC
-now_vietnam = now_utc  # Now returns UTC
-now_vietnam_naive = lambda: now_utc().replace(tzinfo=None)  # UTC naive
-now_vietnam_iso = now_iso  # UTC ISO
-parse_agent_timestamp_direct = parse_agent_timestamp  # UTC parsing
-
-if __name__ == "__main__":
-    # Test functions when run directly
-    debug_time_info()
-    print()
-    
-    # Test format functions
-    print(" Testing format functions:")
-    test_dt = now_utc().replace(tzinfo=None)
-    print(f"format_datetime: {format_datetime(test_dt)}")
-    print(f"format_timestamp: {format_timestamp(now())}")
-    print(f"is_recent: {is_recent(test_dt)}")
-    print(f"get_time_ago_string: {get_time_ago_string(test_dt)}")
+if __name__ == "__main__":  # pragma: no cover - simple smoke test
+    print("Testing time utilities")
+    sample = now_vietnam()
+    print(" now_iso() =>", now_iso())
+    print(" format_datetime() =>", format_datetime(sample))
+    print(" get_time_ago_string() =>", get_time_ago_string(sample))
 
