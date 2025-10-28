@@ -9,8 +9,7 @@ import secrets
 import uuid
 import traceback
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from bson import ObjectId
+from typing import Dict, List
 from models.agent_model import AgentModel
 
 # Import time utilities - vietnam ONLY
@@ -20,7 +19,6 @@ from time_utils import (
     now_iso,
     parse_agent_timestamp,
     format_datetime,
-    get_time_ago_string,
 )
 
 class AgentService:
@@ -34,7 +32,6 @@ class AgentService:
         
         # Get database from model, not from parameter
         self.db = self.model.db
-        self.commands_collection = self.db.agent_commands
         
         # vietnam ONLY - no timezone complexity
         self.active_threshold = 300      # 5 minutes
@@ -417,20 +414,6 @@ class AgentService:
                 actual_status = 'offline'
                 time_since_heartbeat = None
             
-            # Get recent commands
-            recent_commands = list(self.commands_collection.find(
-                {"agent_id": agent_id}
-            ).sort("created_at", -1).limit(5))
-            
-            commands = []
-            for cmd in recent_commands:
-                commands.append({
-                    "command_id": str(cmd["_id"]),
-                    "command_type": cmd.get("command_type"),
-                    "status": cmd.get("status"),
-                    "created_at": cmd.get("created_at").isoformat() if cmd.get("created_at") else None
-                })
-            
             # Format timestamps for display - vietnam only
             registered_date = agent.get("registered_date")
             last_heartbeat = agent.get("last_heartbeat")
@@ -447,7 +430,6 @@ class AgentService:
                 "registered_date": format_datetime(registered_date) if registered_date else None,
                 "last_heartbeat": format_datetime(last_heartbeat) if last_heartbeat else None,
                 "time_since_heartbeat": time_since_heartbeat,
-                "recent_commands": commands,
                 "server_time": now_iso()  # vietnam ISO
             }
             
@@ -462,10 +444,6 @@ class AgentService:
             agent = self.model.find_by_agent_id(agent_id)
             if not agent:
                 raise ValueError("Agent not found")
-            
-            # Delete related commands
-            deleted_commands = self.commands_collection.delete_many({"agent_id": agent_id})
-            self.logger.info(f"Deleted {deleted_commands.deleted_count} commands for agent {agent_id}")
             
             # Delete agent
             success = self.model.delete_agent(agent_id)
@@ -623,174 +601,6 @@ class AgentService:
                 "response_time": None,
                 "error": f"Ping execution error: {str(e)}"
             }
-
-    def send_command(self, agent_id: str, command_data: Dict, created_by: str) -> str:
-        """Send command to agent - vietnam ONLY"""
-        try:
-            # Check if agent exists
-            agent = self.model.find_by_agent_id(agent_id)
-            if not agent:
-                raise ValueError("Agent not found")
-            
-            # Generate command ID
-            command_id = str(uuid.uuid4())
-            
-            # Create command document
-            current_time = now_vietnam()
-
-            command_doc = {
-                "_id": ObjectId(),
-                "command_id": command_id,
-                "agent_id": agent_id,
-                "command_type": command_data.get("command_type"),
-                "parameters": command_data.get("parameters", {}),
-                "status": "pending",
-                "created_by": created_by,
-                "created_at": current_time,
-                "updated_at": current_time,
-                "expires_at": current_time + timedelta(hours=1)  # Commands expire after 1 hour
-            }
-            
-            # Insert command
-            result = self.commands_collection.insert_one(command_doc)
-            
-            if result.inserted_id:
-                self.logger.info(f"Command {command_id} created for agent {agent_id}")
-                return command_id
-            else:
-                raise Exception("Failed to create command")
-                
-        except Exception as e:
-            self.logger.error(f"Error sending command to agent {agent_id}: {e}")
-            raise
-
-    def get_pending_commands(self, agent_id: str, token: str) -> List[Dict]:
-        """Get pending commands for agent - vietnam ONLY"""
-        try:
-            # Validate agent and token
-            agent = self.model.find_by_agent_id(agent_id)
-            if not agent:
-                raise ValueError("Agent not found")
-            
-            if agent.get("agent_token") != token:
-                raise ValueError("Invalid token")
-            
-            # Get pending commands
-            current_time = now_vietnam()
-            
-            commands = list(self.commands_collection.find({
-                "agent_id": agent_id,
-                "status": "pending",
-                "expires_at": {"$gte": current_time}
-            }).sort("created_at", 1))
-            
-            # Format commands for agent
-            formatted_commands = []
-            for cmd in commands:
-                formatted_cmd = {
-                    "command_id": cmd.get("command_id"),
-                    "command_type": cmd.get("command_type"),
-                    "parameters": cmd.get("parameters", {}),
-                    "created_at": cmd.get("created_at").isoformat() if cmd.get("created_at") else None
-                }
-                formatted_commands.append(formatted_cmd)
-            
-            return formatted_commands
-            
-        except Exception as e:
-            self.logger.error(f"Error getting pending commands for agent {agent_id}: {e}")
-            raise
-
-    def update_command_result(self, agent_id: str, token: str, command_id: str, 
-                         status: str, result: str = None, execution_time: float = None):
-        """Update command execution result - vietnam ONLY"""
-        try:
-            # Validate agent and token
-            agent = self.model.find_by_agent_id(agent_id)
-            if not agent:
-                raise ValueError("Agent not found")
-            
-            if agent.get("agent_token") != token:
-                raise ValueError("Invalid token")
-            
-            # Update command timestamps
-            current_time = now_vietnam()
-            
-            update_data = {
-                "status": status,
-                "updated_at": current_time,
-                "completed_at": current_time,
-                "execution_time": execution_time
-            }
-            
-            if result:
-                update_data["result"] = result
-            
-            result = self.commands_collection.update_one(
-                {"command_id": command_id, "agent_id": agent_id},
-                {"$set": update_data}
-            )
-            
-            if result.modified_count > 0:
-                self.logger.info(f"Command {command_id} updated with status: {status}")
-            else:
-                self.logger.warning(f"Command {command_id} not found or not updated")
-                
-        except Exception as e:
-            self.logger.error(f"Error updating command result: {e}")
-            raise
-
-    def list_commands(self, filters: Dict = None, limit: int = 50, skip: int = 0) -> Dict:
-        """List commands with filtering - vietnam ONLY"""
-        try:
-            query = {}
-            
-            if filters:
-                if filters.get("agent_id"):
-                    query["agent_id"] = filters["agent_id"]
-                if filters.get("status"):
-                    query["status"] = filters["status"]
-                if filters.get("command_type"):
-                    query["command_type"] = filters["command_type"]
-            
-            # Get total count
-            total = self.commands_collection.count_documents(query)
-            
-            # Get commands
-            commands = list(self.commands_collection.find(query)
-                           .sort("created_at", -1)
-                           .skip(skip)
-                           .limit(limit))
-            
-            # Format commands
-            formatted_commands = []
-            for cmd in commands:
-                # Get agent info
-                agent = self.model.find_by_agent_id(cmd.get("agent_id"))
-                
-                formatted_cmd = {
-                    "command_id": cmd.get("command_id"),
-                    "agent_id": cmd.get("agent_id"),
-                    "hostname": agent.get("hostname") if agent else "Unknown",
-                    "command_type": cmd.get("command_type"),
-                    "status": cmd.get("status"),
-                    "created_by": cmd.get("created_by"),
-                    "created_at": format_datetime(cmd.get("created_at")) if cmd.get("created_at") else None,
-                    "completed_at": format_datetime(cmd.get("completed_at")) if cmd.get("completed_at") else None,
-                    "execution_time": cmd.get("execution_time"),
-                    "result": cmd.get("result")
-                }
-                formatted_commands.append(formatted_cmd)
-            
-            return {
-                "commands": formatted_commands,
-                "total": total,
-                "timestamp": now_iso()  # vietnam ISO
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error listing commands: {e}")
-            raise
 
     def debug_timezone_issue(self) -> Dict:
         """Debug timezone calculation issue - vietnam ONLY"""
