@@ -11,7 +11,7 @@ from models.agent_model import AgentModel
 from services.agent_service import AgentService
 
 # Import time utilities - vietnam ONLY
-from time_utils import now_vietnam, now_iso, to_vietnam, parse_agent_timestamp
+from time_utils import now_iso
 
 class AgentController:
     """Controller for agent operations"""
@@ -41,10 +41,6 @@ class AgentController:
         # Utility routes
         self.blueprint.add_url_rule('/agents/<agent_id>/ping', 'ping_agent', self.ping_agent, methods=['POST'])
         
-        #  DEBUG: Add debug routes (optional - remove in production)
-        self.blueprint.add_url_rule('/agents/debug/status', 'debug_status', self.debug_status, methods=['GET'])
-        self.blueprint.add_url_rule('/agents/debug/direct', 'debug_direct_call', self.debug_direct_call, methods=['GET'])
-
     def _success_response(self, data=None, message="Success", status_code=200) -> Tuple:
         """Helper method for success responses"""
         response = {"success": True, "message": message}
@@ -289,47 +285,6 @@ class AgentController:
             self.logger.error(f"Error deleting agent {agent_id}: {e}")
             return self._error_response("Internal server error", 500)
 
-    def debug_status(self):
-        """Debug endpoint để kiểm tra status calculation - vietnam only"""
-        try:
-            current_time = now_vietnam()
-            agents = self.model.get_all_agents({}, limit=100)
-            
-            debug_info = {
-                "server_time": current_time.isoformat(),
-                "thresholds": {
-                    "active": self.service.active_threshold,
-                    "inactive": self.service.inactive_threshold
-                },
-                "agents": []
-            }
-            
-            for agent in agents:
-                last_heartbeat = agent.get("last_heartbeat")
-                if last_heartbeat:
-                    if isinstance(last_heartbeat, str):
-                        last_heartbeat_vietnam = parse_agent_timestamp(last_heartbeat)
-                    elif isinstance(last_heartbeat, datetime):
-                        last_heartbeat_vietnam = to_vietnam(last_heartbeat)
-                    else:
-                        last_heartbeat_vietnam = parse_agent_timestamp(str(last_heartbeat))
-
-                    time_diff = (current_time - last_heartbeat_vietnam).total_seconds()
-                    
-                    debug_info["agents"].append({
-                        "hostname": agent.get("hostname"),
-                        "last_heartbeat": last_heartbeat_vietnam.isoformat(),
-                        "time_since_heartbeat": time_diff,
-                        "status": "active" if time_diff < self.service.active_threshold else 
-                                 "inactive" if time_diff < self.service.inactive_threshold else "offline"
-                    })
-            
-            return self._success_response(debug_info)
-            
-        except Exception as e:
-            self.logger.error(f"Error in debug status: {e}")
-            return self._error_response("Debug failed", 500)
-
     def get_statistics(self):
         """Get agent statistics"""
         try:
@@ -341,53 +296,6 @@ class AgentController:
             self.logger.error(f"Error getting statistics: {e}")
             return self._error_response("Failed to get statistics", 500)
 
-    def debug_direct_call(self):
-        """Debug endpoint - direct service call"""
-        try:
-            self.logger.info(" DEBUG: Direct get_agents_with_status call")
-            
-            # Call service method directly
-            agents = self.service.get_agents_with_status()
-            
-            debug_data = []
-            for agent in agents:
-                debug_data.append({
-                    'hostname': agent.get('hostname'),
-                    'last_heartbeat': agent.get('last_heartbeat'),
-                    'last_heartbeat_type': str(type(agent.get('last_heartbeat'))),
-                    'status': agent.get('status'),
-                    'time_since_heartbeat': agent.get('time_since_heartbeat'),
-                    'calculated_directly': True
-                })
-            
-            return jsonify({
-                'success': True,
-                'method_used': 'get_agents_with_status (direct)',
-                'total': len(agents),
-                'debug_data': debug_data
-            })
-            
-        except Exception as e:
-            self.logger.error(f"Debug direct call error: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
-
-    # Add method:
-    def debug_timezone_issue(self):
-        """Debug timezone calculation issue - now vietnam only"""
-        try:
-            debug_result = self.service.debug_timezone_issue()
-            return jsonify({
-                'success': True,
-                'debug_data': debug_result
-            })
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
 
     def ping_agent(self, agent_id: str):
         """Ping agent to check connectivity"""

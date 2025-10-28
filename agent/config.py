@@ -1,16 +1,10 @@
 """
-Configuration module for the Firewall Controller Agent.
-
- UPDATED: Sử dụng time_utils cho consistent time management - VIETNAMTIME ONLY
-
-This module loads and provides access to all configuration parameters needed by the agent.
 Configuration can be sourced from environment variables, a configuration file, or defaults.
 """
 
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -126,8 +120,6 @@ DEFAULT_CONFIG = {
 
 def load_config() -> Dict[str, Any]:
     """
-     UPDATED: Load configuration với VIETNAMTIME timestamps only
-    
     Load configuration from multiple sources, with the following precedence:
     1. Environment variables
     2. Configuration file
@@ -136,9 +128,9 @@ def load_config() -> Dict[str, Any]:
     Returns:
         Dict: Complete configuration dictionary
     """
-    load_start_time = now()  # VIETNAMTIME timestamp
+    load_start_time = now()  
     
-    logger.info(f" Loading configuration at {now_iso()}")  # VIETNAMTIME ISO
+    logger.info(f" Loading configuration at {now_iso()}")
     
     # Khởi đầu với cấu hình mặc định
     config = DEFAULT_CONFIG.copy()

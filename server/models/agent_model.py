@@ -5,7 +5,6 @@ vietnam ONLY - Clean and simple
 
 import logging
 from typing import Dict, List, Optional
-from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database

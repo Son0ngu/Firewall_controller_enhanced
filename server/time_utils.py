@@ -16,7 +16,6 @@ back and forth between naive datetimes any more.
 
 from __future__ import annotations
 import logging
-import time
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -212,11 +211,4 @@ def get_time_ago_string(value: Any) -> str:
     days = int(age_seconds / 86400)
     return f"{days} day{'s' if days != 1 else ''} ago"
 
-
-if __name__ == "__main__":  # pragma: no cover - simple smoke test
-    print("Testing time utilities")
-    sample = now_vietnam()
-    print(" now_iso() =>", now_iso())
-    print(" format_datetime() =>", format_datetime(sample))
-    print(" get_time_ago_string() =>", get_time_ago_string(sample))
 

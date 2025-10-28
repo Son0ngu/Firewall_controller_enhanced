@@ -18,13 +18,12 @@ import logging
 import signal
 import sys
 import json
-from typing import Dict, Optional, Set, List
+from typing import Dict
 
 # Network & system utilities
 import socket
 import platform
 import requests
-import psutil
 import netifaces 
 
 # Custom modules

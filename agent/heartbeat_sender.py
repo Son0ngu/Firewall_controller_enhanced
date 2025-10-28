@@ -1,17 +1,16 @@
 """
 Heartbeat Sender - Gửi tín hiệu sống định kỳ lên server
-vietnam ONLY - Clean and simple
+UTC ONLY - Clean and simple
 """
 
-import json
 import logging
 import threading
 import requests
-from typing import Dict, Optional
+from typing import Dict
 import psutil  # For system metrics  
 import platform
 
-# Import time utilities - vietnam ONLY
+# Import time utilities - UTC ONLY
 from time_utils import now, now_iso, sleep
 
 logger = logging.getLogger("heartbeat_sender")
