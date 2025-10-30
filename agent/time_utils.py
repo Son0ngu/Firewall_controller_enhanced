@@ -7,16 +7,34 @@ Simplified time management
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("time_utils")
+def _load_vietnam_timezone() -> tzinfo:
+    """Return the Vietnam timezone, falling back to a fixed offset.
+
+    Python's :mod:`zoneinfo` requires the ``tzdata`` package on systems that do
+    not ship the IANA timezone database (for example, Windows or some minimal
+    containers).  When that package is missing the agent previously crashed at
+    import time.  To keep the agent functional we log the issue and fall back to
+    a fixed UTC+7 offset which is accurate for Ho Chi Minh City.
+    """
+
+    try:
+        return ZoneInfo("Asia/Ho_Chi_Minh")
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "tzdata package is missing; falling back to fixed UTC+7 offset for Asia/Ho_Chi_Minh"
+        )
+        return timezone(timedelta(hours=7), name="Asia/Ho_Chi_Minh")
+
 
 # ========================================
 # CORE TIME FUNCTIONS 
 # ========================================
-VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+VIETNAM_TZ = _load_vietnam_timezone()
 def now() -> float:
     """Unix timestamp (always vietnam)."""
     return time.time()

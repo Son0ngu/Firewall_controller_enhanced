@@ -17,7 +17,6 @@ Firewall Controller Agent - Module Chính (Refactored)
 import logging
 import signal
 import sys
-import threading
 import json
 from typing import Dict, Optional, Set, List
 
@@ -35,7 +34,6 @@ from whitelist import WhitelistManager
 from packet_sniffer import PacketSniffer
 from log_sender import LogSender
 from heartbeat_sender import HeartbeatSender
-from command_processor import CommandProcessor
 
 # UPDATED: Clean time utilities - UTC only
 from time_utils import (
@@ -66,7 +64,6 @@ whitelist = None
 log_sender = None
 packet_sniffer = None
 heartbeat_sender = None
-command_processor = None
 
 # Agent state tracking
 running = True
@@ -555,7 +552,7 @@ def initialize_components():
     """
     ENHANCED: Khởi tạo tất cả components với proper error handling
     """
-    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender, command_processor
+    global firewall, whitelist, log_sender, packet_sniffer, heartbeat_sender
     
     try:
         logger.info("Initializing agent components...")
@@ -611,15 +608,6 @@ def initialize_components():
             heartbeat_sender.start()
             logger.info("Heartbeat sender initialized")
         
-        # 7. Initialize CommandProcessor
-        logger.info("Initializing command processor...")
-        command_processor = CommandProcessor()
-        
-        # Start command polling if registered
-        if registration_success:
-            start_command_polling()
-        
-        logger.info("Command processor initialized")
         
         # Update agent state
         agent_state['components_initialized'] = True
@@ -631,54 +619,6 @@ def initialize_components():
         logger.error(f"Failed to initialize components: {e}")
         return False
 
-# ========================================
-# COMMAND POLLING
-# ========================================
-
-def start_command_polling():
-    """Khởi động command polling thread"""
-    def polling_loop():
-        logger.info("Command polling started")
-        
-        while running:
-            try:
-                if not config.get('agent_id'):
-                    sleep(30)
-                    continue
-                
-                # Poll commands từ server
-                server_url = config.get('server_url', config["server"]["url"])
-                commands_url = f"{server_url.rstrip('/')}/api/agents/{config['agent_id']}/commands"
-                
-                response = requests.get(commands_url, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    commands = data.get('commands', [])
-                    
-                    for command in commands:
-                        process_command(command)
-                
-                sleep(30)  # Poll every 30 seconds
-                
-            except Exception as e:
-                logger.error(f"Error in command polling: {e}")
-                sleep(60)
-    
-    polling_thread = threading.Thread(target=polling_loop, daemon=True)
-    polling_thread.start()
-
-def process_command(command: Dict):
-    """Process command từ server"""
-    try:
-        command_id = command.get('command_id')
-        logger.info(f"Processing command {command_id}: {command.get('command_type')}")
-        
-        result = command_processor.process_command(command)
-        logger.info(f"Command {command_id} completed")
-        
-    except Exception as e:
-        logger.error(f"Error processing command: {e}")
 
 # ========================================
 # CLEANUP - UTC ONLY
