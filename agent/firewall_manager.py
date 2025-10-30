@@ -2,6 +2,7 @@
 import logging
 import subprocess
 import re
+import os
 import socket
 import threading
 from typing import Dict, List, Optional, Set
@@ -202,13 +203,17 @@ class FirewallManager:
         """Verify that Default Deny policy is active"""
         try:
             command = ["netsh", "advfirewall", "show", "allprofiles"]
-            
+
+            netsh_env = os.environ.copy()
+            netsh_env["NETSH_CMD_MODE"] = "UNATTENDED"
+
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
                 timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=netsh_env
             )
             
             if result.returncode == 0:
@@ -382,12 +387,16 @@ class FirewallManager:
                 f"description=ALLOW rule for whitelisted IP {ip} (Created: {now_iso()})"  # vietnam ISO
             ]
             
+            netsh_env = os.environ.copy()
+            netsh_env["NETSH_CMD_MODE"] = "UNATTENDED"
+
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
                 timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=netsh_env
             )
             
             if result.returncode == 0:
@@ -700,12 +709,16 @@ class FirewallManager:
         try:
             command = ["netsh", "advfirewall", "show", "allprofiles"]
             
+            netsh_env = os.environ.copy()
+            netsh_env["NETSH_CMD_MODE"] = "UNATTENDED"
+
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
                 timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=netsh_env
             )
             
             if result.returncode == 0:
@@ -871,12 +884,16 @@ class FirewallManager:
     f"name={self.rule_prefix}*", "verbose",
             ]
             
+            netsh_env = os.environ.copy()
+            netsh_env["NETSH_CMD_MODE"] = "UNATTENDED"
+
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
                 timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=netsh_env
             )
             
             if result.returncode != 0:
