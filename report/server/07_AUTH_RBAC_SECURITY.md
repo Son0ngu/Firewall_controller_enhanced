@@ -10,6 +10,8 @@
 | Token refresh/revoke | `jwt_service.py`, `session_model.py` | Access/refresh token, JTI, revoked token collection. |
 | Audit | `services/audit_service.py` | Method canonical là `AuditService.log_action(user, action, resource_type, resource_id=None, details=None, ip_address=None)`. Mọi mutation quan trọng (login, profile.update, user.create/update/delete, api_keys, whitelist, ...) đều ghi. Profile update trước đây gọi nhầm `.log(...)` đã được fix (P0.4) — `WebAuthController.update_profile` hiện gọi đúng `audit_service.log_action(action="profile.update", resource_type="users", details={"updated_fields": [...]})`. Test bảo vệ ở `tests/test_users_auth.py::TestAdminAuthController::test_update_profile_writes_audit_entry`. |
 
+Ghi chú 2026-06-01: API key hiện **không có rate limit thật**. Auth middleware chỉ kiểm tra format/tồn tại/active/expiration/permission; model chỉ tăng `usage_count` trọn đời sau validate thành công. Không có thư viện rate-limit, không có window counter/token bucket, và không có response `429`. UI Rate Limit đã bị xóa để tránh hiểu nhầm.
+
 ## RBAC
 
 `server/config/rbac_config.py` định nghĩa 2 role:
@@ -23,7 +25,11 @@
 
 `RBACService.get_group_query_filter(user)` trả `{"$or": [{"teacher_ids": user._id}, {"created_by": user._id}]}` cho teacher — `teacher_ids` là model hiện tại (admin gán teacher vào group), `created_by` giữ làm legacy fallback cho dữ liệu cũ. Admin → `None` (không filter). `get_teacher_group_ids` dùng `GroupModel.find_accessible_group_ids_for_teacher(...)`; log filter dùng tiếp `AgentModel.find_agent_ids_by_group_ids(...)`, nên RBAC service không còn query Mongo trực tiếp bằng `.collection`.
 
-Controller web-facing dùng `inject_current_user()` (non-blocking) và service/model chỉ trả dữ liệu đúng phạm vi. Với whitelist, controller gọi `WhitelistService.validate_teacher_entry_access(...)` để kiểm tra quyền trên global collection entry, pseudo-ID group entry và real embedded ObjectId trong `groups.whitelist[]`, thay vì tự query collection.
+Controller web-facing phải dùng `require_login(...)`, `require_permission(...)` hoặc `require_admin(...)` làm auth gate bắt buộc. `inject_current_user(...)` chỉ được dùng để nạp ngữ cảnh user tùy chọn và không được đứng một mình trên endpoint trả dữ liệu web-facing, vì decorator này cố ý non-blocking và không trả 401/403.
+
+Hotfix 2026-05-28 đã siết lại các route từng hở public: `/api/groups`, `/api/groups/<id>` GET/PATCH/DELETE, `/api/groups/<id>/teachers`, `/api/logs`, `/api/logs/stats`, `/api/logs/clear`, legacy DELETE `/api/logs` và `/api/logs/export` đều đi qua `require_login(...)`. Route gán teacher dùng `require_login(require_admin(...))`. Agent-facing `POST /api/logs` giữ `require_jwt(...)`, không trộn với web cookie auth.
+
+Với whitelist, controller gọi `WhitelistService.validate_teacher_entry_access(...)` để kiểm tra quyền trên global collection entry, pseudo-ID group entry và real embedded ObjectId trong `groups.whitelist[]`, thay vì tự query collection.
 
 ## Brute-force và session
 

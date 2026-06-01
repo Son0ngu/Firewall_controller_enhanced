@@ -2,17 +2,19 @@
 
 ## Cập nhật xác thực firewall 2026-05-28
 
-Đã chạy kiểm thử `FirewallOnly + Deep` trên máy Windows Administrator với backend ghi `powershell`/NetSecurity. Run cuối `20260527_235108` PASS sạch:
+Baseline mới nhất là Render full deep E2E run `20260528_141158`, chạy trên máy Windows Administrator với `-RunRealFirewallPolicy -WriteBackend powershell -Deep`. Kết quả PASS sạch: `24 PASS / 0 FAIL / 0 SKIP`, `exit_code=0`, `cleanup_failures=0`, `CLEANUP_OK=43`. Phần firewall dùng backend ghi `powershell`/NetSecurity và xác nhận:
 
 - Snapshot trước mutation có đủ `domain/private/public = allow`.
 - Bật whitelist-only/Default Deny thành công, cả 3 profile outbound chuyển sang `block`.
 - Self-allow rules đủ 3 rule: HTTPS TCP/443, DNS UDP/53, DNS TCP/53; không duplicate sau tạo lại.
-- Packet allowed `1.1.1.1:443` vẫn kết nối được trong khi Default Deny active.
-- Packet blocked `151.101.1.69:443` bị chặn đúng trong khi Default Deny active.
-- Managed allow rule test tăng/giảm đúng count `10 -> 11 -> 10`.
+- Packet allowed vẫn kết nối được trong khi Default Deny active.
+- Packet blocked bị chặn đúng trong khi Default Deny active.
+- Managed allow rule test add/remove đúng.
 - Restore snapshot thành công, cả 3 profile quay về `allow`, residual SAINTE2E rules = 0, blocked candidate kết nối lại được sau restore.
 
-Kết luận vận hành: PowerShell/NetSecurity write backend đã đạt packet-level smoke trên một máy Windows admin thật. Tuy nhiên vẫn cần canary thêm máy lab trước khi đổi default rộng, vì rủi ro khóa mạng phụ thuộc driver/firewall policy/local security software từng máy.
+Run firewall-only `20260527_235108` vẫn là smoke lịch sử hữu ích, nhưng kết luận hiện tại nên lấy từ full deep run `20260528_141158` vì nó cover thêm Agent/server contract, heartbeat policy force sync, GUI, Socket.IO, classroom scale và 30-minute soak.
+
+Kết luận vận hành: PowerShell/NetSecurity write backend đã đạt packet-level smoke trên một máy Windows admin thật và đã pass trong full deep Render E2E. Tuy nhiên vẫn cần canary thêm máy lab trước khi đổi default rộng, vì rủi ro khóa mạng phụ thuộc driver/firewall policy/local security software từng máy. Những phần chưa test thật sự: multi-machine vật lý, reboot/service autostart sau reboot và soak dài hơn 30 phút.
 
 ## Cơ chế bảo mật
 

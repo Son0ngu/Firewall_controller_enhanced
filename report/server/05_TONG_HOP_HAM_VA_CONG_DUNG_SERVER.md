@@ -6,6 +6,10 @@ Tài liệu này được sinh từ phân tích AST source code, không import m
 
 > Cập nhật thủ công 2026-05-26: phần bootstrap/routes bên dưới phản ánh refactor mới nhất. `server/app.py` không còn chứa app factory implementation, controller composition, page route, error handler hoặc SocketIO handler; các phần đó đã tách sang `server/bootstrap/` và `server/routes/`.
 
+> Cập nhật thủ công 2026-05-28: baseline validation mới nhất là Render full deep E2E run `20260528_141158` (`24 PASS / 0 FAIL / 0 SKIP`, `exit_code=0`, `CLEANUP_OK=43`). Các web-facing group/log endpoints phải dùng `require_login(...)`; `inject_current_user(...)` chỉ là optional context injection. Các hotfix đã thêm regression test cho public auth leak, active profile domain sync, masked Mongo URI logging và E2E heartbeat envelope unwrap.
+
+> Cập nhật thủ công 2026-06-01: API key không có rate limit thật. Backend không có `rate_limit` parameter/storage, không có hourly/sliding window, không trả `429`; `usage_count` chỉ là counter trọn đời. UI `/api-keys` đã gỡ form Rate Limit và progress bar giả. Modal Create API Key dùng lại shared custom select cho Expiration; dropdown tự mở lên/scroll trong modal nên không còn bị cắt ở `7 days`.
+
 
 ## Package `server`
 
@@ -228,6 +232,8 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `GroupController` | `delete_group(self, group_id)` | Xử lý request/UI action, validate input và điều phối service/component tương ứng. | `server/controllers/group_controller.py:120` |
 | `GroupController` | `set_teachers(self, group_id)` | Admin-only: Set the list of teacher_ids for a group. | `server/controllers/group_controller.py:137` |
 
+Auth note 2026-05-28: toàn bộ route web-facing của `GroupController` đi qua `require_login(...)`; create và set-teachers tiếp tục yêu cầu admin qua `require_admin(...)`. Đây là hotfix cho lỗi `/api/groups` từng trả dữ liệu khi chưa đăng nhập.
+
 
 ### `server/controllers/log_controller.py`
 
@@ -249,6 +255,8 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `LogController` | `get_statistics(self)` | Get basic log statistics (legacy endpoint) | `server/controllers/log_controller.py:286` |
 | `LogController` | `_get_filter_params(self)` | Extract filter parameters from request | `server/controllers/log_controller.py:298` |
 | `LogController` | `_error_response(self, message, status_code)` | Create error response - vietnam only | `server/controllers/log_controller.py:317` |
+
+Auth note 2026-05-28: `POST /api/logs` vẫn là agent-facing và dùng `require_jwt(...)`; các route web-facing như `GET /api/logs`, `/api/logs/stats`, `/api/logs/clear`, legacy DELETE `/api/logs` và `/api/logs/export` đều phải qua `require_login(...)`.
 
 
 ### `server/controllers/user_controller.py`
@@ -332,6 +340,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | Function | Công dụng | Vị trí |
 | --- | --- | --- |
 | `get_env(key, default)` | Get value from environment variable with proper type conversion. | `server/database/config.py:26` |
+| `_mask_connection_uri(uri)` | Mask username/password trong MongoDB URI trước khi log, tránh lộ plaintext secret trên Render logs. | `server/database/config.py:41` |
 | `get_mongo_client(config)` | Get MongoDB client with optimized settings - vietnam logging | `server/database/config.py:75` |
 | `close_mongo_client()` | Close MongoDB client - vietnam logging | `server/database/config.py:112` |
 | `get_config()` | Get configuration instance. | `server/database/config.py:120` |
@@ -453,7 +462,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `APIKeyModel` | `hash_api_key(api_key)` | Hash an API key for secure storage using HMAC-SHA256. | `server/models/api_key_model.py:70` |
 | `APIKeyModel` | `_hash_api_key_legacy(api_key)` | Legacy plain SHA-256 hash - for backward compat with old keys only. | `server/models/api_key_model.py:87` |
 | `APIKeyModel` | `create_api_key(self, name, description, expires_in_days, permissions, created_by)` | Create a new API key. | `server/models/api_key_model.py:91` |
-| `APIKeyModel` | `validate_api_key(self, api_key, required_permission)` | Validate an API key. | `server/models/api_key_model.py:164` |
+| `APIKeyModel` | `validate_api_key(self, api_key, required_permission)` | Validate API key format/hash/active/expiration/permission, update `last_used_at` và tăng `usage_count`; không rate-limit. | `server/models/api_key_model.py:164` |
 | `APIKeyModel` | `revoke_api_key(self, key_id, revoked_by)` | Revoke an API key. | `server/models/api_key_model.py:267` |
 | `APIKeyModel` | `list_api_keys(self, include_revoked, page, limit)` | List all API keys (without showing the actual keys). | `server/models/api_key_model.py:299` |
 | `APIKeyModel` | `get_api_key_by_id(self, key_id)` | Get API key details by ID (without the actual key). | `server/models/api_key_model.py:354` |
@@ -714,7 +723,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | --- | --- | --- | --- |
 | `APIKeyService` | `__init__(self, api_key_model, socketio)` | Initialize APIKeyService. | `server/services/api_key_service.py:19` |
 | `APIKeyService` | `create_api_key(self, name, description, expires_in_days, permissions, created_by)` | Create a new API key. | `server/services/api_key_service.py:32` |
-| `APIKeyService` | `validate_api_key(self, api_key, required_permission)` | Validate an API key for a specific permission. | `server/services/api_key_service.py:87` |
+| `APIKeyService` | `validate_api_key(self, api_key, required_permission)` | Validate an API key for a specific permission; pass-through, không throttle/quota. | `server/services/api_key_service.py:87` |
 | `APIKeyService` | `revoke_api_key(self, key_id, revoked_by)` | Revoke an API key. | `server/services/api_key_service.py:110` |
 | `APIKeyService` | `list_api_keys(self, include_revoked, page, limit)` | List all API keys. | `server/services/api_key_service.py:140` |
 | `APIKeyService` | `get_api_key(self, key_id)` | Get API key details. | `server/services/api_key_service.py:159` |
@@ -887,7 +896,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `WhitelistService` | `test_entry(self, entry_data)` | Test an entry before adding it - vietnam ONLY | `server/services/whitelist_service.py:196` |
 | `WhitelistService` | `test_dns(self, domain)` | Test DNS resolution for a domain - vietnam ONLY | `server/services/whitelist_service.py:247` |
 | `WhitelistService` | `_get_detailed_changes(self, since_dt)` | Get detailed changes since specified time - vietnam ONLY | `server/services/whitelist_service.py:302` |
-| `WhitelistService` | `_normalize_group_entries(self, group, include_inactive)` | Normalize entries from group.whitelist into a list of dicts. | `server/services/whitelist_service.py:370` |
+| `WhitelistService` | `_normalize_group_entries(self, group, include_inactive)` | Normalize entries from `group.whitelist[]`; chấp nhận cả shape mới `value/type` và legacy keys `domain/ip/url/port/process`, bỏ qua entry không có value thật. | `server/services/whitelist_service.py:370` |
 | `WhitelistService` | `_merge_whitelists(self, global_entries, group_entries)` | Merge global and group whitelists. | `server/services/whitelist_service.py:420` |
 | `WhitelistService` | `get_scoped_whitelist(self, agent_id, group_id)` | Return global and group whitelist entries with version metadata. | `server/services/whitelist_service.py:450` |
 | `WhitelistService` | `get_agent_sync_data(self, since_datetime, agent_id, global_version, group_version, agent_policy_mode)` | Get whitelist data for agent synchronization with group awareness. | `server/services/whitelist_service.py:498` |
@@ -1273,7 +1282,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `TestLogControllerTeacherFiltering` | Test LogController with teacher data filtering. | `server/tests/test_teacher_data_filtering.py:932` |
 | `TestAgentAPIBackwardCompatibility` | CRITICAL: Agent-to-server API must NOT be affected by RBAC changes. | `server/tests/test_teacher_data_filtering.py:1107` |
 | `TestEdgeCases` | Edge cases and boundary conditions. | `server/tests/test_teacher_data_filtering.py:1157` |
-| `TestInjectCurrentUserDecorator` | Test inject_current_user - the key mechanism. | `server/tests/test_teacher_data_filtering.py:1237` |
+| `TestInjectCurrentUserDecorator` | Test `inject_current_user` như cơ chế nạp context non-blocking; không phải auth gate. | `server/tests/test_teacher_data_filtering.py:1237` |
 | `TestGroupServiceWithCreatedBy` | Test GroupService passes created_by correctly. | `server/tests/test_teacher_data_filtering.py:1270` |
 | `TestGroupModelWithQueryFilter` | Test GroupModel.list_groups with query_filter parameter. | `server/tests/test_teacher_data_filtering.py:1313` |
 
@@ -1653,3 +1662,38 @@ Group whitelist da co model/collection moi cho migration tu embedded array sang 
 | `2026_migrate_group_whitelist_to_entries.py` | Dry-run/write migration copy embedded rows sang `whitelist_entries`, giu `legacy_embedded_id`. | `server/scripts/migrations/2026_migrate_group_whitelist_to_entries.py` |
 
 Test moi trong `server/tests/test_whitelist_and_logs.py`: collection-first bulk add, embedded fallback, partial migration merge, update/delete bang real `_id`. Reference chi tiet: `docs/reference/server/whitelist_entries.md`.
+
+## Cap nhat 2026-05-28 - Render full deep E2E va hotfix bao mat
+
+Baseline production moi nhat:
+
+| Hang muc | Ket qua |
+| --- | --- |
+| Render full deep E2E `20260528_141158` | `24 PASS / 0 FAIL / 0 SKIP`, `exit_code=0`, `cleanup_failures=0`, `CLEANUP_OK=43` |
+| Web-facing group/log auth | Public smoke sau deploy xac nhan `/api/groups`, `/api/logs?limit=1`, `/api/logs/stats` tra `401` khi chua dang nhap |
+| Agent heartbeat policy | `deep_policy_matrix` PASS; isolate heartbeat tra `force_sync=true`, `policy_mode=isolate` |
+| Active profile sync | `deep_whitelist_conflict_matrix` PASS; domain profile khong con sync thanh `value: null` |
+| Real firewall Default Deny | PASS voi backend `powershell`/NetSecurity; restore ve allow va residual managed rules = 0 |
+
+Test/regression moi can nho khi doc source:
+
+| Test | Muc dich |
+| --- | --- |
+| `test_controller_web_routes_require_login` | Bao ve `/api/groups` web routes khong public khi chua dang nhap. |
+| `test_web_routes_require_login` | Bao ve `/api/logs`, `/api/logs/stats`, clear/export web routes phai login. |
+| `test_agent_sync_active_profile_accepts_domain_key` | Bao ve active profile payload legacy `domain` van sync ra value dung. |
+| `test_mask_connection_uri_hides_credentials` | Bao ve Mongo URI logging chi ghi masked credential. |
+
+Ton dong khong nam trong source test hien tai: multi-machine vat ly, reboot cycle that, soak dai hon 30 phut, Render log/secret rotation neu log cu tung lo secret, va whitelist fallback/pseudo-ID cutover sau backup + migration production.
+
+## Cap nhat 2026-06-01 - API key rate limit
+
+## Cap nhat 2026-06-01 - API key expiration
+
+Ket luan source audit: API key expiration co enforce that. `APIKeyController.create_api_key()` validate `expires_in_days`; `0`/`null` la never expires, so am bi reject. `APIKeyModel.create_api_key()` luu `expires_at`; `APIKeyModel.validate_api_key()` reject khi `expires_at < now_vietnam()` voi `API key has expired` truoc khi tang usage. Endpoint boc `require_api_key(...)` tra HTTP `401` cho expired key. UI `/api-keys` da tach status `expired` khoi `revoked`, them filter `Expired`, va khong tinh expired key vao stat `Active`. Regression moi `server/tests/test_api_key_expiration.py`: 4 passed.
+
+Ket luan source audit: API key khong co rate limit that. `server/requirements.txt` khong co Flask-Limiter hay thu vien rate-limit tuong duong; `server/middleware/auth.py::require_api_key` chi extract key va goi validate; `APIKeyService.create_api_key(...)` va `APIKeyModel.create_api_key(...)` khong nhan/lưu `rate_limit`; `APIKeyModel.validate_api_key(...)` chi `$inc usage_count` va update `last_used_at`. Khong co hourly window, sliding window, token bucket hay response `429`.
+
+Thay doi da lam: xoa field Rate Limit khoi modal `/api-keys`, xoa payload `rate_limit`, xoa hien thi `usage_count / rate_limit`, xoa progress bar usage gia va CSS `.usage-bar`. `usage_count` tiep tuc co nghia la tong so lan validate thanh cong trong vong doi key, khong phai quota.
+
+Them fix UI cung dot 2026-06-01: `keyExpiry` tiep tuc goi `window.initCustomSelect(...)` de giu dung style dropdown chung. Shared custom select trong `base.js` da tinh boundary cua modal, tu mo len bang `drop-up` khi khong du cho ben duoi, va `.custom-options` co `max-height` + `overflow-y: auto`; nhờ đó Expiration khong con bi Bootstrap modal cat mat cac option sau `7 days`.

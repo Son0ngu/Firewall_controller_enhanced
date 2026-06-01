@@ -212,15 +212,17 @@ Per-teacher profile trong group. 1 active per group.
 
 Wrap `APIKeyModel`, add socket events.
 
+Note 2026-06-01: API key service không triển khai rate limit. Service chỉ validate name, gọi model tạo/validate/revoke/list/update key và emit Socket.IO events. Không có tham số `rate_limit`, không có hourly/sliding window, và không có logic trả `429`.
+
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
 | `__init__(api_key_model, socketio=None)` | | [api_key_service.py:19](../../../server/services/api_key_service.py#L19) | |
-| `.create_api_key(name, description="", expires_in_days=None, permissions=None, created_by="admin")` | | [api_key_service.py:32](../../../server/services/api_key_service.py#L32) | Validate name length |
-| `.validate_api_key(api_key, required_permission="register")` | | [api_key_service.py:87](../../../server/services/api_key_service.py#L87) | Pass-through |
-| `.revoke_api_key(key_id, revoked_by="admin")` | | [api_key_service.py:110](../../../server/services/api_key_service.py#L110) | Emit `api_key_revoked` |
+| `.create_api_key(name, description="", expires_in_days=None, permissions=None, created_by="unknown")` | | [api_key_service.py:32](../../../server/services/api_key_service.py#L32) | Validate name length; không nhận `rate_limit` |
+| `.validate_api_key(api_key, required_permission="register")` | | [api_key_service.py:87](../../../server/services/api_key_service.py#L87) | Pass-through tới model; không throttle/quota |
+| `.revoke_api_key(key_id, revoked_by="unknown")` | | [api_key_service.py:110](../../../server/services/api_key_service.py#L110) | Emit `api_key_revoked` |
 | `.list_api_keys(include_revoked=False, page=1, limit=20)` | | [api_key_service.py:140](../../../server/services/api_key_service.py#L140) | |
 | `.get_api_key(key_id)` | | [api_key_service.py:159](../../../server/services/api_key_service.py#L159) | |
-| `.update_api_key(key_id, name=None, description=None, permissions=None, is_active=None, updated_by="admin")` | | [api_key_service.py:171](../../../server/services/api_key_service.py#L171) | |
+| `.update_api_key(key_id, name=None, description=None, permissions=None, is_active=None, updated_by="unknown")` | | [api_key_service.py:171](../../../server/services/api_key_service.py#L171) | |
 | `.get_stats()` | | [api_key_service.py:212](../../../server/services/api_key_service.py#L212) | |
 | `.create_default_key_if_none()` | | [api_key_service.py:216](../../../server/services/api_key_service.py#L216) | Auto-tạo "Default Agent Key" lần đầu boot. Plaintext log warning |
 

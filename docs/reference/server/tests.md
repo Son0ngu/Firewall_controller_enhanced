@@ -3,7 +3,7 @@
 ## Mục đích
 Integration tests dùng **real MongoDB** (test DB riêng cho mỗi file) - không mock DB, không spin up HTTP server. Test trực tiếp Model/Service/Controller bằng Python imports + Flask test context.
 
-7 file test, ~489 test cases tổng, ~6300 dòng.
+11 file test, ~535 test cases tong, ~7370 dong. Cap nhat 2026-06-01: them `test_api_key_expiration.py` de cover API key expiration khong can Mongo that.
 
 ## Tests theo file
 
@@ -11,6 +11,7 @@ Integration tests dùng **real MongoDB** (test DB riêng cho mỗi file) - khôn
 |---|---:|---:|---|---|
 | [test_agents.py](../../../server/tests/test_agents.py) | 847 | 58 | `test_saint_agents` | AgentModel + AgentService (register, heartbeat, status, group move). Cross-teacher isolation. Edge cases |
 | [test_agent_full.py](../../../server/tests/test_agent_full.py) | 798 | 64 | `test_saint_agent_full` | Agent + AgentPolicy combined. Model/Service/Controller. RBAC teacher access |
+| [test_api_key_expiration.py](../../../server/tests/test_api_key_expiration.py) | 142 | 4 | fake collection | API key `expires_at` enforcement: expired key invalid/401, no usage increment; live/never-expire keys valid |
 | [test_audit.py](../../../server/tests/test_audit.py) | 391 | 29 | `test_saint_audit` | AuditModel + AuditService + AuditController (permission checks) |
 | [test_groups.py](../../../server/tests/test_groups.py) | 881 | 70 | `test_saint_groups` | GroupModel + Service + Controller. RBAC filtering. Pending group integration |
 | [test_users_auth.py](../../../server/tests/test_users_auth.py) | 857 | 84 | `test_saint_users_auth` | UserModel + SessionModel + AdminAuthService + UserService + Controllers. Brute-force, lock/unlock |
@@ -137,6 +138,9 @@ python -m pytest tests/ --cov=server --cov-report=term-missing
 - `whitelist_service._update_group_entry` upgrade legacy string → dict: có 1 test happy path, edge case không
 - Socket emit calls: assert qua `mock_socketio.emit.assert_called_with(...)` - không thực sự test client nhận event
 - API key HMAC migration: chỉ test trong `test_agents.py` (sample), chưa có file riêng
+- API key rate limit: không có test vì feature không tồn tại. Backend hiện không có `rate_limit` field/window counter/token bucket/429; UI giả đã bị gỡ ngày 2026-06-01.
+
+Cap nhat 2026-06-01: API key expiration da co `test_api_key_expiration.py` cover expired key invalid/401, no usage increment, live key valid, never-expire key valid.
 
 ### Datetime drift
 - `parse_agent_timestamp` (xem [app.md](app.md)) clamp future timestamps. Vài test fixture set heartbeat dù `now + 1 hour` → bị clamp. Đảm bảo test fixture < FUTURE_DRIFT_TOLERANCE (5 min).

@@ -17,7 +17,7 @@ Auth/RBAC middleware chạy **song song** - agent endpoints dùng `auth.py`, web
 | `init_auth_middleware(api_key_service, jwt_service=None)` | | [auth.py:20](../../../server/middleware/auth.py#L20) | One-time wire, đặt globals `_api_key_service`, `_jwt_service`. Gọi từ `app.register_controllers` |
 | `get_api_key_from_request()` | `() -> Optional[str]` | [auth.py:35](../../../server/middleware/auth.py#L35) | Thứ tự: `X-API-Key` header → `Authorization: Bearer/ApiKey ...`. `?api_key=` query chỉ được đọc nếu `Config.DEBUG_AUTH_QUERY_TOKEN=True` (default `False`); khi đó log warning kèm endpoint + IP. |
 | `get_jwt_from_request()` | `() -> Optional[str]` | [auth.py:241](../../../server/middleware/auth.py#L241) | Thứ tự: `Authorization: Bearer ...` → `X-Access-Token` header. `?access_token=` query cũng gate bằng `DEBUG_AUTH_QUERY_TOKEN`. **Không đọc cookie ở đây** — đó là admin/web flow (`middleware/rbac.py`); trộn vào sẽ cho cookie admin xác thực như agent. |
-| `@require_api_key(permission="register")` | decorator factory | [auth.py:71](../../../server/middleware/auth.py#L71) | Set `g.api_key_info`, `g.api_key_id`, `g.api_key_name` on success. 401 nếu thiếu/invalid |
+| `@require_api_key(permission="register")` | decorator factory | [auth.py:71](../../../server/middleware/auth.py#L71) | Set `g.api_key_info`, `g.api_key_id`, `g.api_key_name` on success. 401 nếu thiếu/invalid. Không rate-limit |
 | `@optional_api_key` | decorator | [auth.py:136](../../../server/middleware/auth.py#L136) | Set `g.api_key_*` nếu có, None nếu không. Không reject |
 | `@require_jwt` | decorator | [auth.py:273](../../../server/middleware/auth.py#L273) | Set `g.jwt_payload`, `g.agent_id`, `g.user_id`, `g.token_jti`. 401. Token expired → `code: TOKEN_EXPIRED` để agent refresh |
 | `@optional_jwt` | decorator | [auth.py:343](../../../server/middleware/auth.py#L343) | Như optional_api_key nhưng cho JWT |
@@ -83,12 +83,15 @@ Auth/RBAC middleware chạy **song song** - agent endpoints dùng `auth.py`, web
 - Cần lấy current agent? → `g.agent_id` (từ JWT) hoặc `g.api_key_id` (từ API key)
 - Cần extract token thủ công cho logic phức tạp? → `get_jwt_from_request()` / `get_api_key_from_request()` (auth.py) hoặc `_extract_token()` (rbac.py - internal nhưng có thể public hoá)
 
+API key expired: `@require_api_key(...)` tra JSON `401 {"success": false, "error": "API key has expired"}`; key do khong duoc set vao `g.api_key_*`.
+
 ## Gotchas
 
 ### Auth (Agent)
 - **`init_auth_middleware` PHẢI gọi trước register routes** (app.py:241). Nếu không, mọi `require_api_key` sẽ return 500 ("Server configuration error").
 - **`Authorization` header parse khác nhau**: `auth.py` chấp nhận cả `Bearer` và `ApiKey` prefix (auth.py:55-59) - endpoint dùng API key có thể nhận token kiểu `Bearer fc_...`. `get_jwt_from_request` chỉ accept `Bearer` (không `ApiKey`).
 - **Query param `?api_key=` & `?access_token=`**: default **bị từ chối** (P0.1). Phải set env `DEBUG_AUTH_QUERY_TOKEN=true` mới được đọc, và mỗi lần dùng đều log warning. Lý do: token trong URL leak qua proxy log, browser history, Referer header. Production tuyệt đối không bật.
+- **Không có API key rate limit ở middleware**: `require_api_key` chỉ extract key, gọi `APIKeyService.validate_api_key`, kiểm tra kết quả và set `g.api_key_*`. Không có per-key counter window, token bucket, hoặc response `429`.
 - **Token expired → status `code: TOKEN_EXPIRED`** (auth.py:316-321): agent dùng key này detect refresh moment. Đừng thay đổi.
 - **`require_jwt_or_api_key` clear lẫn nhau** (auth.py:413, 426): nếu JWT pass, set `api_key_info = None`. Caller phải check `g.agent_id` (JWT path) hoặc `g.api_key_id` (key path) để biết auth source.
 

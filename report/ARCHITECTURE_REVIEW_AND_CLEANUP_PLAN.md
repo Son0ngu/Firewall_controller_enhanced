@@ -10,6 +10,18 @@ Ghi chú: đây là rà soát kiến trúc ở mức source code. Báo cáo tậ
 
 Phần review bên dưới giữ lại lịch sử phát hiện ban đầu. Trạng thái hiện tại sau các đợt sửa gần nhất:
 
+## Cập nhật validation production 2026-05-28
+
+Render full deep E2E run `20260528_141158` là baseline vận hành mới nhất: `24 PASS / 0 FAIL / 0 SKIP`, `exit_code=0`, `cleanup_failures=0`, `CLEANUP_OK=43`. Run này đã xác nhận Server API/RBAC, GUI, Socket.IO, Agent register/JWT/heartbeat/sync/log, active profile sync, isolate heartbeat `force_sync=true`, synthetic classroom scale, service/autostart readiness, 30-minute soak và real Windows Firewall Default Deny với backend `powershell`/NetSecurity.
+
+Các giới hạn chưa test thật sự vẫn còn: multi-machine vật lý trên nhiều máy Windows, reboot cycle thật, soak dài hơn 30 phút, canary firewall backend trên thêm máy lab, Render log audit/secret rotation và whitelist fallback/pseudo-ID cutover sau backup + migration production.
+
+## Cập nhật API key rate limit 2026-06-01
+
+Source audit xác nhận API key chưa có rate limit thật: không có dependency/middleware quota, không có window counter/token bucket, `validate_api_key` chỉ kiểm tra key và tăng `usage_count` trọn đời. UI Rate Limit trên `/api-keys` là false affordance nên đã bị gỡ. Nếu cần rate limit thật sau này, phải thiết kế backend enforcement trước rồi mới đưa control trở lại UI.
+
+UI follow-up cùng ngày: Expiration trong modal Create API Key dùng lại shared custom select ở `base.js`. Dropdown giờ tự mở lên khi modal không đủ chỗ bên dưới và `.custom-options` có `max-height` + `overflow-y:auto`, nên giữ đúng style UI mà không còn bị Bootstrap modal cắt ở `7 days`.
+
 | Nhóm vấn đề | Trạng thái | Ghi chú hiện tại |
 | --- | --- | --- |
 | Audit IP luôn `127.0.0.1` | Đã xử lý | Thêm `server/utils/request_ip.py`; audit/auth/agent/log/whitelist dùng `get_client_ip()` với ưu tiên `X-Forwarded-For`, `X-Real-IP`, rồi `remote_addr`. |
@@ -28,7 +40,7 @@ Phần review bên dưới giữ lại lịch sử phát hiện ban đầu. Tr�
 | Whitelist dual storage và pseudo-ID | Đã chuyển sang collection-first dual path | Thêm `WhitelistEntryModel`/collection `whitelist_entries` và migration `2026_migrate_group_whitelist_to_entries.py`. New group writes (`add_entry`, `bulk_add_entries`) ghi vào `whitelist_entries`, bump `groups.whitelist_version`, API/frontend nhận `_id` thật. Read path merge `whitelist_entries` + legacy `groups.whitelist[]` trong một release; collection row thắng khi trùng `type:value`. Pseudo-ID chỉ còn là fallback cho legacy embedded row chưa migrate/backfill. |
 | RBAC duplicate giữa config và service | Đã xử lý | `RBACService.is_teacher_request()` (static) + `assert_group_access()` là single owner; controllers chỉ delegate. `rbac_config.py` chỉ còn permission matrix constants, không còn data-access logic. |
 | Legacy whitelist domain APIs | Đã deprecate | 5 method `get_all_domains`/`add_domain`/`delete_domain`/`import_domains`/`export_domains` emit `DeprecationWarning` ở runtime. Sẽ xóa shim sau khi unified entry API fully adopted. |
-| Agent singleton/lifecycle/netsh side effect | Lifecycle + firewall facade đã xử lý | `AgentRuntime` injectable giữ nguyên; lifecycle đã có `LifecycleContext`, `AgentComponent.start/stop/health`, `build_default_components`, `start_components`, `stop_components`. Firewall read/write đi qua `FirewallProvider`; write mặc định vẫn là `netsh` để giữ tương thích, có opt-in `FIREWALL_WRITE_BACKEND=powershell` cho NetSecurity sau admin smoke. `settings.py` delegate restore/clear qua `FirewallApplicationService` thay vì tự gọi netsh inline. |
+| Agent singleton/lifecycle/netsh side effect | Lifecycle + firewall facade đã xử lý | `AgentRuntime` injectable giữ nguyên; lifecycle đã có `LifecycleContext`, `AgentComponent.start/stop/health`, `build_default_components`, `start_components`, `stop_components`. Firewall read/write đi qua `FirewallProvider`; write mặc định vẫn là `netsh` để giữ tương thích, có opt-in `FIREWALL_WRITE_BACKEND=powershell` cho NetSecurity. Backend PowerShell/NetSecurity đã pass full deep run `20260528_141158` trên một máy Windows Administrator; vẫn cần canary thêm máy lab trước khi đổi default rộng. `settings.py` delegate restore/clear qua `FirewallApplicationService` thay vì tự gọi netsh inline. |
 | Frontend helper/JS/CSS duplicate | Đã xử lý (core layer + fetch migration + browser smoke) | `server/views/static/js/core/{api,toast,date,log,utils}.js` cung cấp shared `SaintAPI`, `SaintToast`, `SaintDate`, `SaintLog`, `SaintUtils`. Inline scripts trong `profile.html`, `api_keys.html`, `admin_audit.html`, `login.html` đã extract sang `static/js/pages/`. Admin page raw `fetch()` đã migrate sang `SaintAPI`; `rg "fetch\(" server/views/static/js` chỉ còn `core/api.js`, `error_500.js` health-check, và `pages/login.js` exempt. Đã thêm Playwright smoke suite cho login, dashboard/admin pages, profile change-password visual state, và CSRF header qua `SaintAPI`. |
 | DNS resolver thread pool không shutdown ở cleanup | Đã xử lý | `WhitelistManager.cleanup()` gọi `OptimizedDNSResolver.shutdown()` và xóa reference; `agent/core/lifecycle.py::cleanup()` gọi `agent.whitelist.cleanup()` (đầy đủ teardown) thay vì chỉ `stop_sync()`. Ephemeral resolver trong `agent/firewall/manager.py::_resolve_domains_to_ips()` được wrap try/finally để shutdown ngay sau khi dùng. Qt `WhitelistView.closeEvent` shutdown DNS resolver nếu đã lazy-build. |
 | CSRF cho admin web | Đã xử lý | Thêm `server/middleware/csrf.py` (double-submit cookie pattern). `register_csrf(app)` cài `before_request` hook. POST/PUT/PATCH/DELETE cookie-authed phải gửi header `X-CSRF-Token` matches cookie `csrf_token` (constant-time compare); bypass cho Bearer/X-API-Key/login/refresh path. `WebAuthController` mint cookie ở login, rotate ở refresh, xóa ở logout. `SaintAPI` tự đọc cookie và attach header. CORS đã allow `PATCH` và `X-CSRF-Token` trong `API_CORS_OPTIONS`. `ENFORCE_CSRF` toggle (default True; TestingConfig False). Test bảo vệ ở `server/tests/test_csrf.py` + `test_app_factory.py`. |
@@ -835,11 +847,13 @@ server/views/static/js/
 
 ### Phase 6 - Test và vận hành
 
+- Baseline production mới nhất: Render full deep E2E `20260528_141158` PASS sạch (`24 PASS / 0 FAIL / 0 SKIP`) và real firewall Default Deny rollback sạch.
 - Unit test service/repository cho RBAC và whitelist.
 - Integration test auth cookie/JWT/API key.
 - Agent test cho lifecycle start/stop với fake component.
 - Frontend smoke test bằng Playwright cho dashboard, agents, whitelist, logs, profile, admin audit đã có; nên mở rộng thêm modal/create/edit/delete flows khi refactor page module.
 - Migration test cho whitelist group embedded -> collection.
+- Operational gates còn lại: multi-machine vật lý, reboot thật, soak dài hơn 30 phút, Render log/secret audit và whitelist fallback cutover sau migration production.
 
 ## Danh sách duplicate/thừa cụ thể nên xử lý
 
@@ -858,7 +872,7 @@ server/views/static/js/
 | Agent localhost fallback | `agent/whitelist/manager.py`, `agent/services/heartbeat.py`, `agent/logging_module/sender.py` | Đã dùng URL resolver chung, không fallback localhost ở first-run offline | Chỉ bật dev default bằng config rõ ràng nếu cần |
 | Agent singleton/global identity | `agent/core/agent.py`, `agent/core/lifecycle.py`, `agent/controllers/agent_controller.py` | Đã xử lý: `DeviceIdentityProvider` lazy + `AgentRuntime` injectable (`Agent` là-is-a). `initialize_components`/`cleanup`/`AgentController` accept `runtime=` parameter. Lifecycle hiện dùng `AgentComponent.start/stop/health`, `LifecycleContext`, `start_components`, `stop_components`; có fake-component tests | Chỉ còn production GUI/Windows smoke khi có môi trường thật |
 | Agent Tk bridge | `agent/controllers/agent_controller.py` | Đã xóa `process_events(root)` + `set_root`. Qt bridge `QtSignalBridge` là sole consumer | — |
-| Netsh parsing duplicate | `agent/firewall/rules.py`, `agent/gui_qt/views/firewall.py`, `agent/gui_qt/views/settings.py` | Read side đã xử lý bằng `FirewallProvider`; GUI firewall view dùng provider. Write side đã delegate qua provider write API; default backend vẫn `netsh`, NetSecurity/PowerShell opt-in qua `FIREWALL_WRITE_BACKEND=powershell`. `settings.py` restore/clear đi qua `FirewallApplicationService`. | Windows admin smoke trước khi đổi default write backend sang PowerShell |
+| Netsh parsing duplicate | `agent/firewall/rules.py`, `agent/gui_qt/views/firewall.py`, `agent/gui_qt/views/settings.py` | Read side đã xử lý bằng `FirewallProvider`; GUI firewall view dùng provider. Write side đã delegate qua provider write API; default backend vẫn `netsh`, NetSecurity/PowerShell opt-in qua `FIREWALL_WRITE_BACKEND=powershell`. `settings.py` restore/clear đi qua `FirewallApplicationService`. | PowerShell backend đã pass run `20260528_141158` trên một máy Windows admin; trước khi đổi default vẫn cần canary thêm máy lab |
 | Frontend toast/date/api/log/utils | `core/{api,toast,date,log,utils}.js` | Shared `SaintAPI`/`SaintToast`/`SaintDate`/`SaintLog`/`SaintUtils` ở `static/js/core/`. **Bulk fetch() migration DONE** (batch P3): mọi admin page dùng `SaintAPI`; `csrf-fetch-shim.js` đã xóa. `escapeHtml`/`escHtml`/`wlEscapeHtml` gom về `SaintUtils.escapeHtml`. `console.log` gate qua `SaintLog.debug` (`window.__SAINT_DEBUG__`). Playwright smoke golden path đã có và pass 4 tests. | Mở rộng browser tests cho modal/create/edit/delete flows khi tách page module |
 | Inline JS | `profile.html`, `admin_audit.html`, `api_keys.html`, `login.html` | Đã tách sang `static/js/pages/{profile,admin_audit,api_keys,login}.js`. Template chỉ còn `<script src>` | — |
 | CSS button/status | `base.css` và page CSS | Override dễ gây bug màu | Component CSS/tokens |

@@ -1705,7 +1705,8 @@ class FullSystemE2E:
             label="deep_policy_isolate",
         )
         heartbeat = self.send_agent_heartbeat()
-        if heartbeat.get("force_sync") is not True or heartbeat.get("policy_mode") != "isolate":
+        heartbeat_data = heartbeat.get("data", heartbeat)
+        if heartbeat_data.get("force_sync") is not True or heartbeat_data.get("policy_mode") != "isolate":
             fail("isolate_heartbeat_force_sync", "Heartbeat did not request force sync for isolate", {"heartbeat": heartbeat})
         isolate_sync = self.agent_sync(policy_mode="none")
         isolate_values = {self.entry_value(e) for e in isolate_sync.get("domains", [])}

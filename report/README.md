@@ -1,10 +1,21 @@
 # Bộ report kỹ thuật SAINT
 
+Cập nhật 2026-06-01: API key expiration có enforce thật. Expired key bị `validate_api_key(...)` reject với `API key has expired`, endpoint dùng `require_api_key(...)` trả `401`, và expired key không tăng `usage_count`.
+UI `/api-keys` cũng đã tách trạng thái `expired` riêng khỏi `revoked`, thêm filter `Expired`, và không tính expired key vào stat `Active`.
+
+## Cập nhật 2026-06-01
+
+- Xác nhận API key hiện không có rate limit backend thật: không có thư viện/middleware quota, không có window counter/token bucket, không có response `429`; `usage_count` chỉ là counter trọn đời.
+- Đã gỡ UI Rate Limit giả khỏi trang `/api-keys`: bỏ input `1000/hour`, bỏ payload `rate_limit`, bỏ hiển thị `usage / limit` và progress bar.
+- Đã sửa dropdown Expiration trong modal Create API Key bằng shared custom select ở `base.js`: menu tự mở lên khi modal không đủ chỗ bên dưới và có scroll thật, nên vẫn giữ đúng style UI và chọn được đầy đủ `Never expires`, `7 days`, `30 days`, `90 days`, `1 year`.
+
 ## Cập nhật 2026-05-28
 
-- Thêm `2026-05-28_E2E_VALIDATION_AND_OPEN_ITEMS.md`: tổng hợp kết quả full E2E/deep firewall, lỗi UI `/api-keys`, các fix local và các tồn đọng cần deploy/canary.
-- Firewall-only deep run `20260527_235108` đã PASS packet-level: Default Deny active, allowed packet OK, blocked packet bị chặn, managed rule add/remove OK, restore policy về allow và residual rules = 0.
-- Các fix local quan trọng: API Keys page null DOM, favicon 404, Agent heartbeat policy force sync injection, NetSecurity remote address parsing, remove allow rule vừa tạo, và E2E runner firewall-only/deep coverage.
+- `2026-05-28_E2E_VALIDATION_AND_OPEN_ITEMS.md` là baseline validation mới nhất. Render full deep E2E run `20260528_141158` PASS sạch: `24 PASS / 0 FAIL / 0 SKIP`, `exit_code=0`, `cleanup_failures=0`, `CLEANUP_OK=43`.
+- Run cuối đã cover Server API/RBAC, GUI, Socket.IO, Agent register/JWT/heartbeat/sync/log, profile sync, policy force sync, synthetic classroom scale, 30-minute soak và real Windows Firewall Default Deny với backend `powershell`/NetSecurity.
+- Hotfix public auth leak đã được verify trên Render: `/api/groups`, `/api/logs?limit=1`, `/api/logs/stats` đều trả `401` khi chưa đăng nhập.
+- Firewall-only run `20260527_235108` chỉ còn là smoke lịch sử; kết quả firewall hiện tại nên đọc từ full deep run `20260528_141158`.
+- Tồn đọng vận hành còn lại: kiểm tra Render logs và rotate secret nếu từng lộ, canary PowerShell firewall backend trên thêm máy lab, test multi-machine vật lý, test reboot/autostart thật, soak dài hơn 30 phút và chưa xóa whitelist fallback/pseudo-ID trước khi migration production được chứng minh sạch.
 
 Bộ tài liệu này được tạo từ source code hiện tại trong `agent/` và `server/`, không dựa vào tài liệu cũ trong `docs/` làm nguồn chính.
 

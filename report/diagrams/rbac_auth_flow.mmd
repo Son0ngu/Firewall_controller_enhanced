@@ -9,6 +9,7 @@ sequenceDiagram
   Auth->>JWT: generate_tokens(user_id)
   JWT-->>Browser: httpOnly JWT cookie/token data
   Browser->>Controller: Request protected endpoint
-  Controller->>RBAC: require_login/inject_current_user
+  Controller->>RBAC: web gate: require_login / require_permission
+  RBAC->>Controller: optional context: inject_current_user only when non-blocking is intended
   RBAC->>Service: query filter by role/group ownership
   Service-->>Browser: scoped data

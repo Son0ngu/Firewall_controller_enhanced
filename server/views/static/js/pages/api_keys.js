@@ -56,16 +56,12 @@ async function loadApiKeys() {
       allKeys = result.keys || [];
 
       // Calculate stats from keys
+      const keyStatuses = allKeys.map((key) => getKeyStatus(key));
       const stats = {
         total: allKeys.length,
-        active: allKeys.filter((k) => k.is_active).length,
-        revoked: allKeys.filter((k) => !k.is_active).length,
-        expiring_soon: allKeys.filter((k) => {
-          if (!k.expires_at) return false;
-          const expires = new Date(k.expires_at);
-          const daysUntil = (expires - new Date()) / (1000 * 60 * 60 * 24);
-          return daysUntil > 0 && daysUntil <= 7;
-        }).length,
+        active: keyStatuses.filter((status) => status === 'active' || status === 'expiring').length,
+        revoked: keyStatuses.filter((status) => status === 'revoked').length,
+        expiring_soon: keyStatuses.filter((status) => status === 'expiring').length,
       };
 
       updateStats(stats);
@@ -108,12 +104,12 @@ function filterKeys() {
   renderKeys(filtered);
 }
 
-// Get key status: 'active', 'revoked', or 'expiring'
+// Get key status: 'active', 'expiring', 'expired', or 'revoked'
 function getKeyStatus(key) {
   if (!key.is_active) return 'revoked';
   if (key.expires_at) {
     const daysUntil = (new Date(key.expires_at) - new Date()) / (1000 * 60 * 60 * 24);
-    if (daysUntil <= 0) return 'revoked';
+    if (daysUntil <= 0) return 'expired';
     if (daysUntil <= 7) return 'expiring';
   }
   return 'active';
@@ -154,20 +150,19 @@ function renderKeyCard(key) {
     active: 'success',
     revoked: 'danger',
     expiring: 'warning',
+    expired: 'secondary',
   };
   const statusIcons = {
     active: 'check-circle',
     revoked: 'ban',
     expiring: 'exclamation-triangle',
+    expired: 'clock',
   };
-
-  const usagePercent = key.rate_limit > 0
-    ? Math.min(100, (key.usage_count / key.rate_limit) * 100)
-    : 0;
+  const cardStateClass = status === 'revoked' || status === 'expired' ? status : '';
 
   return `
     <div class="col-lg-6 col-xl-4">
-      <div class="card key-card ${status === 'revoked' ? 'border-danger' : ''}">
+      <div class="card key-card ${cardStateClass}">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-start mb-3">
             <h6 class="card-title mb-0 fw-bold">
@@ -191,7 +186,7 @@ function renderKeyCard(key) {
             <div class="col-6">
               <div class="key-metric">
                 <small class="text-muted">Usage</small>
-                <div class="fw-bold">${key.usage_count || 0}${key.rate_limit > 0 ? ` / ${key.rate_limit}` : ''}</div>
+                <div class="fw-bold">${key.usage_count || 0}</div>
               </div>
             </div>
             <div class="col-6">
@@ -207,16 +202,10 @@ function renderKeyCard(key) {
             ${key.last_used_at ? `<span>Last: ${SaintDate.formatVN(key.last_used_at) || 'N/A'}</span>` : ''}
           </div>
 
-          ${key.rate_limit > 0 ? `
-          <div class="progress usage-bar mb-3" style="height: 4px;">
-            <div class="progress-bar ${usagePercent > 80 ? 'bg-danger' : 'bg-primary'}"
-                 style="width: ${usagePercent}%"></div>
-          </div>
-          ` : ''}
         </div>
 
         <div class="card-footer bg-transparent border-0 pt-0 key-actions">
-          ${status === 'active' ? `
+          ${key.is_active ? `
           <button class="btn btn-sm btn-outline-danger w-100" onclick="showRevokeModal('${key._id}', '${escapeHtml(key.name)}')">
             <i class="fas fa-ban me-1"></i>Revoke Key
           </button>
@@ -255,14 +244,12 @@ async function createApiKey() {
   }
 
   const expiryDays = parseInt(document.getElementById('keyExpiry').value, 10);
-  const rateLimit = parseInt(document.getElementById('keyRateLimit').value, 10) || 0;
 
   try {
     const result = await SaintAPI.post('/api/api-keys', {
       name,
       description: document.getElementById('keyDescription').value.trim(),
       expires_in_days: expiryDays,
-      rate_limit: rateLimit,
     });
 
     if (result && result.success) {

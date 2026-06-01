@@ -6,20 +6,22 @@ Chi tiết đầy đủ nằm ở `report/2026-05-28_E2E_VALIDATION_AND_OPEN_ITE
 
 | Nhóm kiểm thử | Kết quả |
 | --- | --- |
-| Full system E2E deep trên Render | Chạy được server API/RBAC, whitelist, profile, build Agent, agent register/JWT/heartbeat/sync/log, GUI, Socket.IO, synthetic classroom scale và soak 30 phút. Run `20260527_214919` phát hiện các điểm cần sửa: policy heartbeat chưa force sync, runner false positive bulk duplicate, firewall rule read/remove cần cứng hơn. |
-| Firewall-only packet deep sau patch | Run `20260527_235108`: PASS=8, FAIL=0, cleanup OK. Default Deny bật thật, allowed packet `1.1.1.1:443` vẫn đi được, blocked packet `151.101.1.69:443` bị chặn, add/remove managed rule đúng, restore policy về allow và residual rule = 0. |
-| GUI `/api-keys` production issue | Đã tái hiện lỗi `Cannot read properties of null (reading 'style')`; nguyên nhân JS dùng sai DOM id so với template. Đã sửa local trong `server/views/static/js/pages/api_keys.js` và `server/views/templates/api_keys.html`; cần deploy để production hết lỗi. |
-| Favicon | Đã thêm route `/favicon.ico` và `<link rel="icon">` để tránh 404. |
-| Local regression sau patch | `agent/tests`: 8 passed. `server/tests/test_teacher_data_filtering.py`: 81 passed. `server/tests/test_app_factory.py server/tests/test_agent_full.py server/tests/test_whitelist_and_logs.py`: 184 passed, chỉ còn DeprecationWarning dự kiến ở legacy whitelist API. |
+| Full system E2E deep trên Render | Run `20260528_141158` PASS sạch: `24 PASS / 0 FAIL / 0 SKIP`, `exit_code=0`, `cleanup_failures=0`, `CLEANUP_OK=43`. Đã cover server API/RBAC, whitelist/profile, build Agent, agent register/JWT/heartbeat/sync/log, policy force sync, GUI, Socket.IO, synthetic classroom scale, service/autostart readiness, 30-minute soak và real firewall Default Deny. |
+| Public auth leak hotfix | Sau deploy, smoke public xác nhận `/api/groups`, `/api/logs?limit=1`, `/api/logs/stats` đều trả `401 Authentication required` khi chưa đăng nhập. Web-facing group/log endpoints dùng `require_login(...)`; agent logs POST giữ `require_jwt(...)`. |
+| Firewall Default Deny real Windows | Trong run `20260528_141158`, backend `powershell`/NetSecurity bật Default Deny thật, allowed packet vẫn OK, blocked packet bị chặn, add/remove managed rule OK, restore về `allow`, residual managed rules = 0. Firewall-only run `20260527_235108` chỉ còn là smoke lịch sử. |
+| GUI `/api-keys` và favicon | `/api-keys` DOM fix và `/favicon.ico` đã lên Render; Playwright GUI matrix trong full deep run pass qua các trang chính, gồm API Keys. Sau rà 2026-06-01, modal Create API Key dùng lại shared custom select cho Expiration; dropdown tự mở lên/scroll trong modal nên không còn bị cắt ở `7 days`. |
+| API key rate limit | Không có rate limit backend thật; field/form Rate Limit là UI giả và đã bị gỡ khỏi `/api-keys`. `usage_count` chỉ là counter trọn đời, không phải quota theo giờ. |
+| API key expiration | Có enforce backend thật: `expires_at < now_vietnam()` làm `validate_api_key(...)` invalid, `require_api_key(...)` trả `401 API key has expired`, và expired key không tăng `usage_count`. UI đã tách status `expired` khỏi `revoked`. Regression `server/tests/test_api_key_expiration.py`: 4 passed. |
+| Local regression sau hotfix | `server/tests/test_groups.py`: 73 passed; `server/tests/test_whitelist_and_logs.py`: 119 passed, 3 expected DeprecationWarning; `server/tests/test_app_factory.py`: 4 passed; `agent/tests`: 8 passed; `server/tests/test_teacher_data_filtering.py`: 81 passed; combo `test_app_factory.py test_agent_full.py test_whitelist_and_logs.py`: 184 passed. |
 
 Các tồn đọng sau mốc này:
 
-- Deploy lên Render các fix local trước khi rerun full deep.
-- Rerun full deep sau deploy để xác nhận policy heartbeat `force_sync` pass trên production.
+- Kiểm tra Render logs để chắc chắn không còn plaintext `MONGO_URI`/JWT/API secret; rotate secret nếu log cũ từng chứa plaintext và đổi admin password production nếu credential đã bị chia sẻ.
 - Canary PowerShell/NetSecurity firewall backend trên thêm 1-2 máy lab trước khi đổi default rộng.
-- Chưa test reboot thật/service autostart sau reboot; runner chỉ sinh script post-reboot check.
-- Chưa test multi-machine vật lý thật; hiện deep mode dùng synthetic registered agents từ một workstation.
-- Chưa xóa whitelist fallback/pseudo-ID production cho tới khi migration write, backup và log không còn `group::...` được xác nhận.
+- Chưa test reboot thật/service autostart sau reboot; runner chỉ kiểm tra readiness và tạo dữ liệu hỗ trợ post-reboot.
+- Chưa test multi-machine vật lý thật; hiện deep mode dùng 24 synthetic registered agents từ một workstation.
+- Chưa test soak dài hơn 30 phút; full deep hiện đã pass 30-minute soak với 28 samples healthy.
+- Chưa xóa whitelist fallback/pseudo-ID production cho tới khi có backup DB, migration write/verify và log/metric chứng minh không còn request `group::...`.
 
 ## Tests hiện có
 

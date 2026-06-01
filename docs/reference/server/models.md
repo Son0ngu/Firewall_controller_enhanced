@@ -17,7 +17,7 @@ Wrap mỗi MongoDB collection thành một class với CRUD methods + index setu
 | `UserModel` | `users` | Admin/teacher accounts (bcrypt password) | `username` unique, `email` unique sparse |
 | `SessionModel` | `admin_sessions` | Active admin/teacher login sessions với JTI | TTL on `expires_at`, `access_token_jti` unique |
 | `AuditModel` | `audit_logs` | Append-only audit trail | `timestamp` DESC, `user_id`, `action` |
-| `APIKeyModel` | `api_keys` | Agent registration API keys (HMAC-SHA256 hashed) | `key_hash` unique |
+| `APIKeyModel` | `api_keys` | Agent registration API keys (HMAC-SHA256 hashed); no rate-limit fields/enforcement | `key_hash` unique |
 | `AgentPolicyModel` | `agent_policies` | Per-agent override (isolate/custom_whitelist) | `agent_id` unique |
 | `WhitelistProfileModel` | `whitelist_profiles` | Per-teacher whitelist profiles trong group | `group_id+teacher_id` compound |
 
@@ -164,7 +164,7 @@ First-class storage for group whitelist entries during migration away from `grou
 | `hash_api_key(key)` | `@staticmethod → str` | [api_key_model.py:69](../../../server/models/api_key_model.py#L69) | HMAC-SHA256 với secret |
 | `_hash_api_key_legacy(key)` | `@staticmethod` | [api_key_model.py:86](../../../server/models/api_key_model.py#L86) | Legacy plain SHA-256 (cho backward compat) |
 | `create_api_key(name, description="", expires_in_days=None, permissions=None, created_by="system")` | `→ Dict` | [api_key_model.py:91](../../../server/models/api_key_model.py#L91) | Trả **plaintext key 1 lần** - không lưu trừ hash. Default permissions=["register"] |
-| `validate_api_key(api_key, required_permission="register")` | `→ Dict` | [api_key_model.py:164](../../../server/models/api_key_model.py#L164) | Try HMAC hash → fallback legacy → **auto-migrate** sang HMAC. Check active, expired, permission. Update `last_used_at`, `usage_count`. Permission aliases map old↔new |
+| `validate_api_key(api_key, required_permission="register")` | `→ Dict` | [api_key_model.py:164](../../../server/models/api_key_model.py#L164) | Try HMAC hash → fallback legacy → **auto-migrate** sang HMAC. Check active, expired, permission. Update `last_used_at`, `usage_count`. Permission aliases map old↔new. Không enforce rate limit/429 |
 | `revoke_api_key(key_id, revoked_by="system")` | | [api_key_model.py:267](../../../server/models/api_key_model.py#L267) | Set `is_active=False, revoked_at, revoked_by` |
 | `list_api_keys(include_revoked=False, page=1, limit=20)` | `→ Dict` | [api_key_model.py:299](../../../server/models/api_key_model.py#L299) | **Exclude `key_hash` field** từ result |
 | `get_api_key_by_id(key_id)` | | [api_key_model.py:354](../../../server/models/api_key_model.py#L354) | |
@@ -258,7 +258,12 @@ Cap nhat 2026-05-27: group entries are collection-first through `WhitelistEntryM
 
 ### API key migration
 - **Lazy migration HMAC** (api_key_model.py:191-197): legacy keys hash bằng plain SHA-256. Khi validate fail HMAC, fallback legacy. Match → update hash sang HMAC. Sau migration full, có thể xoá `_hash_api_key_legacy`.
+- **Không có API key rate limit thật**: collection `api_keys` không lưu `rate_limit`, `usage_window`, quota bucket hoặc reset timestamp. `usage_count` là counter trọn đời, chỉ tăng `$inc` mỗi lần validate thành công và không dùng để chặn request.
 - **`API_KEY_HMAC_SECRET` default ở line 27** - chỉ warning log. Production phải set env → đổi secret = invalidate tất cả keys (kể cả đang dùng). Migration phải re-issue keys.
+
+### API key expiration
+
+Cap nhat 2026-06-01: API key expiration co enforce that. `create_api_key(..., expires_in_days=N)` luu `expires_at`; `validate_api_key(...)` reject khi `expires_at < now_vietnam()` voi `{"valid": False, "error": "API key has expired"}`. Expired key khong cap nhat `last_used_at` va khong tang `usage_count`. `expires_in_days=0`/`None` la never expires.
 
 ### User/session
 - **Brute-force lock 5 lần / 15 phút** (user_model.py:19-20). Reset sau login success. Acceptable cho web admin, hơi quá lỏng cho exposure cao.

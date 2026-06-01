@@ -102,6 +102,27 @@
         const optionsDiv = document.createElement('div');
         optionsDiv.className = 'custom-options';
         wrapper.appendChild(optionsDiv);
+
+        const positionOptions = () => {
+            const modalBoundary = wrapper.closest('.modal-content');
+            const boundaryRect = modalBoundary
+                ? modalBoundary.getBoundingClientRect()
+                : { top: 0, bottom: window.innerHeight };
+            const triggerRect = trigger.getBoundingClientRect();
+            const gap = 8;
+            const menuHeight = optionsDiv.scrollHeight || 260;
+            const availableBelow = boundaryRect.bottom - triggerRect.bottom - gap;
+            const availableAbove = triggerRect.top - boundaryRect.top - gap;
+            const openUp = availableBelow < menuHeight && availableAbove > availableBelow;
+            const available = openUp ? availableAbove : availableBelow;
+
+            optionsDiv.classList.toggle('drop-up', openUp);
+            optionsDiv.style.maxHeight = `${Math.max(96, Math.min(menuHeight, available))}px`;
+        };
+
+        const closeOptions = () => {
+            optionsDiv.classList.remove('open');
+        };
         
         // Function to populate/update options
         const populateOptions = () => {
@@ -121,7 +142,7 @@
                     trigger.querySelector('.selection').textContent = option.text;
                     optionsDiv.querySelectorAll('.custom-option').forEach(el => el.classList.remove('selected'));
                     div.classList.add('selected');
-                    optionsDiv.classList.remove('open');
+                    closeOptions();
                 });
                 
                 optionsDiv.appendChild(div);
@@ -136,17 +157,55 @@
 
         // Toggle dropdown
         trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const shouldOpen = !optionsDiv.classList.contains('open');
             // Close others
             document.querySelectorAll('.custom-options').forEach(el => {
                 if (el !== optionsDiv) el.classList.remove('open');
             });
-            optionsDiv.classList.toggle('open');
+            if (shouldOpen) {
+                positionOptions();
+                optionsDiv.classList.add('open');
+            } else {
+                closeOptions();
+            }
+        });
+
+        trigger.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                trigger.click();
+            } else if (e.key === 'Escape') {
+                closeOptions();
+            }
+        });
+
+        select.addEventListener('change', () => {
+            const selectedOption = select.options[select.selectedIndex];
+            if (selectedOption) {
+                trigger.querySelector('.selection').textContent = selectedOption.text;
+                optionsDiv.querySelectorAll('.custom-option').forEach(el => {
+                    el.classList.toggle('selected', el.dataset.value === selectedOption.value);
+                });
+            }
+        });
+
+        if (select.form) {
+            select.form.addEventListener('reset', () => {
+                setTimeout(() => window.updateCustomOptions(selectId), 0);
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            if (optionsDiv.classList.contains('open')) {
+                positionOptions();
+            }
         });
         
         // Handle click outside to close
         document.addEventListener('click', (e) => {
             if (!wrapper.contains(e.target)) {
-                optionsDiv.classList.remove('open');
+                closeOptions();
             }
         });
     };

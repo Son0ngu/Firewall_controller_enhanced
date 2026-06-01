@@ -48,14 +48,22 @@
     border: 1px solid #e3e6f0;
     border-radius: 15px !important; /* Force rounded Menu */
     background: #fff;
-    z-index: 1050; /* Higher than other elements */
+    z-index: 1065; /* Above Bootstrap modal content */
     box-shadow: 0 4px 25px rgba(0,0,0,0.15);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transform: translateY(-10px);
     transition: all 0.2s cubic-bezier(0.5, 0, 0, 1.25);
-    overflow: hidden;
+    max-height: 16rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.custom-options.drop-up {
+    top: auto;
+    bottom: calc(100% + 5px);
+    transform: translateY(10px);
 }
 
 .custom-options.open {
@@ -88,6 +96,10 @@
     background-color: #E0E7FF;
     color: #4338CA;
     font-weight: 600;
+}
+
+.custom-select-trigger:after {
+    content: "\25BE";
 }
 
 @media (max-width: 576px) {

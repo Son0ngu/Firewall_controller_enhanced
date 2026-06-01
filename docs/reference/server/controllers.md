@@ -48,7 +48,7 @@ Blueprint mount vào Flask app với `url_prefix='/api'` ở `app.py`. Tổng 10
 | `DELETE` | `/api/groups/<group_id>` | `delete_group` | inject | teacher ownership | Move agents → pending |
 | `POST` | `/api/groups/<group_id>/teachers` | `set_teachers` | inject | admin only (in-handler) | Assign teachers |
 | `GET`  | `/api/api-keys` | `APIKeyController.list_api_keys` | login | (admin only de facto) | |
-| `POST` | `/api/api-keys` | `create_api_key` | login | | Tạo key - show plaintext 1 lần |
+| `POST` | `/api/api-keys` | `create_api_key` | login | | Tạo key - show plaintext 1 lần; không nhận/enforce `rate_limit` |
 | `GET`  | `/api/api-keys/<key_id>` | `get_api_key` | login | | |
 | `PUT/PATCH` | `/api/api-keys/<key_id>` | `update_api_key` | login | | |
 | `DELETE` | `/api/api-keys/<key_id>` | `delete_api_key` | login | | Alias `revoke` |
@@ -161,7 +161,7 @@ Blueprint mount vào Flask app với `url_prefix='/api'` ở `app.py`. Tổng 10
 
 **Handlers**:
 - `list_api_keys()` - GET `?page=&limit=&include_revoked=`
-- `create_api_key()` - POST `{name, description, expires_in_days, permissions}`. Status 201. `expires_in_days=0` → never expires. `created_by` lấy từ `g.current_user.username` (require_login đảm bảo có) — không còn hardcode `"admin"`.
+- `create_api_key()` - POST `{name, description, expires_in_days, permissions}`. Status 201. `expires_in_days=0` → never expires. `created_by` lấy từ `g.current_user.username` (require_login đảm bảo có) — không còn hardcode `"admin"`. Không có `rate_limit` trong contract; nếu client gửi field này thì backend bỏ qua.
 - `get_api_key(key_id)` - GET
 - `update_api_key(key_id)` - PUT/PATCH `{name, description, permissions, is_active}`
 - `delete_api_key(key_id)` - DELETE. **Alias `revoke_api_key`**
@@ -170,6 +170,10 @@ Blueprint mount vào Flask app với `url_prefix='/api'` ở `app.py`. Tổng 10
 - `validate_key()` - POST `{api_key, permission}` - test endpoint
 
 **Permission whitelist** (line 167-170, 239-242): `register, sync, logs, heartbeat, admin` (legacy) + `agent_register, agent_read, whitelist_sync, logs_write` (new). Invalid permission → 400.
+
+**Rate limit status**: API key management chưa có rate limit thật. Không có middleware/window counter/token bucket cho API key usage, không trả `429`, và `usage_count` chỉ là counter lifetime tăng sau mỗi lần validate thành công. UI `/api-keys` đã gỡ form Rate Limit để tránh tạo cảm giác có quota theo giờ.
+
+**Expiration status**: API key expiration co enforce that. `expires_in_days` duoc luu thanh `expires_at`; expired key bi `validate_api_key(...)` reject voi `API key has expired`, va endpoint dung `require_api_key(...)` tra `401`.
 
 ### `controllers/auth_controller.py` - Agent auth (`/api/auth/*`)
 [auth_controller.py:16](../../../server/controllers/auth_controller.py#L16)
