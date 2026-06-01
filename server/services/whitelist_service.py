@@ -5,16 +5,20 @@ Whitelist Service - Business logic for whitelist operations
 
 import logging
 import warnings
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from datetime import datetime, timedelta
 
 from bson import ObjectId
 
 from models.whitelist_model import WhitelistModel
-try:
+
+if TYPE_CHECKING:
     from models.whitelist_entry_model import WhitelistEntryModel
-except Exception:  # pragma: no cover - keeps legacy isolated tests importable
-    WhitelistEntryModel = None
+else:
+    try:
+        from models.whitelist_entry_model import WhitelistEntryModel
+    except Exception:  # pragma: no cover - keeps legacy isolated tests importable
+        WhitelistEntryModel = None
 
 # Import time utilities - vietnam ONLY
 from time_utils import (

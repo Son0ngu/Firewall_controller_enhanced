@@ -885,11 +885,11 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 
 | Class | Công dụng | Vị trí |
 | --- | --- | --- |
-| `WhitelistService` | Service class for whitelist business logic - vietnam ONLY | `server/services/whitelist_service.py:22` |
+| `WhitelistService` | Service class for whitelist business logic - vietnam ONLY | `server/services/whitelist_service.py:106` |
 
 | Class | Method | Công dụng | Vị trí |
 | --- | --- | --- | --- |
-| `WhitelistService` | `__init__(self, whitelist_model, agent_model, group_model, socketio, policy_service, profile_service)` | Initialize WhitelistService with model and socketio | `server/services/whitelist_service.py:25` |
+| `WhitelistService` | `__init__(self, whitelist_model, agent_model, group_model, socketio=None, entry_model=None, policy_service=None, profile_service=None)` | Khởi tạo service với model + tuỳ chọn `entry_model` (`WhitelistEntryModel`) để ghi/đọc collection `whitelist_entries` mới; fallback embedded khi `entry_model=None`. Import `WhitelistEntryModel` bọc trong `if TYPE_CHECKING / else try-except` để legacy isolated test không kéo dependency này, đồng thời Pylance vẫn resolve được type. | `server/services/whitelist_service.py:106` |
 | `WhitelistService` | `validate_teacher_entry_access(self, item_id, teacher_group_ids, action)` | Kiểm tra quyền teacher trên global/group whitelist entry và pseudo-ID `group::<group_id>::<type>::<value>`; controller không query Mongo trực tiếp. | `server/services/whitelist_service.py:35` |
 | `WhitelistService` | `get_all_entries(self, filters)` | Get all whitelist entries with optional filtering - vietnam ONLY | `server/services/whitelist_service.py:38` |
 | `WhitelistService` | `add_entry(self, entry_data, client_ip)` | Add new entry to whitelist - vietnam ONLY | `server/services/whitelist_service.py:89` |
