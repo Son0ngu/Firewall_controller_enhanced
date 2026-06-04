@@ -5,6 +5,7 @@ import threading
 from typing import Any, Dict, Optional, Set
 
 from shared.time_utils import now,now_server_compatible
+from shared.whitelist_values import canonicalize_whitelist_entry, normalize_whitelist_host
 
 logger = logging.getLogger("whitelist.state")
 
@@ -32,32 +33,38 @@ class WhitelistState:
 
         for item in data.get("domains", []):
             if isinstance(item, str):
-                value = item.lower().strip()
+                value = item
                 entry_type = "domain"
             elif isinstance(item, dict):
-                value = item.get("value", "").lower().strip()
+                value = item.get("value", "")
                 if not value:
-                    value = item.get("domain", "").lower().strip()
+                    value = item.get("domain", "")
                 entry_type = item.get("type", "domain").lower()
             else:
                 continue
 
-            if not value:
+            entry_type, value = canonicalize_whitelist_entry(entry_type, value)
+            if not entry_type or not value:
                 continue
 
             if entry_type == "ip":
                 new_ips.add(value)
-            elif entry_type == "pattern" or "*" in value or "?" in value:
+            elif entry_type == "pattern":
                 new_patterns.add(value)
             else:
                 new_domains.add(value)
 
         for ip in data.get("ips", []):
             if isinstance(ip, str):
-                new_ips.add(ip.strip())
+                entry_type, ip_value = canonicalize_whitelist_entry("ip", ip)
+                if entry_type == "ip" and ip_value:
+                    new_ips.add(ip_value)
             elif isinstance(ip, dict):
-                ip_value = ip.get("value", ip.get("ip", "")).strip()
-                if ip_value:
+                entry_type, ip_value = canonicalize_whitelist_entry(
+                    "ip",
+                    ip.get("value", ip.get("ip", "")),
+                )
+                if entry_type == "ip" and ip_value:
                     new_ips.add(ip_value)
 
         return new_domains, new_patterns, new_ips
@@ -133,7 +140,9 @@ class WhitelistState:
     def is_domain_allowed(self, domain: str) -> bool:
 
         with self._lock:
-            domain = domain.lower().strip()
+            domain = normalize_whitelist_host(domain)
+            if not domain:
+                return False
             
             # Direct match
             if domain in self._domains:

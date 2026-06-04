@@ -37,6 +37,7 @@ from services.whitelist_entry_id import (
     make_group_pseudo_id,
     parse_group_pseudo_id,
 )
+from services.whitelist_normalization import canonicalize_whitelist_entry
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,8 @@ class WhitelistService:
         
         if not value:
             raise ValueError("Value is required")
+
+        entry_type, value = canonicalize_whitelist_entry(entry_type, value)
         
         # Validate entry using model
         validation_result = self.model.validate_entry_value(entry_type, value)
@@ -408,6 +411,8 @@ class WhitelistService:
             
             if not value:
                 return {"valid": False, "message": "Value is required"}
+
+            entry_type, value = canonicalize_whitelist_entry(entry_type, value)
             
             # Validate entry using model
             validation_result = self.model.validate_entry_value(entry_type, value)
@@ -574,6 +579,19 @@ class WhitelistService:
             self.logger.error(f"Error getting detailed changes: {e}")
             return {"added": [], "removed": [], "modified": [], "active_domains": []}
     
+    def _canonicalize_entries(self, entries: List[Dict]) -> List[Dict]:
+        """Canonicalize type/value pairs before returning whitelist payloads."""
+        canonical = []
+        for entry in entries or []:
+            entry_type, value = canonicalize_whitelist_entry(
+                entry.get("type", "domain"),
+                entry.get("value", ""),
+            )
+            if not value:
+                continue
+            canonical.append({**entry, "type": entry_type, "value": value})
+        return canonical
+
     def _normalize_group_entries(self, group, include_inactive: bool = True) -> List[Dict]:
         """Normalize entries from group.whitelist into a list of dicts.
 
@@ -621,6 +639,10 @@ class WhitelistService:
                 self.logger.warning("Skipping group whitelist entry without value: %s", entry)
                 continue
             value = str(value).strip().lower()
+            entry_type, value = canonicalize_whitelist_entry(entry_type, value)
+            if not value:
+                self.logger.warning("Skipping group whitelist entry after normalization: %s", entry)
+                continue
 
             if not include_inactive and not is_active:
                 continue
@@ -655,11 +677,17 @@ class WhitelistService:
         normalised = []
         for entry in entries or []:
             entry_id = str(entry.get("_id") or entry.get("id"))
+            entry_type, value = canonicalize_whitelist_entry(
+                entry.get("type", "domain"),
+                entry.get("value", ""),
+            )
+            if not value:
+                continue
             normalised.append({
                 "_id": entry_id,
                 "id": entry_id,
-                "value": entry.get("value", ""),
-                "type": entry.get("type", "domain"),
+                "value": value,
+                "type": entry_type,
                 "priority": entry.get("priority", "normal"),
                 "category": entry.get("category", "uncategorized"),
                 "is_active": entry.get("is_active", True),
@@ -753,7 +781,9 @@ class WhitelistService:
                 if agent and not agent.get("group_id"):
                     self.agent_model.update_agent(agent_id, {"group_id": target_group_id, "status": agent.get("status", "pending")})
 
-            global_entries = self.model.get_entries_for_sync(scope="global")
+            global_entries = self._canonicalize_entries(
+                self.model.get_entries_for_sync(scope="global")
+            )
             for entry in global_entries:
                 entry.setdefault("scope", "global")
 
@@ -829,7 +859,9 @@ class WhitelistService:
                     "group_id": str(group.get("_id")),
                     "up_to_date": True,
                 }
-            global_entries = self.model.get_entries_for_sync(scope="global")
+            global_entries = self._canonicalize_entries(
+                self.model.get_entries_for_sync(scope="global")
+            )
 
             # Check for active whitelist profile - overrides group base whitelist
             active_profile = None
@@ -1059,6 +1091,8 @@ class WhitelistService:
                 if not value:
                     errors.append(f"Entry {i+1}: Value is required")
                     continue
+
+                entry_type, value = canonicalize_whitelist_entry(entry_type, value)
                 
                 validation_result = self.model.validate_entry_value(entry_type, value)
                 if not validation_result["valid"]:
@@ -1219,10 +1253,12 @@ class WhitelistService:
             if 'value' in update_data:
                 value = update_data['value'].strip().lower()
                 entry_type = update_data.get('type', collection_entry.get('type', 'domain'))
+                entry_type, value = canonicalize_whitelist_entry(entry_type, value)
                 validation_result = self.model.validate_entry_value(entry_type, value)
                 if not validation_result["valid"]:
                     raise ValueError(validation_result["message"])
                 update_data['value'] = value
+                update_data['type'] = entry_type
 
             success = self.entry_model.update_entry(entry_id, update_data)
             if success:
@@ -1247,12 +1283,14 @@ class WhitelistService:
         if 'value' in update_data:
             value = update_data['value'].strip().lower()
             entry_type = update_data.get('type', entry.get('type', 'domain'))
+            entry_type, value = canonicalize_whitelist_entry(entry_type, value)
 
             validation_result = self.model.validate_entry_value(entry_type, value)
             if not validation_result["valid"]:
                 raise ValueError(validation_result["message"])
 
             update_data['value'] = value
+            update_data['type'] = entry_type
 
         # Update timestamp
         update_data['updated_at'] = now_vietnam()
@@ -1326,6 +1364,15 @@ class WhitelistService:
                         "is_active": True,
                     }
                     whitelist[i] = entry
+                if "value" in update_data:
+                    new_type, new_value = canonicalize_whitelist_entry(
+                        update_data.get("type", e_type),
+                        update_data["value"],
+                    )
+                    validation_result = self.model.validate_entry_value(new_type, new_value)
+                    if not validation_result["valid"]:
+                        raise ValueError(validation_result["message"])
+                    update_data = {**update_data, "type": new_type, "value": new_value}
                 _apply_entry_update(entry, update_data)
                 updated = True
                 break
@@ -1345,6 +1392,15 @@ class WhitelistService:
         whitelist = group.get("whitelist", [])
         for entry in whitelist:
             if isinstance(entry, dict) and entry.get("_id") == oid:
+                if "value" in update_data:
+                    new_type, new_value = canonicalize_whitelist_entry(
+                        update_data.get("type", entry.get("type", "domain")),
+                        update_data["value"],
+                    )
+                    validation_result = self.model.validate_entry_value(new_type, new_value)
+                    if not validation_result["valid"]:
+                        raise ValueError(validation_result["message"])
+                    update_data = {**update_data, "type": new_type, "value": new_value}
                 _apply_entry_update(entry, update_data)
                 self.group_model.update_group(str(group["_id"]),
                                               {"whitelist": whitelist})

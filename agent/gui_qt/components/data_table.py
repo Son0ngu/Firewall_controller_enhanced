@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..styles import (
-    ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED, BG_CARD, FG_PRIMARY,
+    ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED, BG_ACTIVE, BG_TABLE_HEADER,
+    BORDER_LIGHT, FG_PRIMARY, FG_SECONDARY,
 )
 
 
@@ -188,10 +189,22 @@ class DataTable(QWidget):
             f"""
             QTableView {{
                 background: white;
-                alternate-background-color: {BG_CARD};
+                alternate-background-color: #FBFDFF;
+                border: 1px solid {BORDER_LIGHT};
+                border-radius: 8px;
+                selection-background-color: {BG_ACTIVE};
+                selection-color: {FG_PRIMARY};
             }}
             QTableView::item {{
-                padding: 6px 10px;
+                padding: 7px 10px;
+            }}
+            QHeaderView::section {{
+                background-color: {BG_TABLE_HEADER};
+                color: {FG_SECONDARY};
+                border: 0;
+                border-bottom: 1px solid {BORDER_LIGHT};
+                padding: 9px 10px;
+                font-weight: 600;
             }}
             """
         )

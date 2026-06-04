@@ -536,11 +536,13 @@ class TestAgentPolicyService:
                                                       server_host="10.0.0.1")
         assert result["policy_mode"] == "isolate"
         assert result["policy_active"] is True
-        # Should only contain system entries (server + DNS), NOT google.com
+        # Should only contain the server host, NOT group whitelist or DNS
         dom_values = [d.get("domain") for d in result["domains"]]
         assert "google.com" not in dom_values
         assert "10.0.0.1" in dom_values
-        assert "8.8.8.8" in dom_values
+        assert "8.8.8.8" not in dom_values
+        assert "8.8.4.4" not in dom_values
+        assert "1.1.1.1" not in dom_values
 
     def test_apply_policy_to_sync_custom(self, policy_service, agent_model, group_model):
         g = create_group(group_model, "SyncCust Group")
@@ -553,8 +555,11 @@ class TestAgentPolicyService:
         assert result["policy_mode"] == "custom_whitelist"
         assert result["policy_active"] is True
         dom_values = [d.get("domain") for d in result["domains"]]
+        assert "server.local" in dom_values
         assert "wiki.org" in dom_values
         assert "google.com" not in dom_values
+        assert "8.8.8.8" not in dom_values
+        assert "1.1.1.1" not in dom_values
 
     def test_get_policies_for_agents(self, policy_service, agent_model, group_model):
         g = create_group(group_model, "BatchSvc Group")

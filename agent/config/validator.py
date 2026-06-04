@@ -41,7 +41,10 @@ def _validate_server_config(
     server_config = config.get("server", {})
     
     if not server_config.get("url") and not server_config.get("urls"):
-        errors.append("Server URL is required (either 'url' or 'urls')")
+        warnings.append(
+            "Server URL is not configured; agent will start in offline mode "
+            "until a controller URL is saved in Settings."
+        )
     
     # Validate URLs format
     urls_to_check = list(server_config.get("urls", []))

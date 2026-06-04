@@ -1,10 +1,10 @@
 import logging
 import threading
-from urllib.parse import urlparse
 from typing import Callable, Dict, List, Optional, Set
 
 from shared.time_utils import now, now_iso, now_server_compatible, sleep, cache_age
 from shared.server_urls import collect_server_urls
+from shared.whitelist_values import canonicalize_whitelist_entry
 from cache.lru_cache import LRUCache
 from network import OptimizedDNSResolver
 
@@ -48,7 +48,10 @@ class WhitelistManager:
         self._running = False
         
         # Settings
-        self._sync_interval = self.whitelist_config.get("sync_interval", 60)
+        self._sync_interval = self.whitelist_config.get(
+            "update_interval",
+            self.whitelist_config.get("sync_interval", 60),
+        )
         self._cache_ttl = self.whitelist_config.get("cache_ttl", 300)
         
         # DNS Cache & Resolver
@@ -212,7 +215,7 @@ class WhitelistManager:
                 
                 # Log server response
                 domains_count = len(data.get("domains", []))
-                logger.info(f"📥 Received {domains_count} entries from server")
+                logger.info(f"Received {domains_count} entries from server")
                 
                 # Debug: Log first few entries
                 if domains_count > 0:
@@ -231,7 +234,7 @@ class WhitelistManager:
                     
                     # Update firewall rules if available
                     if self._firewall_manager:
-                        logger.info("🔥 Updating firewall rules...")
+                        logger.info("Updating firewall rules...")
                         self._update_firewall_rules()
                     else:
                         logger.debug("No firewall manager linked, skipping firewall update")
@@ -299,22 +302,26 @@ class WhitelistManager:
         try:
             # Get all whitelisted domains and IPs
             domains = self._state.get_all_domains()
-            patterns = self._state.get_all_patterns()
             ips = self._state.get_all_ips()
-            
-            # Combine domains and patterns
-            all_domains = domains.union(patterns)
+
+            # Only exact hostnames are resolvable to firewall IP rules.
+            # Wildcard patterns are kept for hostname matching, not DNS.
+            all_domains = set()
+            for domain in domains:
+                entry_type, normalized = canonicalize_whitelist_entry(
+                    "domain",
+                    domain,
+                )
+                if entry_type == "domain" and normalized:
+                    all_domains.add(normalized)
             
             # CRITICAL: Always whitelist the server URLs
             server_urls = self._get_server_urls()
             for url in server_urls:
-                try:
-                    parsed = urlparse(url)
-                    if parsed.hostname:
-                        all_domains.add(parsed.hostname)
-                        logger.debug(f"Added server hostname to whitelist: {parsed.hostname}")
-                except Exception as e:
-                    logger.warning(f"Failed to parse server URL {url}: {e}")
+                entry_type, normalized = canonicalize_whitelist_entry("url", url)
+                if entry_type == "domain" and normalized:
+                    all_domains.add(normalized)
+                    logger.debug(f"Added server hostname to whitelist: {normalized}")
 
             # RESOLVE DOMAINS LOCALLY VIA CACHE
             resolved_ips = set()

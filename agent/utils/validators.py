@@ -62,7 +62,10 @@ def _validate_server_config(config: Dict) -> Tuple[List[str], List[str]]:
     server_config = config.get("server", {})
     
     if not server_config.get("url") and not server_config.get("urls"):
-        errors.append("Server URL is required (either 'url' or 'urls')")
+        warnings.append(
+            "Server URL is not configured; agent will start in offline mode "
+            "until a controller URL is saved in Settings."
+        )
     
     urls_to_check = server_config.get("urls", [])
     if server_config.get("url"):

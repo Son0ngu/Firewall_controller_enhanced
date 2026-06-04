@@ -327,6 +327,10 @@ class TestWhitelistModel:
         result = whitelist_model.validate_entry_value("url", "not-a-url")
         assert result["valid"] is False
 
+    def test_validate_pattern_valid(self, whitelist_model):
+        result = whitelist_model.validate_entry_value("pattern", "*.example.com")
+        assert result["valid"] is True
+
     def test_validate_unknown_type(self, whitelist_model):
         result = whitelist_model.validate_entry_value("ftp", "something")
         assert result["valid"] is False
@@ -376,6 +380,31 @@ class TestWhitelistService:
         with pytest.raises(ValueError, match="already exists"):
             whitelist_service.add_entry({"value": "dup.com", "type": "domain"}, "127.0.0.1")
 
+    def test_add_url_entry_stores_canonical_host(self, whitelist_service):
+        result = whitelist_service.add_entry({
+            "value": (
+                "https://login.microsoftonline.com/oauth2/v2.0/authorize"
+                "?scope=openid&state=abc"
+            ),
+            "type": "url",
+        }, "127.0.0.1")
+
+        entry = whitelist_service.model.find_entry_by_id(result["id"])
+        assert entry["type"] == "domain"
+        assert entry["value"] == "login.microsoftonline.com"
+
+    def test_canonical_url_duplicate_raises(self, whitelist_service):
+        whitelist_service.add_entry({
+            "value": "https://dup-login.example.com/oauth?x=1",
+            "type": "url",
+        }, "127.0.0.1")
+
+        with pytest.raises(ValueError, match="already exists"):
+            whitelist_service.add_entry({
+                "value": "dup-login.example.com",
+                "type": "domain",
+            }, "127.0.0.1")
+
     def test_add_entry_empty_value_raises(self, whitelist_service):
         with pytest.raises(ValueError, match="Value is required"):
             whitelist_service.add_entry({"value": "", "type": "domain"}, "127.0.0.1")
@@ -404,6 +433,20 @@ class TestWhitelistService:
         entry_id = result["id"]
         success = whitelist_service.update_entry(entry_id, {"category": "updated"})
         assert success is True
+
+    def test_update_entry_canonicalizes_url(self, whitelist_service):
+        result = whitelist_service.add_entry({"value": "upd-url.com", "type": "domain"}, "127.0.0.1")
+        entry_id = result["id"]
+
+        success = whitelist_service.update_entry(entry_id, {
+            "value": "https://updated-login.example.com/path?x=1",
+            "type": "url",
+        })
+
+        assert success is True
+        entry = whitelist_service.model.find_entry_by_id(entry_id)
+        assert entry["type"] == "domain"
+        assert entry["value"] == "updated-login.example.com"
 
     def test_get_statistics(self, whitelist_service):
         whitelist_service.add_entry({"value": "stat-svc.com", "type": "domain"}, "127.0.0.1")
@@ -440,6 +483,17 @@ class TestWhitelistService:
         result = whitelist_service.bulk_add_entries(items, "127.0.0.1")
         assert result["success"] is True
         assert result["inserted_count"] >= 2
+
+    def test_bulk_add_url_entry_stores_canonical_host(self, whitelist_service):
+        result = whitelist_service.bulk_add_entries([{
+            "value": "https://bulk-login.example.com/oauth?x=1",
+            "type": "url",
+        }], "127.0.0.1")
+
+        assert result["success"] is True
+        entry = whitelist_service.model.find_entry_by_value("bulk-login.example.com")
+        assert entry["type"] == "domain"
+        assert entry["value"] == "bulk-login.example.com"
 
     def test_bulk_add_entries_with_invalid(self, whitelist_service):
         items = [
@@ -563,6 +617,36 @@ class TestWhitelistService:
         domain_values = [d.get("value") for d in result["domains"]]
         assert "sync-global.com" in domain_values
         assert "sync-group.com" in domain_values
+
+    def test_agent_sync_payload_canonicalizes_legacy_urls(self, whitelist_service, group_model, agent_model):
+        whitelist_service.add_entry({
+            "value": "https://sync-login.example.com/oauth?x=1",
+            "type": "url",
+        }, "127.0.0.1")
+        group = create_group(group_model, "Legacy URL Sync Group", whitelist=[
+            {
+                "value": (
+                    "https://login.microsoftonline.com/oauth2/v2.0/authorize"
+                    "?scope=openid&state=abc"
+                ),
+                "type": "domain",
+            },
+            {
+                "value": "https://*.microsoftonline.com/oauth?x=1",
+                "type": "pattern",
+            },
+        ])
+        agent = insert_agent(agent_model, str(group["_id"]), hostname="UrlSyncPC")
+
+        result = whitelist_service.get_agent_sync_data(agent_id=agent["agent_id"])
+
+        entries = result["domains"]
+        by_value = {entry["value"]: entry["type"] for entry in entries}
+        assert by_value["sync-login.example.com"] == "domain"
+        assert by_value["login.microsoftonline.com"] == "domain"
+        assert by_value["*.microsoftonline.com"] == "pattern"
+        assert all("://" not in entry["value"] for entry in entries)
+        assert all("?" not in entry["value"] for entry in entries)
 
     def test_agent_sync_active_profile_accepts_domain_key(
         self,

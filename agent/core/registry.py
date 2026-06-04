@@ -1,7 +1,7 @@
 import logging
 import platform
 import socket
-from typing import Dict
+from typing import Dict, Tuple
 
 import requests
 
@@ -23,6 +23,9 @@ from utils.error_handler import CriticalErrorHandler
 
 logger = logging.getLogger("core.registry")
 
+DEFAULT_CONNECT_TIMEOUT = 15.0
+DEFAULT_READ_TIMEOUT = 45.0
+
 
 def _collect_server_urls(config: Dict) -> list:
     """Backwards-compatible wrapper — delegates to shared resolver.
@@ -31,6 +34,37 @@ def _collect_server_urls(config: Dict) -> list:
     continue to work. New code should import collect_server_urls directly.
     """
     return collect_server_urls(config, allow_dev_default=False)
+
+
+def _positive_timeout(value, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
+def _registration_timeout(config: Dict) -> Tuple[float, float]:
+    """Return (connect_timeout, read_timeout) for registration requests."""
+    server_cfg = config.get("server", {}) if isinstance(config, dict) else {}
+    connect_timeout = _positive_timeout(
+        server_cfg.get("connect_timeout"),
+        DEFAULT_CONNECT_TIMEOUT,
+    )
+    read_timeout = _positive_timeout(
+        server_cfg.get("read_timeout"),
+        DEFAULT_READ_TIMEOUT,
+    )
+    return connect_timeout, read_timeout
+
+
+def _response_excerpt(response: requests.Response, limit: int = 240) -> str:
+    text = (response.text or "").strip()
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
 
 
 @CriticalErrorHandler.critical_operation("Agent Registration")
@@ -87,7 +121,13 @@ def register_agent(config: Dict) -> bool:
 def try_register_with_server(server_url: str, agent_info: Dict, config: Dict) -> bool:
     try:
         register_url = f"{server_url.rstrip('/')}/api/agents/register"
-        logger.info(f"Attempting registration with: {register_url}")
+        timeout = _registration_timeout(config)
+        logger.info(
+            "Attempting registration with: %s (connect_timeout=%ss, read_timeout=%ss)",
+            register_url,
+            timeout[0],
+            timeout[1],
+        )
         
         # Build headers with API key for authentication
         headers = {'Content-Type': 'application/json'}
@@ -103,7 +143,7 @@ def try_register_with_server(server_url: str, agent_info: Dict, config: Dict) ->
         response = requests.post(
             register_url,
             json=agent_info,
-            timeout=config['server'].get('connect_timeout', 15),
+            timeout=timeout,
             headers=headers
         )
         
@@ -139,17 +179,44 @@ def try_register_with_server(server_url: str, agent_info: Dict, config: Dict) ->
                 logger.info(f"Registration successful - Agent ID: {config['agent_id']}")
                 return True
             else:
-                logger.warning(f"Registration rejected: {data.get('error')}")
+                logger.warning(
+                    "Registration rejected by %s: %s",
+                    server_url,
+                    data.get("error") or data,
+                )
                 return False
         else:
-            logger.warning(f"Registration failed: HTTP {response.status_code}")
+            logger.warning(
+                "Registration failed at %s: HTTP %s %s",
+                server_url,
+                response.status_code,
+                _response_excerpt(response),
+            )
             return False
             
-    except requests.exceptions.ConnectionError:
-        logger.warning(f"Connection failed to {server_url}")
+    except requests.exceptions.ConnectTimeout:
+        logger.warning(
+            "Registration connection timeout to %s after %ss",
+            server_url,
+            _registration_timeout(config)[0],
+        )
+        return False
+    except requests.exceptions.ReadTimeout:
+        logger.warning(
+            "Registration read timeout from %s after %ss",
+            server_url,
+            _registration_timeout(config)[1],
+        )
         return False
     except requests.exceptions.Timeout:
-        logger.warning(f"Timeout connecting to {server_url}")
+        logger.warning(
+            "Registration timeout with %s (connect=%ss, read=%ss)",
+            server_url,
+            *_registration_timeout(config),
+        )
+        return False
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"Connection failed to {server_url}")
         return False
     except Exception as e:
         logger.error(f"Error registering with {server_url}: {e}")

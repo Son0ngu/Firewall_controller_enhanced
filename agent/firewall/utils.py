@@ -33,7 +33,8 @@ class FirewallUtils:
         # Localhost (IPv4 only)
         essential.add("127.0.0.1")
 
-        # Auto-detect system DNS servers (IPv4 only)
+        # Auto-detect system DNS servers (IPv4 only). Do not inject public DNS
+        # fallbacks here; SAINT should honor the machine's DNS configuration.
         try:
             import dns.resolver
             sys_resolver = dns.resolver.Resolver()
@@ -45,9 +46,11 @@ class FirewallUtils:
                 essential.update(ipv4_dns)
                 logger.debug(f"Detected IPv4 system DNS servers: {ipv4_dns}")
         except Exception as e:
-            logger.debug(f"Could not detect system DNS configuration, falling back to minimal defaults: {e}")
-            # Fallback for connectivity safety
-            essential.update(["8.8.8.8", "1.1.1.1"])
+            logger.warning(
+                "Could not detect system DNS configuration; no public DNS "
+                "fallback will be added: %s",
+                e,
+            )
         
         # Try to detect local IPv4 via shared IPDetector
         try:

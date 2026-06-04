@@ -20,7 +20,7 @@ param(
     [int]$BuildTimeoutSeconds = 900,
     [int]$AgentExeSmokeSeconds = 12,
     [string]$FirewallTestIp = "203.0.113.10",
-    [string]$DeepAllowedIp = "1.1.1.1",
+    [string]$DeepAllowedIp = "151.101.1.69",
     [int]$DeepAllowedPort = 443,
     [string]$DeepBlockedCandidates = "151.101.1.69,104.16.132.229,142.250.190.14,93.184.216.34",
     [string]$DeepMutationIp = "203.0.113.10",

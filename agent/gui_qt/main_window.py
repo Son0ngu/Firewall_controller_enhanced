@@ -22,11 +22,11 @@ from .styles import ACCENT_BLUE, FG_SECONDARY
 
 
 _NAV_ITEMS = [
-    ("dashboard", "📊  Dashboard"),
-    ("firewall", "🔥  Firewall Rules"),
-    ("whitelist", "📋  IP Whitelist"),
-    ("logs", "📜  Logs"),
-    ("settings", "⚙️  Settings"),
+    ("dashboard", "Dashboard"),
+    ("firewall", "Firewall Rules"),
+    ("whitelist", "IP Whitelist"),
+    ("logs", "Logs"),
+    ("settings", "Settings"),
 ]
 
 
@@ -53,21 +53,21 @@ class MainWindow(QMainWindow):
         # --- sidebar --------------------------------------------------------
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(220)
+        sidebar.setFixedWidth(232)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(15, 20, 15, 20)
-        sidebar_layout.setSpacing(6)
+        sidebar_layout.setContentsMargins(18, 24, 18, 20)
+        sidebar_layout.setSpacing(8)
 
         brand = QLabel("SAINT")
         brand.setStyleSheet(
-            f"font-size: 22px; font-weight: bold; color: {ACCENT_BLUE};"
+            f"font-size: 24px; font-weight: 800; color: {ACCENT_BLUE};"
         )
         sidebar_layout.addWidget(brand)
 
         tagline = QLabel("Security Agent")
-        tagline.setStyleSheet(f"color: {FG_SECONDARY}; font-size: 11px;")
+        tagline.setStyleSheet(f"color: {FG_SECONDARY}; font-size: 12px;")
         sidebar_layout.addWidget(tagline)
-        sidebar_layout.addSpacing(20)
+        sidebar_layout.addSpacing(24)
 
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
             btn = QPushButton(label)
             btn.setObjectName("sidebar_item")
             btn.setCheckable(True)
-            btn.setMinimumHeight(40)
+            btn.setMinimumHeight(42)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _checked, vid=view_id: self._show_view(vid))
             sidebar_layout.addWidget(btn)

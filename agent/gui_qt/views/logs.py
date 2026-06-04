@@ -9,14 +9,13 @@ import csv
 import logging
 from typing import Optional
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QVBoxLayout, QWidget,
 )
 
 from ..components.log_console import GUILogHandler, LogConsole
-from ..styles import ACCENT_BLUE, ACCENT_RED, FG_SECONDARY
+from ..styles import ACCENT_RED, FG_PRIMARY, FG_SECONDARY
 
 
 # Loggers we explicitly hook so messages reach the GUI even if root level
@@ -57,7 +56,7 @@ class LogsView(QWidget):
         # Title
         title = QLabel("Activity Logs")
         title.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {ACCENT_BLUE};"
+            f"font-size: 24px; font-weight: bold; color: {FG_PRIMARY};"
         )
         root.addWidget(title)
 
@@ -73,7 +72,7 @@ class LogsView(QWidget):
         root.addWidget(self._log_console, stretch=1)
 
         # Status bar
-        self._status_label = QLabel("📟 Log console ready")
+        self._status_label = QLabel("Log console ready")
         self._status_label.setStyleSheet(f"color: {FG_SECONDARY}; font-size: 11px;")
         root.addWidget(self._status_label)
 
@@ -89,7 +88,7 @@ class LogsView(QWidget):
         bar.addWidget(self._level_combo)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search logs…")
+        self._search_input.setPlaceholderText("Search logs...")
         # Search is purely visual in the CTk port - we honour it the same way:
         # filter on substring match against the rendered line.
         self._search_input.textChanged.connect(self._on_search)
@@ -97,12 +96,12 @@ class LogsView(QWidget):
 
         bar.addStretch(1)
 
-        clear_btn = QPushButton("🗑️ Clear")
+        clear_btn = QPushButton("Clear")
         clear_btn.setObjectName("danger")
         clear_btn.clicked.connect(self._on_clear)
         bar.addWidget(clear_btn)
 
-        export_btn = QPushButton("📤 Export")
+        export_btn = QPushButton("Export")
         export_btn.clicked.connect(self._on_export)
         bar.addWidget(export_btn)
 
@@ -128,8 +127,10 @@ class LogsView(QWidget):
             named = logging.getLogger(name)
             if named.level > logging.INFO:
                 named.setLevel(logging.INFO)
-            if self._log_handler not in named.handlers:
-                named.addHandler(self._log_handler)
+            # Keep delivery through the root handler only. Attaching the same
+            # handler to both a child logger and root renders each propagated
+            # record twice in the GUI console.
+            named.propagate = True
 
     def _add_welcome_logs(self) -> None:
         self._log_console.append_log("=" * 60, "INFO")
@@ -145,7 +146,7 @@ class LogsView(QWidget):
     # =======================================================================
 
     def _on_filter_change(self, value: str) -> None:
-        self._status_label.setText(f"📟 Filter: {value}")
+        self._status_label.setText(f"Filter: {value}")
         self._log_console.set_filter_level(value)
         # Keep the search filter applied on top of the level filter.
         self._apply_search_filter()
@@ -183,7 +184,7 @@ class LogsView(QWidget):
 
     def _on_clear(self) -> None:
         self._log_console.clear()
-        self._status_label.setText("📟 Cleared")
+        self._status_label.setText("Cleared")
 
     def _on_export(self) -> None:
         """Save the full retained history (independent of filter) to CSV."""
@@ -194,12 +195,12 @@ class LogsView(QWidget):
             "CSV Files (*.csv);;All Files (*.*)",
         )
         if not path:
-            self._status_label.setText("📟 Export canceled")
+            self._status_label.setText("Export canceled")
             return
 
         rows = self._log_console.get_history()
         if not rows:
-            self._status_label.setText("📟 No logs to export")
+            self._status_label.setText("No logs to export")
             return
 
         try:
@@ -215,10 +216,10 @@ class LogsView(QWidget):
             self._log_console.append_log(
                 f"Exported {len(rows)} log lines to {path}", "INFO"
             )
-            self._status_label.setText(f"📟 Exported {len(rows)} lines")
+            self._status_label.setText(f"Exported {len(rows)} lines")
         except Exception as e:
             self._log_console.append_log(f"Export failed: {e}", "ERROR")
-            self._status_label.setText("📟 Export failed")
+            self._status_label.setText("Export failed")
             self._status_label.setStyleSheet(f"color: {ACCENT_RED};")
 
     # =======================================================================

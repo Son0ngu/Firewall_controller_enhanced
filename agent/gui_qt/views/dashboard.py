@@ -27,7 +27,7 @@ from ..components.status_card import StatusCard
 from ..signal_bridge import QtSignalBridge
 from ..styles import (
     ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE, ACCENT_PURPLE, ACCENT_RED,
-    BG_INPUT, BORDER_LIGHT, FG_MUTED, FG_PRIMARY, FG_SECONDARY,
+    BG_INPUT, BORDER_LIGHT, FG_PRIMARY, FG_SECONDARY,
 )
 
 
@@ -53,8 +53,9 @@ class StatusPill(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 5, 14, 5)
         layout.setSpacing(6)
-        self._dot = QLabel("●")
-        self._dot.setStyleSheet(f"color: {color}; font-size: 14px;")
+        self._dot = QFrame()
+        self._dot.setFixedSize(8, 8)
+        self._dot.setStyleSheet(self._dot_style(color))
         self._label = QLabel(text)
         self._label.setStyleSheet(f"font-size: 13px; color: {FG_PRIMARY};")
         layout.addWidget(self._dot)
@@ -65,23 +66,23 @@ class StatusPill(QFrame):
         # Light tint of the accent colour as background so the pill reads
         # as a state indicator rather than a generic chip.
         self.setStyleSheet(
-            f"""
-            StatusPill {{
-                background: {_tint(color, 0.12)};
-                border: 1px solid {_tint(color, 0.30)};
-                border-radius: 14px;
-            }}
-            """
+            f"background: {_tint(color, 0.12)}; "
+            f"border: 1px solid {_tint(color, 0.30)}; "
+            "border-radius: 14px;"
         )
 
     def setStatus(self, text: str, color: str) -> None:
-        self._dot.setStyleSheet(f"color: {color}; font-size: 14px;")
+        self._dot.setStyleSheet(self._dot_style(color))
         self._label.setText(text)
         self._apply_bg(color)
 
+    @staticmethod
+    def _dot_style(color: str) -> str:
+        return f"background-color: {color}; border: 0; border-radius: 4px;"
+
 
 def _tint(color_hex: str, alpha: float) -> str:
-    """Return an `rgba(r, g, b, alpha*255)` string for a hex colour.
+    """Return an `rgba(r, g, b, a)` string for a hex colour.
     Used so the pill background gets a soft tint of its accent colour
     instead of a flat white."""
     c = color_hex.lstrip("#")
@@ -91,7 +92,7 @@ def _tint(color_hex: str, alpha: float) -> str:
     g = int(c[2:4], 16)
     b = int(c[4:6], 16)
     a = max(0.0, min(1.0, alpha))
-    return f"rgba({r}, {g}, {b}, {a:.2f})"
+    return f"rgba({r}, {g}, {b}, {int(round(a * 255))})"
 
 
 class _StackedField(QVBoxLayout):
@@ -237,14 +238,14 @@ class DashboardView(QWidget):
         layout.addWidget(self._status_pill)
 
         # Sync Now button - calls whitelist controller refresh
-        self._sync_btn = QPushButton("🔄  Sync Now")
+        self._sync_btn = QPushButton("Sync Now")
         self._sync_btn.setMinimumHeight(38)
         self._sync_btn.setMinimumWidth(120)
         self._sync_btn.clicked.connect(self._on_sync_now)
         layout.addWidget(self._sync_btn)
 
         # Start/Stop button
-        self._start_stop_btn = QPushButton("▶️  Start Agent")
+        self._start_stop_btn = QPushButton("Start Agent")
         self._start_stop_btn.setObjectName("success")
         self._start_stop_btn.setMinimumHeight(38)
         self._start_stop_btn.setMinimumWidth(150)
@@ -266,14 +267,14 @@ class DashboardView(QWidget):
 
         # (key, title, value, icon, color, subtitle)
         specs = [
-            ("status",  "Agent Status", "Stopped", "🛡",  ACCENT_RED,    "Agent state"),
-            ("mode",    "Mode",         "-",       "🛡",  "#F472B6",     "Current mode"),
-            ("domains", "Whitelist",    "0",       "📋", ACCENT_BLUE,   "Domains"),
-            ("ips",     "Allowed IPs",  "0",       "🌐", ACCENT_GREEN,  "In whitelist"),
-            ("packets", "Packets",      "0",       "📦", ACCENT_PURPLE, "Processed"),
-            ("server",  "Server",       "Offline", "🔗", ACCENT_RED,    "Connection state"),
-            ("sync",    "Last Sync",    "Never",   "🔄", "#3B82F6",     "Whitelist sync"),
-            ("uptime",  "Uptime",       "0s",      "⏱",  ACCENT_ORANGE, "Agent runtime"),
+            ("status",  "Agent Status", "Stopped", "", ACCENT_RED,    "Agent state"),
+            ("mode",    "Mode",         "-",       "", ACCENT_BLUE,   "Current mode"),
+            ("domains", "Whitelist",    "0",       "", ACCENT_BLUE,   "Domains"),
+            ("ips",     "Allowed IPs",  "0",       "", ACCENT_GREEN,  "In whitelist"),
+            ("packets", "Packets",      "0",       "", ACCENT_PURPLE, "Processed"),
+            ("server",  "Server",       "Offline", "", ACCENT_RED,    "Connection state"),
+            ("sync",    "Last Sync",    "Never",   "", ACCENT_BLUE,   "Whitelist sync"),
+            ("uptime",  "Uptime",       "0s",      "", ACCENT_ORANGE, "Agent runtime"),
         ]
         for i, (key, title_, value, icon, color, subtitle) in enumerate(specs):
             card = StatusCard(
@@ -303,11 +304,11 @@ class DashboardView(QWidget):
         layout.setSpacing(8)
 
         header = QHBoxLayout()
-        title = QLabel("📄  Activity Log")
+        title = QLabel("Activity Log")
         title.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {FG_PRIMARY};")
         header.addWidget(title)
         header.addStretch(1)
-        clear = QPushButton("🗑️ Clear log")
+        clear = QPushButton("Clear Log")
         clear.setFixedHeight(28)
         clear.clicked.connect(self._clear_log)
         header.addWidget(clear)
@@ -352,7 +353,7 @@ class DashboardView(QWidget):
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(12)
 
-        header = QLabel("🌐  Server Overview")
+        header = QLabel("Server Overview")
         header.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {FG_PRIMARY};")
         layout.addWidget(header)
 
@@ -386,7 +387,7 @@ class DashboardView(QWidget):
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
 
-        header = QLabel("🛡  Firewall Status")
+        header = QLabel("Firewall Status")
         header.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {FG_PRIMARY};")
         layout.addWidget(header)
 
@@ -536,7 +537,7 @@ class DashboardView(QWidget):
 
         if status == "running":
             self._set_card_value_if_changed("status", "Running")
-            self._cards["status"].set_icon("🟢")
+            self._cards["status"].set_icon("")
             self._set_card_color_if_changed("status", ACCENT_GREEN)
             self._cards["status"].set_subtitle("Agent is active")
             self._status_pill.setStatus("Running", ACCENT_GREEN)
@@ -546,7 +547,7 @@ class DashboardView(QWidget):
 
         elif status == "degraded":
             self._set_card_value_if_changed("status", "Degraded")
-            self._cards["status"].set_icon("🟡")
+            self._cards["status"].set_icon("")
             self._set_card_color_if_changed("status", ACCENT_ORANGE)
             issues = data.get("issues", []) or []
             self._cards["status"].set_subtitle(
@@ -565,7 +566,7 @@ class DashboardView(QWidget):
 
         elif status == "stopped":
             self._set_card_value_if_changed("status", "Stopped")
-            self._cards["status"].set_icon("🔴")
+            self._cards["status"].set_icon("")
             self._set_card_color_if_changed("status", ACCENT_RED)
             self._cards["status"].set_subtitle("Not running")
             self._status_pill.setStatus("Stopped", "#888888")
@@ -577,14 +578,14 @@ class DashboardView(QWidget):
 
         elif status == "starting":
             self._set_card_value_if_changed("status", "Starting...")
-            self._cards["status"].set_icon("🟡")
+            self._cards["status"].set_icon("")
             self._set_card_color_if_changed("status", ACCENT_ORANGE)
             self._status_pill.setStatus("Starting...", ACCENT_ORANGE)
             self._update_button_state("starting")
 
         elif status == "stopping":
             self._set_card_value_if_changed("status", "Stopping...")
-            self._cards["status"].set_icon("🟡")
+            self._cards["status"].set_icon("")
             self._set_card_color_if_changed("status", ACCENT_ORANGE)
             self._status_pill.setStatus("Stopping...", ACCENT_ORANGE)
             self._update_button_state("stopping")
@@ -603,7 +604,7 @@ class DashboardView(QWidget):
     def _on_error(self, data: Dict) -> None:
         error = data.get("error", "Unknown error")
         message = data.get("message", "")
-        self._set_card_value_if_changed("status", "⚠️ Error")
+        self._set_card_value_if_changed("status", "Error")
         self._set_card_color_if_changed("status", ACCENT_RED)
         self._cards["status"].set_subtitle("Error occurred")
         self._status_pill.setStatus("Error", ACCENT_RED)
@@ -684,23 +685,23 @@ class DashboardView(QWidget):
 
     def _update_button_state(self, state: str) -> None:
         if state == "running":
-            self._start_stop_btn.setText("⏹️  Stop Agent")
+            self._start_stop_btn.setText("Stop Agent")
             self._start_stop_btn.setObjectName("danger")
             self._start_stop_btn.setEnabled(True)
         elif state == "starting":
-            self._start_stop_btn.setText("⏳  Starting...")
+            self._start_stop_btn.setText("Starting...")
             self._start_stop_btn.setObjectName("")
             self._start_stop_btn.setEnabled(False)
         elif state == "stopping":
-            self._start_stop_btn.setText("⏳  Stopping...")
+            self._start_stop_btn.setText("Stopping...")
             self._start_stop_btn.setObjectName("")
             self._start_stop_btn.setEnabled(False)
         elif state == "error":
-            self._start_stop_btn.setText("⚠️  Error")
+            self._start_stop_btn.setText("Error")
             self._start_stop_btn.setObjectName("danger")
             self._start_stop_btn.setEnabled(True)
         else:  # stopped
-            self._start_stop_btn.setText("▶️  Start Agent")
+            self._start_stop_btn.setText("Start Agent")
             self._start_stop_btn.setObjectName("success")
             self._start_stop_btn.setEnabled(True)
         self._start_stop_btn.style().unpolish(self._start_stop_btn)
@@ -709,7 +710,7 @@ class DashboardView(QWidget):
     def _update_mode_card(self, running: bool, degraded: bool) -> None:
         if not running:
             self._cards["mode"].set_value("-")
-            self._cards["mode"].set_icon("🛡")
+            self._cards["mode"].set_icon("")
             self._cards["mode"].set_color("#888888")
             self._cards["mode"].set_subtitle("Mode not set")
             return
@@ -723,14 +724,14 @@ class DashboardView(QWidget):
 
         if firewall_enabled:
             self._cards["mode"].set_value("Whitelist")
-            self._cards["mode"].set_icon("🛡")
+            self._cards["mode"].set_icon("")
             self._cards["mode"].set_color(ACCENT_ORANGE if degraded else ACCENT_GREEN)
             self._cards["mode"].set_subtitle(
                 "Whitelist active (degraded)" if degraded else "Only whitelist allowed"
             )
         else:
             self._cards["mode"].set_value("Disabled")
-            self._cards["mode"].set_icon("⚪")
+            self._cards["mode"].set_icon("")
             self._cards["mode"].set_color("#888888")
             self._cards["mode"].set_subtitle("Firewall disabled (no admin)")
 

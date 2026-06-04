@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (
 
 from ..components.data_table import DataTable
 from ..styles import (
-    ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED, FG_SECONDARY,
+    ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED, FG_PRIMARY,
+    FG_SECONDARY,
 )
 
 logger = logging.getLogger("gui_qt.whitelist")
@@ -98,12 +99,12 @@ class WhitelistView(QWidget):
         layout = QHBoxLayout()
         title = QLabel("IP Whitelist Manager")
         title.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {ACCENT_BLUE};"
+            f"font-size: 24px; font-weight: bold; color: {FG_PRIMARY};"
         )
         layout.addWidget(title)
         layout.addStretch(1)
 
-        sync_btn = QPushButton("☁️ Sync Server")
+        sync_btn = QPushButton("Sync Server")
         sync_btn.setObjectName("primary")
         sync_btn.setMinimumHeight(36)
         sync_btn.clicked.connect(self._on_sync)
@@ -122,12 +123,12 @@ class WhitelistView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self._stats_label = QLabel("📊 Loading statistics...")
+        self._stats_label = QLabel("Loading statistics...")
         self._stats_label.setStyleSheet(f"color: {FG_SECONDARY}; font-size: 13px;")
         layout.addWidget(self._stats_label, stretch=1)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Filter…")
+        self._search_input.setPlaceholderText("Filter...")
         self._search_input.setFixedWidth(180)
         self._search_input.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self._search_input)
@@ -243,8 +244,8 @@ class WhitelistView(QWidget):
         sync_count = stats.get("sync_count", 0)
 
         text = (
-            f"📊 Total: {total}  |  🌐 Domains: {domains}  |  "
-            f"📍 IPs: {ips}  |  Active: {active}"
+            f"Total: {total}  |  Domains: {domains}  |  "
+            f"IPs: {ips}  |  Active: {active}"
         )
         if sync_count:
             text += f"  |  Syncs: {sync_count}"
@@ -290,7 +291,7 @@ class WhitelistView(QWidget):
                 "Agent not started - please Start Agent before sync.",
             )
             return
-        self._status_label.setText("☁️ Syncing with server...")
+        self._status_label.setText("Syncing with server...")
         self._status_label.setStyleSheet(f"color: {ACCENT_BLUE};")
         self._controller.refresh()
 

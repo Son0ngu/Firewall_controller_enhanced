@@ -41,7 +41,7 @@ import requests
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENT_DIR = REPO_ROOT / "agent"
 DEFAULT_BUILD_SPEC = AGENT_DIR / "saint_agent.spec"
-DEFAULT_EXE = REPO_ROOT / "dist" / "SAINT" / "SAINT.exe"
+DEFAULT_EXE = REPO_ROOT / "dist" / "SAINT.exe"
 DEFAULT_RESULTS_ROOT = REPO_ROOT / "test-results" / "saint-full-system-e2e"
 
 SECRET_KEY_FRAGMENTS = (
@@ -1714,8 +1714,11 @@ class FullSystemE2E:
             fail("isolate_sync_policy_active", "Isolate sync did not report active isolate policy", {"sync": isolate_sync})
         if conflict_value and conflict_value in isolate_values:
             fail("isolate_suppresses_group_whitelist", "Isolate sync still contained base whitelist domain", {"values": sorted(isolate_values)})
-        if not {"8.8.8.8", "8.8.4.4", "1.1.1.1"}.issubset(isolate_values):
-            fail("isolate_system_dns_present", "Isolate sync missing DNS system entries", {"values": sorted(isolate_values)})
+        server_host = (urlparse(self.server_url).hostname or "").lower()
+        if server_host and server_host not in isolate_values:
+            fail("isolate_server_host_present", "Isolate sync missing server host entry", {"values": sorted(isolate_values), "server_host": server_host})
+        if {"8.8.8.8", "8.8.4.4", "1.1.1.1"} & isolate_values:
+            fail("isolate_no_public_dns", "Isolate sync unexpectedly contained public DNS entries", {"values": sorted(isolate_values)})
         ok("isolate_policy_sync", {"heartbeat": heartbeat, "count": isolate_sync.get("count"), "values": sorted(isolate_values)})
 
         self.admin.request(
@@ -3163,7 +3166,7 @@ Write-Host "POST_REBOOT_AUTOSTART_RESULT={escaped_output}"
         }
 
     def select_blocked_packet_candidate(self, allowed_ip: str) -> Tuple[str, Dict[str, Any]]:
-        excluded = {allowed_ip, "1.1.1.1", "8.8.8.8", "8.8.4.4"}
+        excluded = {allowed_ip}
         attempts = []
         for raw in str(self.args.deep_blocked_candidates or "").split(","):
             candidate = raw.strip()
@@ -3368,11 +3371,12 @@ $out = foreach ($r in @($rules)) {{
 
     def local_ip(self) -> str:
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.connect(("8.8.8.8", 80))
-                return sock.getsockname()[0]
+            hostname_ip = socket.gethostbyname(socket.gethostname())
+            if hostname_ip and not hostname_ip.startswith(("127.", "169.254.")):
+                return hostname_ip
         except Exception:
-            return "127.0.0.1"
+            pass
+        return "127.0.0.1"
 
     def require_bootstrap(self) -> None:
         if not self.bootstrap or not self.bootstrap.access_token:
@@ -3532,7 +3536,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--build-timeout-seconds", type=int, default=900)
     parser.add_argument("--firewall-test-ip", default="203.0.113.10")
-    parser.add_argument("--deep-allowed-ip", default="1.1.1.1")
+    parser.add_argument("--deep-allowed-ip", default="151.101.1.69")
     parser.add_argument("--deep-allowed-port", type=int, default=443)
     parser.add_argument("--deep-blocked-candidates", default="151.101.1.69,104.16.132.229,142.250.190.14,93.184.216.34")
     parser.add_argument("--deep-mutation-ip", default="203.0.113.10")

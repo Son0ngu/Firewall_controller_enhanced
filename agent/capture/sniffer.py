@@ -4,10 +4,9 @@ from typing import Callable, Dict, Optional
 
 from shared.time_utils import now_iso, sleep
 
-from .scapy_config import configure_scapy, ensure_pcap_driver, apply_scapy_config
+from .scapy_config import configure_scapy, apply_scapy_config
 
 configure_scapy()
-ensure_pcap_driver()
 
 from scapy.all import sniff
 from scapy.layers.inet import IP, TCP, UDP

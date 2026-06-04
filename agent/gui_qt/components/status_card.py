@@ -7,19 +7,18 @@ Mirrors the public API used by dashboard code (`set_value`, `set_color`,
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout
 
-from ..styles import FG_SECONDARY, FG_MUTED
+from ..styles import FG_PRIMARY, FG_SECONDARY, FG_MUTED
 
 
 class StatusCard(QFrame):
-    """A single dashboard tile: icon + title on top, big value in middle,
-    subtitle at bottom. Background is a rounded panel (via QSS `#card`)."""
+    """A single dashboard tile with SaaS-style status dot and metric text."""
 
     def __init__(
         self,
         parent=None,
         title: str = "Title",
         value: str = "0",
-        icon: str = "📊",
+        icon: str = "",
         color: str = "#0077cc",
         subtitle: str = "",
     ):
@@ -30,18 +29,20 @@ class StatusCard(QFrame):
         self.setMaximumHeight(130)
 
         self._color = color
+        self._icon_name = icon
 
         # --- layout ---------------------------------------------------------
         root = QVBoxLayout(self)
-        root.setContentsMargins(15, 12, 15, 12)
-        root.setSpacing(4)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(6)
 
-        # Top row: icon + title
+        # Top row: status dot + title
         top = QHBoxLayout()
         top.setSpacing(8)
-        self._icon_label = QLabel(icon)
-        self._icon_label.setStyleSheet(f"font-size: 20px; color: {color};")
-        top.addWidget(self._icon_label)
+        self._dot = QFrame()
+        self._dot.setFixedSize(8, 8)
+        self._dot.setStyleSheet(self._dot_style(color))
+        top.addWidget(self._dot)
 
         self._title_label = QLabel(title)
         self._title_label.setObjectName("card_title")
@@ -53,9 +54,9 @@ class StatusCard(QFrame):
         # Middle: value (large, accent colour)
         self._value_label = QLabel(value)
         self._value_label.setObjectName("card_value")
-        self._value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._value_label.setStyleSheet(
-            f"font-size: 22px; font-weight: bold; color: {color};"
+            f"font-size: 24px; font-weight: bold; color: {FG_PRIMARY};"
         )
         # Allow long text (e.g. "Connecting...") to wrap rather than truncate.
         self._value_label.setWordWrap(True)
@@ -78,13 +79,13 @@ class StatusCard(QFrame):
         self._title_label.setText(title)
 
     def set_icon(self, icon: str) -> None:
-        self._icon_label.setText(icon)
+        self._icon_name = icon
 
     def set_color(self, color: str) -> None:
         self._color = color
-        self._icon_label.setStyleSheet(f"font-size: 20px; color: {color};")
+        self._dot.setStyleSheet(self._dot_style(color))
         self._value_label.setStyleSheet(
-            f"font-size: 22px; font-weight: bold; color: {color};"
+            f"font-size: 24px; font-weight: bold; color: {FG_PRIMARY};"
         )
 
     def set_subtitle(self, subtitle: str) -> None:
@@ -92,3 +93,7 @@ class StatusCard(QFrame):
 
     def get_value(self) -> str:
         return self._value_label.text()
+
+    @staticmethod
+    def _dot_style(color: str) -> str:
+        return f"background-color: {color}; border: 0; border-radius: 4px;"

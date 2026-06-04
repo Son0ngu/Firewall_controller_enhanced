@@ -6,22 +6,11 @@ from typing import Any, Dict, List, Optional
 
 from shared.time_utils import now, now_iso
 from .defaults import DEFAULT_CONFIG
+from .paths import DEFAULT_CONFIG_FILE, get_config_read_paths
 from .validator import validate_config
+from shared.server_urls import normalize_server_url
 
 logger = logging.getLogger("config.loader")
-
-# Configuration file paths
-DEFAULT_CONFIG_FILE = "agent_config.json"
-
-# Get the agent directory (where this config module is located)
-_AGENT_DIR = Path(__file__).resolve().parent.parent
-
-CONFIG_PATHS: List[Path] = [
-    _AGENT_DIR / DEFAULT_CONFIG_FILE,  # Agent directory (most reliable)
-    Path(DEFAULT_CONFIG_FILE),  # Current working directory
-    Path.home() / ".firewall-controller" / DEFAULT_CONFIG_FILE,
-    Path(os.environ.get("PROGRAMDATA", "C:\\ProgramData")) / "FirewallController" / DEFAULT_CONFIG_FILE,
-]
 
 # Global config cache
 _config: Optional[Dict[str, Any]] = None
@@ -70,8 +59,17 @@ def load_config() -> Dict[str, Any]:
     server_cfg = config.get("server", {})
     primary_url = server_cfg.get("url")
     if primary_url:
+        primary_url = normalize_server_url(primary_url)
+        server_cfg["url"] = primary_url
         server_cfg["urls"] = [primary_url]
-        config["server"] = server_cfg
+    elif server_cfg.get("urls"):
+        normalized_urls = []
+        for url in server_cfg.get("urls", []):
+            normalized_url = normalize_server_url(url)
+            if normalized_url:
+                normalized_urls.append(normalized_url)
+        server_cfg["urls"] = normalized_urls
+    config["server"] = server_cfg
     
     # Validate configuration
     is_valid, errors, warnings = validate_config(config)
@@ -128,14 +126,7 @@ def _load_from_file() -> Optional[Dict[str, Any]]:
     """Load configuration from file (encrypted preferred, plaintext fallback)."""
     from .crypto import decrypt_config, migrate_plaintext_to_encrypted, ENCRYPTED_EXT
 
-    # Check environment variable first
-    env_path = os.environ.get("FIREWALL_CONTROLLER_CONFIG")
-    if env_path:
-        config_paths = [Path(env_path)]
-    else:
-        config_paths = CONFIG_PATHS
-
-    for path in config_paths:
+    for path in get_config_read_paths():
         try:
             enc_path = path.with_suffix(path.suffix + ENCRYPTED_EXT)
 

@@ -118,30 +118,21 @@ class AgentPolicyService:
 
     # ── Merge policy into sync response ────────────────────────
 
-    # DNS servers required for agent to resolve SAINT server domain.
-    # If DNS is blocked → agent cannot resolve server domain → Deadlock.
-    ESSENTIAL_DNS_IPS = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]
-
     def _build_system_entries(self, server_host: str = None, source: str = "policy_system") -> List[Dict]:
         """
         Build list of system domains/IPs that MUST be present in all policy overrides.
         Includes:
           - Server host (so agent maintains API connection)
-          - DNS servers (to resolve server domain if server uses domain instead of IP)
+
+        DNS is intentionally not injected here. The Windows agent adds its
+        configured system DNS servers locally when it applies firewall rules,
+        so policy sync does not force Google/Cloudflare public resolvers.
         """
         entries = []
         if server_host:
             entries.append({
                 "domain": server_host,
                 "category": "system",
-                "is_active": True,
-                "source": source,
-            })
-        # Always allow DNS - avoid deadlock when server uses domain
-        for dns_ip in self.ESSENTIAL_DNS_IPS:
-            entries.append({
-                "domain": dns_ip,
-                "category": "system_dns",
                 "is_active": True,
                 "source": source,
             })
@@ -172,7 +163,7 @@ class AgentPolicyService:
             }
 
         if effective_mode == "isolate":
-            # Block all - only keep server IP + DNS so agent doesn't lose connection
+            # Block all - only keep server host so agent doesn't lose connection
             minimal_domains = self._build_system_entries(server_host, "policy_isolate")
             return {
                 "domains": minimal_domains,
@@ -183,7 +174,7 @@ class AgentPolicyService:
         if effective_mode == "custom_whitelist":
             # Replace group whitelist with custom list
             custom_entries = self.policy_model.get_custom_whitelist(agent_id)
-            # Server host + DNS always included in list
+            # Server host is always included in list
             domains = self._build_system_entries(server_host, "policy_custom")
             for entry in custom_entries:
                 domains.append({

@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..styles import (
-    ACCENT_BLUE, ACCENT_ORANGE, BG_INPUT, FG_MUTED, FG_PRIMARY, FG_SECONDARY,
+    ACCENT_ORANGE, BG_INPUT, BORDER_LIGHT, FG_PRIMARY, FG_SECONDARY,
 )
 
 
@@ -70,8 +70,8 @@ class LogConsole(QFrame):
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         if show_toolbar:
             layout.addLayout(self._build_toolbar())
 
@@ -83,7 +83,10 @@ class LogConsole(QFrame):
         self._console.setMaximumBlockCount(max_lines)
         self._console.setFont(QFont(font_family, font_size))
         self._console.setStyleSheet(
-            f"QPlainTextEdit {{ background: {BG_INPUT}; color: {FG_PRIMARY}; }}"
+            "QPlainTextEdit { "
+            f"background: {BG_INPUT}; color: {FG_PRIMARY}; "
+            f"border: 1px solid {BORDER_LIGHT}; border-radius: 8px; "
+            "padding: 8px; }"
         )
         layout.addWidget(self._console, stretch=1)
 
@@ -95,7 +98,7 @@ class LogConsole(QFrame):
         bar = QHBoxLayout()
         bar.setSpacing(10)
 
-        title = QLabel("📟 Console")
+        title = QLabel("Console")
         title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {FG_PRIMARY};")
         bar.addWidget(title)
 
@@ -110,7 +113,7 @@ class LogConsole(QFrame):
         self._level_combo.currentTextChanged.connect(self.set_filter_level)
         bar.addWidget(self._level_combo)
 
-        self._pause_btn = QPushButton("⏸️ Pause")
+        self._pause_btn = QPushButton("Pause")
         self._pause_btn.setFixedHeight(28)
         self._pause_btn.clicked.connect(self._toggle_pause)
         bar.addWidget(self._pause_btn)
@@ -120,12 +123,12 @@ class LogConsole(QFrame):
     def _toggle_pause(self) -> None:
         self._paused = not self._paused
         if self._paused:
-            self._pause_btn.setText("▶️ Resume")
+            self._pause_btn.setText("Resume")
             self._pause_btn.setStyleSheet(
                 f"background-color: {ACCENT_ORANGE}; color: white;"
             )
         else:
-            self._pause_btn.setText("⏸️ Pause")
+            self._pause_btn.setText("Pause")
             self._pause_btn.setStyleSheet("")
 
     # =======================================================================

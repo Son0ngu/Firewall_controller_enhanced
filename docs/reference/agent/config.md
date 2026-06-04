@@ -42,7 +42,7 @@ Load config từ nhiều nguồn (file → env → defaults), merge theo deep-me
 | `firewall` | `enabled` | `True` | |
 | | `mode` | `"whitelist_only"` | **Mode duy nhất hỗ trợ** |
 | | `rule_prefix` | `"FirewallController"` | |
-| | `backup.path` | `"profiles/backup.saint-snapshot.json"` | |
+| | `backup.path` | `"profiles/backup.saint-snapshot.json"` | Relative path resolve dưới `%LOCALAPPDATA%\SAINT` |
 | `heartbeat` | `interval` | `20` | Giây |
 | | `max_failures` | `3` | Sau ngần ấy fail → log error |
 
@@ -51,7 +51,7 @@ Load config từ nhiều nguồn (file → env → defaults), merge theo deep-me
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
 | `validate_config(config)` | `(Dict) -> Tuple[bool, List[str], List[str]]` | [validator.py:9](../../../agent/config/validator.py#L9) | `(is_valid, errors, warnings)`. Errors → block; warnings → log nhưng tiếp tục |
-| `_validate_server_config(config, errors, warnings)` | | [validator.py:35](../../../agent/config/validator.py#L35) | URL required (error), scheme check (warning) |
+| `_validate_server_config(config, errors, warnings)` | | [validator.py:35](../../../agent/config/validator.py#L35) | Thiếu URL là offline-first warning; scheme check là warning |
 | `_validate_firewall_config(config, errors, warnings)` | | [validator.py:56](../../../agent/config/validator.py#L56) | **Coerces mode về `whitelist_only`** với warning (legacy configs). Warn nếu không admin |
 | `_validate_logging_config(config, warnings)` | | [validator.py:87](../../../agent/config/validator.py#L87) | Level invalid → set INFO + warning |
 | `_validate_whitelist_config(config, warnings)` | | [validator.py:98](../../../agent/config/validator.py#L98) | interval < 30s ⇒ warning |

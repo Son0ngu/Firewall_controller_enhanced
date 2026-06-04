@@ -25,6 +25,26 @@ logger = logging.getLogger("config.crypto")
 ENCRYPTED_EXT = ".enc"
 
 
+def _current_windows_user() -> str:
+    try:
+        result = subprocess.run(
+            ["whoami"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    username = os.environ.get("USERNAME") or os.environ.get("USER")
+    domain = os.environ.get("USERDOMAIN")
+    if username and domain:
+        return f"{domain}\\{username}"
+    return username or ""
+
+
 def restrict_to_owner(path: Path) -> None:
     """Tighten ACL on ``path`` so only the current user (and SYSTEM/Admins
     on Windows) can read it.
@@ -49,9 +69,9 @@ def restrict_to_owner(path: Path) -> None:
     """
     try:
         if sys.platform == "win32":
-            user = os.environ.get("USERNAME") or os.environ.get("USER")
+            user = _current_windows_user()
             if not user:
-                logger.debug("restrict_to_owner: no USERNAME in env, skipping icacls")
+                logger.debug("restrict_to_owner: no current user, skipping icacls")
                 return
             # /inheritance:r — remove inherited entries (e.g. "Users").
             # /grant:r "<user>:F" — replace/set Full control for current user.
@@ -59,7 +79,9 @@ def restrict_to_owner(path: Path) -> None:
             # admin recovery need them.
             result = subprocess.run(
                 ["icacls", str(path), "/inheritance:r",
-                 "/grant:r", f"{user}:F"],
+                 "/grant:r", f"{user}:F",
+                 "/grant:r", "*S-1-5-18:F",
+                 "/grant:r", "*S-1-5-32-544:F"],
                 capture_output=True, text=True, timeout=5,
             )
             if result.returncode != 0:

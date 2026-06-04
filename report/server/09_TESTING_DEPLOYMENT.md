@@ -72,7 +72,7 @@ Toàn bộ server test suite đã chạy lại sau các bản vá trực tiếp 
 - `server/Dockerfile`: build image Server.
 - `server/docker-compose.yml`: compose service cho Server.
 - `server/.env-example`: biến môi trường mẫu, không chứa secret thật.
-- `agent/saint_agent.spec`: PyInstaller spec cho Agent executable (Qt frontend, output `dist/SAINT/SAINT.exe`).
+- `agent/saint_agent.spec`: PyInstaller spec cho Agent executable (Qt frontend, onefile output `dist/SAINT.exe`).
 
 ## Lưu ý vận hành
 

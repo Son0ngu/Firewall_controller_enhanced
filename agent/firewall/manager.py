@@ -7,7 +7,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 
+from config.paths import get_user_data_dir
 from shared.time_utils import now_iso
+from shared.whitelist_values import canonicalize_whitelist_entry
 from .policy import PolicyManager
 from .provider import FirewallProvider, get_default_provider, get_write_provider
 from .rules import RulesManager
@@ -16,38 +18,54 @@ from .utils import FirewallUtils
 logger = logging.getLogger("firewall.manager")
 
 
-# Default snapshot filename. Path resolved by `_resolve_snapshot_path` to an
-# absolute location so save/restore stay consistent across cwd changes (service
-# vs GUI process).
+# Default snapshot filename. Relative paths resolve to SAINT's per-user data
+# directory, not next to the executable, so onefile builds do not need write
+# permission in `dist` or Program Files.
 DEFAULT_SNAPSHOT_FILENAME = "profiles/backup.saint-snapshot.json"
+
+
+def _resolve_legacy_snapshot_path(path: str) -> Path:
+    """Resolve a legacy relative snapshot path beside the source/exe install."""
+    p = Path(path)
+    if p.is_absolute():
+        return p
+
+    try:
+        install_root = Path(__file__).resolve().parents[2]
+    except Exception:
+        install_root = Path.cwd()
+
+    if getattr(sys, "frozen", False):
+        install_root = Path(sys.executable).resolve().parent
+
+    return install_root / p
 
 
 def _resolve_snapshot_path(path: str) -> Path:
     """Resolve a snapshot file path to an absolute, cwd-independent location.
 
     Rules:
-      - Absolute path → use as-is.
-      - Relative path → resolve relative to the agent install dir (the parent
-        of the `agent/` package), NOT the current working directory. This
-        keeps the snapshot stable whether the agent is launched by the GUI,
-        a service, or Task Scheduler.
+      - Absolute path: use as-is.
+      - Relative path: resolve under SAINT's per-user data directory.
     """
     p = Path(path)
     if p.is_absolute():
         return p
 
-    # Anchor: parent of the `agent` package. `__file__` is
-    # `<install>/agent/firewall/manager.py`, so parents[2] is `<install>`.
-    try:
-        install_root = Path(__file__).resolve().parents[2]
-    except Exception:
-        install_root = Path.cwd()
+    return get_user_data_dir() / p
 
-    # If running as a frozen executable (PyInstaller), prefer the exe's dir.
-    if getattr(sys, "frozen", False):
-        install_root = Path(sys.executable).resolve().parent
 
-    return install_root / p
+def _resolve_snapshot_read_path(path: str) -> Path:
+    """Return the snapshot path to read, falling back to the legacy location."""
+    primary = _resolve_snapshot_path(path)
+    if primary.exists():
+        return primary
+
+    legacy = _resolve_legacy_snapshot_path(path)
+    if legacy != primary and legacy.exists():
+        return legacy
+
+    return primary
 
 
 class FirewallManager:
@@ -469,23 +487,17 @@ class FirewallManager:
         if not domains:
             return resolved_ips
 
-        # Normalize domains: drop protocol, path, port, wildcard tokens
+        # Normalize domains: drop protocol, path, port, query and skip
+        # wildcard patterns. DNS can resolve exact hostnames only.
         cleaned_domains: List[str] = []
         for domain in domains:
             try:
-                if '*' in domain or '?' in domain:
-                    base_domain = domain.replace('*.', '').replace('*', '').replace('?', '')
-                    if not base_domain:
-                        continue
-                    domain = base_domain
-
-                domain = domain.replace('http://', '').replace('https://', '')
-                domain = domain.split('/')[0]
-                domain = domain.split(':')[0]
-                domain = domain.strip()
-
-                if domain:
-                    cleaned_domains.append(domain)
+                entry_type, normalized = canonicalize_whitelist_entry(
+                    "domain",
+                    domain,
+                )
+                if entry_type == "domain" and normalized:
+                    cleaned_domains.append(normalized)
             except Exception:
                 continue
 
@@ -661,7 +673,7 @@ class FirewallManager:
 
         Args:
             path: snapshot file path. Relative paths are resolved against the
-                agent install dir (cwd-independent).
+                SAINT per-user data directory (cwd-independent).
             force: when False (default) and a snapshot file already exists,
                 refuse to overwrite. This prevents losing the pre-SAINT
                 baseline if the agent restarts after a crash where current
@@ -672,7 +684,11 @@ class FirewallManager:
             preserved; False on actual failure.
         """
         try:
-            file_path = _resolve_snapshot_path(path)
+            file_path = (
+                _resolve_snapshot_path(path)
+                if force
+                else _resolve_snapshot_read_path(path)
+            )
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
             if file_path.exists() and not force:
@@ -741,7 +757,7 @@ class FirewallManager:
         opposite of "restore" from the user's point of view).
         """
         try:
-            file_path = _resolve_snapshot_path(path)
+            file_path = _resolve_snapshot_read_path(path)
             if not file_path.exists():
                 logger.error(f"Snapshot file not found: {file_path}")
                 return False

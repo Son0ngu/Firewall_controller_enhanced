@@ -33,8 +33,9 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 | `.unblock_ip(ip)` | `(str) -> bool` | [manager.py:386](../../../agent/firewall/manager.py#L386) | Legacy: tương đương `add_ip_to_whitelist` |
 | `.save_snapshot(path=DEFAULT_SNAPSHOT_FILENAME, *, force=False)` | `(str, bool) -> bool` | [manager.py:629](../../../agent/firewall/manager.py#L629) | Atomic write (tempfile + `os.replace`). `force=False` → skip-if-exists để giữ baseline pre-SAINT |
 | `.restore_snapshot(path=DEFAULT_SNAPSHOT_FILENAME)` | `(str) -> bool` | [manager.py:709](../../../agent/firewall/manager.py#L709) | Cần admin. Restore profiles, clear SAINT rules, **không** re-enable whitelist mode kể cả snapshot đã ở đó |
-| `DEFAULT_SNAPSHOT_FILENAME` | `str` const | [manager.py:21](../../../agent/firewall/manager.py#L21) | `"profiles/backup.saint-snapshot.json"` |
-| `_resolve_snapshot_path(path)` | `(str) -> Path` | [manager.py:24](../../../agent/firewall/manager.py#L24) | Resolve tương đối → install dir (không phải cwd). Frozen exe → exe parent dir |
+| `DEFAULT_SNAPSHOT_FILENAME` | `str` const | [manager.py:21](../../../agent/firewall/manager.py#L21) | `"profiles/backup.saint-snapshot.json"` dưới `%LOCALAPPDATA%\SAINT` khi dùng đường dẫn tương đối |
+| `_resolve_snapshot_path(path)` | `(str) -> Path` | [manager.py:44](../../../agent/firewall/manager.py#L44) | Resolve tương đối → `%LOCALAPPDATA%\SAINT`, không ghi runtime state cạnh EXE |
+| `_resolve_snapshot_read_path(path)` | `(str) -> Path` | [manager.py:58](../../../agent/firewall/manager.py#L58) | Đọc snapshot ở AppData trước, fallback legacy install/exe dir nếu backup cũ còn tồn tại |
 
 ### `agent/firewall/policy.py` - Default Deny policy
 
@@ -88,7 +89,7 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 |---|---|---|---|
 | `FirewallUtils.is_valid_ipv4(ip)` | `(str) -> bool` | [utils.py:15](../../../agent/firewall/utils.py#L15) | Wrap `ipaddress.ip_address` |
 | `FirewallUtils.is_valid_ip(ip)` | `(str) -> bool` | [utils.py:23](../../../agent/firewall/utils.py#L23) | **IPv4 only** - agent firewall không hỗ trợ IPv6 |
-| `FirewallUtils.get_essential_ips()` | `() -> Set[str]` | [utils.py:30](../../../agent/firewall/utils.py#L30) | localhost + system DNS (dnspython resolver) + local IP + gateway (`x.x.x.1` heuristic). Fallback `8.8.8.8 / 1.1.1.1` khi không detect được DNS |
+| `FirewallUtils.get_essential_ips()` | `() -> Set[str]` | [utils.py:30](../../../agent/firewall/utils.py#L30) | localhost + system DNS (dnspython resolver) + local IP + gateway (`x.x.x.1` heuristic). Không inject public DNS fallback khi không detect được DNS |
 | `FirewallUtils.has_admin_privileges()` | `() -> bool` | [utils.py:67](../../../agent/firewall/utils.py#L67) | Wrap `utils.ip_detector.check_admin_privileges` |
 | `FirewallUtils.run_netsh_command(args, timeout=30)` | `(list, int) -> CompletedProcess` | [utils.py:76](../../../agent/firewall/utils.py#L76) | `subprocess.run` với `CREATE_NO_WINDOW` (không nháy console). **Dùng cái này** cho mọi netsh call |
 | `FirewallUtils.test_ip_connectivity(ip, ports=None, timeout=3)` | `(str, list, int) -> bool` | [utils.py:88](../../../agent/firewall/utils.py#L88) | TCP connect_ex tới 80/443/53 (default). Return True nếu ≥1 port OK |
@@ -110,7 +111,7 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 - Cần validate IPv4? → `FirewallUtils.is_valid_ip(ip)`
 - Cần list IP "phải allow để máy còn dùng được"? → `FirewallUtils.get_essential_ips()`
 - Cần test TCP tới IP? → `FirewallUtils.test_ip_connectivity(ip)`
-- Cần resolve path snapshot tương đối → absolute? → `manager._resolve_snapshot_path(path)`
+- Cần resolve path snapshot tương đối → absolute? → `manager._resolve_snapshot_path(path)` cho write path, `manager._resolve_snapshot_read_path(path)` cho restore fallback.
 
 ## Gotchas
 - **IPv4 only** - `is_valid_ip` reject IPv6. Khi DNS trả AAAA, drop. Đừng "fix" bằng cách cho qua - `netsh advfirewall` với IPv6 có quirks (empty stderr on failure).

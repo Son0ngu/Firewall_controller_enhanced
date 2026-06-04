@@ -10,7 +10,7 @@
 
 - Không dùng tài liệu cũ trong `docs/` để suy luận kiến trúc hiện tại.
 - Không đọc `server/.env` để tránh lộ secret.
-- Không chạy `dist/SAINT/SAINT.exe`, Agent GUI, Server thật, Docker compose, packet capture hoặc lệnh firewall.
+- Không chạy `dist/SAINT.exe`, Agent GUI, Server thật, Docker compose, packet capture hoặc lệnh firewall.
 
 ## Phương pháp
 

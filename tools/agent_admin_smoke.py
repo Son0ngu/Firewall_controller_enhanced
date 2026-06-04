@@ -38,7 +38,7 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENT_DIR = REPO_ROOT / "agent"
 DEFAULT_BUILD_SPEC = AGENT_DIR / "saint_agent.spec"
-DEFAULT_EXE = REPO_ROOT / "dist" / "SAINT" / "SAINT.exe"
+DEFAULT_EXE = REPO_ROOT / "dist" / "SAINT.exe"
 DEFAULT_RESULTS_ROOT = REPO_ROOT / "test-results" / "agent-admin-smoke"
 SECRET_KEY_FRAGMENTS = (
     "api_key",

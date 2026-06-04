@@ -19,8 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..styles import (
-    ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED, FG_PRIMARY,
-    FG_SECONDARY,
+    ACCENT_GREEN, ACCENT_RED, FG_PRIMARY, FG_SECONDARY,
 )
 
 logger = logging.getLogger("gui_qt.settings")
@@ -38,6 +37,7 @@ class SettingsView(QWidget):
         self._heartbeat_input: Optional[QLineEdit] = None
         self._sync_input: Optional[QLineEdit] = None
         self._log_level_combo: Optional[QComboBox] = None
+        self._api_key_toggle_btn: Optional[QPushButton] = None
 
         self._build_ui()
 
@@ -48,19 +48,15 @@ class SettingsView(QWidget):
 
     @staticmethod
     def _find_config_path() -> Path:
-        candidates = [
-            Path("agent_config.json"),
-            Path("agent/agent_config.json"),
-            Path(__file__).parent.parent.parent / "agent_config.json",
-        ]
-        for p in candidates:
-            if p.exists():
-                return p
-        return Path("agent_config.json")
+        from config.paths import get_config_write_path
+
+        return get_config_write_path()
 
     def _load_config(self) -> Dict:
         try:
             from config.crypto import decrypt_config, ENCRYPTED_EXT
+            from config.loader import load_config
+
             enc_path = self._config_path.with_suffix(
                 self._config_path.suffix + ENCRYPTED_EXT
             )
@@ -71,6 +67,7 @@ class SettingsView(QWidget):
             if self._config_path.exists():
                 with open(self._config_path, "r", encoding="utf-8") as f:
                     return json.load(f)
+            return load_config()
         except Exception as e:
             logger.warning(f"Failed to load config: {e}")
         return {}
@@ -84,9 +81,9 @@ class SettingsView(QWidget):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QLabel("⚙️ Settings")
+        title = QLabel("Settings")
         title.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {ACCENT_BLUE};"
+            f"font-size: 24px; font-weight: bold; color: {FG_PRIMARY};"
         )
         root.addWidget(title)
 
@@ -109,7 +106,7 @@ class SettingsView(QWidget):
         content_layout.addWidget(self._build_save_section())
 
         # Config file path footer
-        footer = QLabel(f"📁 Config file: {self._config_path.absolute()}")
+        footer = QLabel(f"Config file: {self._config_path.absolute()}")
         footer.setStyleSheet(f"color: {FG_SECONDARY}; font-size: 11px;")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(footer)
@@ -142,7 +139,7 @@ class SettingsView(QWidget):
     # ----- Sections --------------------------------------------------------
 
     def _build_auth_section(self) -> QWidget:
-        wrap, form = self._section_card("🔑 Authentication")
+        wrap, form = self._section_card("Authentication")
 
         self._api_key_input = QLineEdit(
             self._config.get("auth", {}).get("api_key", "")
@@ -153,26 +150,26 @@ class SettingsView(QWidget):
             self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._api_key_input.setMinimumWidth(360)
 
-        toggle_btn = QPushButton("👁")
-        toggle_btn.setFixedWidth(40)
-        toggle_btn.setCheckable(True)
-        toggle_btn.clicked.connect(self._toggle_api_key_visibility)
+        self._api_key_toggle_btn = QPushButton("Show")
+        self._api_key_toggle_btn.setFixedWidth(64)
+        self._api_key_toggle_btn.setCheckable(True)
+        self._api_key_toggle_btn.clicked.connect(self._toggle_api_key_visibility)
 
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(self._api_key_input, stretch=1)
-        row.addWidget(toggle_btn)
+        row.addWidget(self._api_key_toggle_btn)
         row_container = QWidget()
         row_container.setLayout(row)
         form.addRow("API Key:", row_container)
 
-        help_label = QLabel("💡 Get your API key from the server Web UI: /api-keys")
+        help_label = QLabel("Get your API key from the server Web UI: /api-keys")
         help_label.setStyleSheet(f"color: {FG_SECONDARY}; font-size: 11px;")
         form.addRow("", help_label)
         return wrap
 
     def _build_server_section(self) -> QWidget:
-        wrap, form = self._section_card("🌐 Server Connection")
+        wrap, form = self._section_card("Server Connection")
 
         self._server_url_input = QLineEdit(
             self._config.get("server", {}).get("url", "http://localhost:5000")
@@ -194,7 +191,7 @@ class SettingsView(QWidget):
         return wrap
 
     def _build_agent_section(self) -> QWidget:
-        wrap, form = self._section_card("🤖 Agent Configuration")
+        wrap, form = self._section_card("Agent Configuration")
 
         hostname_field = QLineEdit(socket.gethostname())
         hostname_field.setReadOnly(True)
@@ -210,7 +207,7 @@ class SettingsView(QWidget):
         return wrap
 
     def _build_firewall_section(self) -> QWidget:
-        wrap, form = self._section_card("🔥 Firewall Backup & Restore")
+        wrap, form = self._section_card("Firewall Backup & Restore")
 
         description = QLabel(
             "A snapshot of your firewall state is captured the first time SAINT "
@@ -234,7 +231,7 @@ class SettingsView(QWidget):
         path_field.setReadOnly(True)
         form.addRow("Snapshot File:", path_field)
 
-        restore_btn = QPushButton("♻️ Restore Firewall")
+        restore_btn = QPushButton("Restore Firewall")
         restore_btn.setObjectName("primary")
         restore_btn.setMinimumHeight(34)
         restore_btn.clicked.connect(self._manual_restore)
@@ -259,7 +256,7 @@ class SettingsView(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(8)
 
-        save_btn = QPushButton("💾 Save Settings")
+        save_btn = QPushButton("Save Settings")
         save_btn.setObjectName("primary")
         save_btn.setMinimumHeight(42)
         save_btn.setMinimumWidth(220)
@@ -282,6 +279,8 @@ class SettingsView(QWidget):
         self._api_key_input.setEchoMode(
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         )
+        if self._api_key_toggle_btn:
+            self._api_key_toggle_btn.setText("Hide" if checked else "Show")
 
     def _save_config(self) -> None:
         try:
@@ -293,9 +292,17 @@ class SettingsView(QWidget):
                     "(e.g. http://localhost:5000) before saving."
                 )
                 return
-            if not (url_value.startswith("http://") or url_value.startswith("https://")):
+            from shared.server_urls import normalize_server_url
+
+            normalized_url = normalize_server_url(url_value)
+            if not (
+                normalized_url.startswith("http://")
+                or normalized_url.startswith("https://")
+            ):
                 self._show_error("Server URL must start with http:// or https://")
                 return
+            if self._server_url_input:
+                self._server_url_input.setText(normalized_url)
 
             # Mutate config from form values.
             self._config.setdefault("auth", {})
@@ -304,9 +311,9 @@ class SettingsView(QWidget):
             )
 
             self._config.setdefault("server", {})
-            self._config["server"]["url"] = url_value
+            self._config["server"]["url"] = normalized_url
             # Keep `server.urls` list in sync so the runtime sees the new endpoint.
-            self._config["server"]["urls"] = [url_value]
+            self._config["server"]["urls"] = [normalized_url]
 
             if self._heartbeat_input:
                 try:
@@ -333,21 +340,24 @@ class SettingsView(QWidget):
             # Encrypt + write.
             from config.crypto import encrypt_config
             encrypt_config(self._config, self._config_path)
-            self._show_success("Settings saved successfully!")
+            if normalized_url != url_value:
+                self._show_success(f"Settings saved. Server URL normalized to {normalized_url}")
+            else:
+                self._show_success("Settings saved successfully!")
         except Exception as e:
             self._show_error(str(e))
 
     def _manual_restore(self) -> None:
         """Restore firewall to pre-SAINT state from snapshot."""
         try:
-            from firewall.manager import _resolve_snapshot_path
+            from firewall.manager import _resolve_snapshot_read_path
             from firewall.utils import FirewallUtils
             from firewall.application_service import FirewallApplicationService
 
             backup_path = self._config.get(
                 "firewall", {}
             ).get("backup", {}).get("path", "profiles/backup.saint-snapshot.json")
-            file_path = _resolve_snapshot_path(backup_path)
+            file_path = _resolve_snapshot_read_path(backup_path)
 
             if not file_path.exists():
                 self._show_error(

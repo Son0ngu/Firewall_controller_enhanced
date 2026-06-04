@@ -5,24 +5,24 @@ styles for status-driven colour changes.
 """
 
 # Palette
-BG_WINDOW = "#f5f5f7"        # Main window background
-BG_CARD = "#e8e8ed"          # Cards / panels
-BG_INPUT = "#ffffff"         # Entries, textboxes
-BG_HOVER = "#dcdce2"
+BG_WINDOW = "#F6F8FB"        # Main window background
+BG_CARD = "#FFFFFF"          # Cards / panels
+BG_INPUT = "#FFFFFF"         # Entries, textboxes
+BG_HOVER = "#F1F5F9"
+BG_ACTIVE = "#EAF4FF"
+BG_TABLE_HEADER = "#F8FAFC"
 
-FG_PRIMARY = "#1a1a2e"       # Main text
-FG_SECONDARY = "#6a6a7a"     # Subtitles
-FG_MUTED = "#9a9aaa"
+FG_PRIMARY = "#0F172A"       # Main text
+FG_SECONDARY = "#475569"     # Subtitles
+FG_MUTED = "#94A3B8"
 
-ACCENT_BLUE = "#0077cc"
-ACCENT_GREEN = "#00aa55"     # Slightly darker than the CTk #00ff88 so it
-                             # reads cleanly on light backgrounds (the bright
-                             # neon was a dark-mode legacy from CTk).
-ACCENT_RED = "#cc3333"
-ACCENT_ORANGE = "#cc7a00"
-ACCENT_PURPLE = "#9966ff"
+ACCENT_BLUE = "#0B78D0"
+ACCENT_GREEN = "#16A34A"
+ACCENT_RED = "#DC2626"
+ACCENT_ORANGE = "#D97706"
+ACCENT_PURPLE = "#2563EB"
 
-BORDER_LIGHT = "#d0d0d8"
+BORDER_LIGHT = "#E2E8F0"
 
 # Status colour helpers - used by status cards / log banners
 STATUS_COLORS = {
@@ -62,21 +62,22 @@ QLabel {{
 
 QFrame#card {{
     background-color: {BG_CARD};
-    border-radius: 12px;
-    border: 0;
+    border-radius: 8px;
+    border: 1px solid {BORDER_LIGHT};
 }}
 
 QFrame#sidebar {{
-    background-color: {BG_CARD};
+    background-color: #FFFFFF;
     border-right: 1px solid {BORDER_LIGHT};
 }}
 
 QPushButton {{
-    background-color: {BORDER_LIGHT};
+    background-color: #F8FAFC;
     color: {FG_PRIMARY};
-    border: 0;
+    border: 1px solid {BORDER_LIGHT};
     border-radius: 8px;
     padding: 8px 14px;
+    font-weight: 600;
 }}
 QPushButton:hover {{
     background-color: {BG_HOVER};
@@ -88,16 +89,20 @@ QPushButton:disabled {{
 QPushButton#sidebar_item {{
     background-color: transparent;
     text-align: left;
-    padding: 10px 16px;
-    border-radius: 6px;
-    color: {FG_PRIMARY};
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: {FG_SECONDARY};
+    font-weight: 600;
 }}
 QPushButton#sidebar_item:hover {{
     background-color: {BG_HOVER};
+    color: {FG_PRIMARY};
 }}
 QPushButton#sidebar_item:checked {{
-    background-color: {ACCENT_BLUE};
-    color: white;
+    background-color: {BG_ACTIVE};
+    color: {ACCENT_BLUE};
+    border-left: 3px solid {ACCENT_BLUE};
 }}
 
 QPushButton#primary {{
@@ -105,7 +110,7 @@ QPushButton#primary {{
     color: white;
 }}
 QPushButton#primary:hover {{
-    background-color: #005fa3;
+    background-color: #075EA8;
 }}
 
 QPushButton#success {{
@@ -113,7 +118,7 @@ QPushButton#success {{
     color: white;
 }}
 QPushButton#success:hover {{
-    background-color: #008844;
+    background-color: #15803D;
 }}
 
 QPushButton#danger {{
@@ -121,18 +126,23 @@ QPushButton#danger {{
     color: white;
 }}
 QPushButton#danger:hover {{
-    background-color: #aa2828;
+    background-color: #B91C1C;
 }}
 
-QLineEdit, QPlainTextEdit, QTextEdit {{
+QLineEdit, QPlainTextEdit, QTextEdit, QComboBox {{
     background-color: {BG_INPUT};
     border: 1px solid {BORDER_LIGHT};
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 6px 8px;
     color: {FG_PRIMARY};
 }}
-QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus {{
     border-color: {ACCENT_BLUE};
+}}
+
+QComboBox::drop-down {{
+    border: 0;
+    width: 24px;
 }}
 
 QPlainTextEdit#activity_log {{
@@ -144,7 +154,7 @@ QPlainTextEdit#activity_log {{
 QLabel#title {{
     font-size: 24px;
     font-weight: bold;
-    color: {ACCENT_BLUE};
+    color: {FG_PRIMARY};
 }}
 
 QLabel#card_title {{
@@ -153,8 +163,9 @@ QLabel#card_title {{
 }}
 
 QLabel#card_value {{
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
+    color: {FG_PRIMARY};
 }}
 
 QLabel#card_subtitle {{
@@ -163,19 +174,20 @@ QLabel#card_subtitle {{
 }}
 
 QHeaderView::section {{
-    background-color: {BG_CARD};
-    color: {ACCENT_BLUE};
+    background-color: {BG_TABLE_HEADER};
+    color: {FG_SECONDARY};
     border: 0;
-    padding: 8px 10px;
+    border-bottom: 1px solid {BORDER_LIGHT};
+    padding: 9px 10px;
     font-weight: bold;
 }}
 
 QTableView {{
     background-color: {BG_INPUT};
-    alternate-background-color: {BG_CARD};
+    alternate-background-color: #FBFDFF;
     gridline-color: {BORDER_LIGHT};
     border: 0;
-    selection-background-color: {ACCENT_BLUE};
-    selection-color: white;
+    selection-background-color: {BG_ACTIVE};
+    selection-color: {FG_PRIMARY};
 }}
 """

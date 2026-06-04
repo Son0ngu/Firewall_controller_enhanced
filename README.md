@@ -62,4 +62,4 @@ The Agent must be run directly on the Windows workstations.
    ```bash
    python agent_gui.py
    ```
-   *(Alternatively, build the Agent into `dist/SAINT/SAINT.exe` with PyInstaller using `agent/saint_agent.spec` for easier deployment across multiple machines).*
+   *(Alternatively, build the Agent into one file at `dist/SAINT.exe` with PyInstaller using `agent/saint_agent.spec` for easier deployment across multiple machines).*

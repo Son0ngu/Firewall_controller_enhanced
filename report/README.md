@@ -1,3 +1,8 @@
+# Cap nhat 2026-06-04
+
+- Agent build/GUI/firewall/URL update duoc ghi chi tiet tai `agent/08_CAP_NHAT_2026_06_04_AGENT_BUILD_GUI_FIREWALL_URL.md`.
+- Noi dung chinh: PyInstaller onefile `dist/SAINT.exe`, SaaS GUI redesign, fix hidden imports `agent.*`, firewall guard khi whitelist sync fail, System DNS only, normalize Server URL co giu deployment subpath, fix config permission denied bang `%LOCALAPPDATA%\SAINT`, va test references.
+
 # Bộ report kỹ thuật SAINT
 
 Cập nhật 2026-06-01: API key expiration có enforce thật. Expired key bị `validate_api_key(...)` reject với `API key has expired`, endpoint dùng `require_api_key(...)` trả `401`, và expired key không tăng `usage_count`.
@@ -34,4 +39,4 @@ Bộ tài liệu này được tạo từ source code hiện tại trong `agent/
 
 ## Cảnh báo vận hành
 
-Không chạy `dist/SAINT/SAINT.exe`, `agent/agent_gui.py`, hoặc bất kỳ thành phần Agent runtime nào khi chỉ cần đọc tài liệu. Source hiện tại có chế độ `whitelist_only` dùng Default Deny trên Windows Firewall; nếu chạy thật với quyền Administrator và cấu hình không đúng, máy có thể mất kết nối mạng.
+Không chạy `dist/SAINT.exe`, `agent/agent_gui.py`, hoặc bất kỳ thành phần Agent runtime nào khi chỉ cần đọc tài liệu. Source hiện tại có chế độ `whitelist_only` dùng Default Deny trên Windows Firewall; nếu chạy thật với quyền Administrator và cấu hình không đúng, máy có thể mất kết nối mạng.

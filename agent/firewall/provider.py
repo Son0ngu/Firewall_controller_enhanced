@@ -47,7 +47,7 @@ class FirewallRule(TypedDict, total=False):
     populate additional keys; consumers should treat unknown keys as opaque.
     """
 
-    rule_name: str          # e.g. "FirewallController_Allow_8.8.8.8"
+    rule_name: str          # e.g. "FirewallController_Allow_203.0.113.10"
     direction: str          # "in" | "out"
     action: str             # "allow" | "block"
     enabled: bool

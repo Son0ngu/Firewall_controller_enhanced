@@ -180,16 +180,15 @@ Override mode per-agent: `none` / `isolate` / `custom_whitelist`. Merge vào syn
 
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
-| `ESSENTIAL_DNS_IPS = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]` | const | [agent_policy_service.py:123](../../../server/services/agent_policy_service.py#L123) | **Always allowed** trong policy override để agent resolve được server domain |
 | `__init__(policy_model, agent_model, socketio=None)` | | [agent_policy_service.py:17](../../../server/services/agent_policy_service.py#L17) | |
 | `.get_policy(agent_id)` | `→ Dict` | [agent_policy_service.py:26](../../../server/services/agent_policy_service.py#L26) | None → default policy dict |
 | `.set_policy(agent_id, mode, applied_by_user, reason="", custom_whitelist=None, duration_minutes=None)` | `→ Dict` | [agent_policy_service.py:47](../../../server/services/agent_policy_service.py#L47) | Calculate `expires_at` từ duration. Validate agent. Emit `agent_policy_changed` |
 | `.isolate_agent(agent_id, applied_by_user, reason, duration_minutes=None)` | | [agent_policy_service.py:98](../../../server/services/agent_policy_service.py#L98) | Shortcut |
 | `.reset_agent(agent_id, applied_by_user)` | | [agent_policy_service.py:110](../../../server/services/agent_policy_service.py#L110) | Shortcut |
-| `.apply_policy_to_sync(agent_id, group_domains, server_host=None)` | `→ Dict` | [agent_policy_service.py:150](../../../server/services/agent_policy_service.py#L150) | **Core merge**: `none` → unchanged. `isolate` → chỉ server_host + DNS IPs. `custom_whitelist` → server + DNS + custom entries. Trả `{domains, policy_mode, policy_active}` |
+| `.apply_policy_to_sync(agent_id, group_domains, server_host=None)` | `→ Dict` | [agent_policy_service.py:150](../../../server/services/agent_policy_service.py#L150) | **Core merge**: `none` → unchanged. `isolate` → chỉ server_host. `custom_whitelist` → server + custom entries. Trả `{domains, policy_mode, policy_active}` |
 | `.get_policies_for_agents(agent_ids)` | `→ Dict` | [agent_policy_service.py:210](../../../server/services/agent_policy_service.py#L210) | Batch load |
 | `.get_stats()` | `→ Dict` | [agent_policy_service.py:214](../../../server/services/agent_policy_service.py#L214) | |
-| `_build_system_entries(server_host=None, source="policy_system")` | `→ List[Dict]` | [agent_policy_service.py:125](../../../server/services/agent_policy_service.py#L125) | Server + 3 DNS entries |
+| `_build_system_entries(server_host=None, source="policy_system")` | `→ List[Dict]` | [agent_policy_service.py:125](../../../server/services/agent_policy_service.py#L125) | Server host only; DNS is added locally by the agent from system DNS |
 
 ### `services/whitelist_profile_service.py` - `WhitelistProfileService`
 
@@ -288,7 +287,7 @@ Note 2026-06-01: API key service không triển khai rate limit. Service chỉ v
 - **`change_password` không revoke existing sessions** (line 225-255): user đổi password vẫn giữ session cũ. Đáng improve nếu muốn force re-login sau change password.
 
 ### Policy
-- **`ESSENTIAL_DNS_IPS` hardcoded** (line 123): Google + Cloudflare. Nếu blacklist các DNS này ở mạng nội bộ → agent stuck. Đáng configurable.
+- **DNS policy split**: server policy sync no longer injects public DNS. Agent firewall adds the machine's configured system DNS locally when applying rules.
 - **`get_effective_mode` auto-reset expired** (xem [models.md](models.md) `AgentPolicyModel.get_effective_mode`): side effect ẩn. Caller (`apply_policy_to_sync` line 164) gọi qua method này nên consistent - agent đang isolated mà expired → tự reset về none → agent sync nhận group base.
 
 ### Audit

@@ -35,4 +35,4 @@ cd agent
 pyinstaller saint_agent.spec --clean --noconfirm
 ```
 
-The expected bundle path is `dist/SAINT/SAINT.exe`.
+The expected one-file bundle path is `dist/SAINT.exe`.

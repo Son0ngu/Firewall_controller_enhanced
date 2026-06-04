@@ -103,7 +103,7 @@ python -m pytest tests/ -v
 | Agent B | hostname `SAINT-AGENT-B`, device_id `test-device-b` |
 | Domain allowed | `example.com`, `wikipedia.org` |
 | Pattern allowed | `*.edu.vn` |
-| IP allowed | `8.8.8.8` hoặc IP nội bộ test |
+| IP allowed | IP nội bộ test, ví dụ `192.168.1.10` |
 | Domain blocked | `facebook.com` hoặc domain ngoài whitelist |
 | API key permission | `agent_register`, `whitelist_sync`, `logs_write` |
 
@@ -586,7 +586,7 @@ Bước test:
 1. Login admin.
 2. POST `/api/whitelist` thêm `example.com` scope global.
 3. POST thêm `*.edu.vn` type pattern.
-4. POST thêm `8.8.8.8` type ip.
+4. POST thêm một IP nội bộ test, ví dụ `192.168.1.10`, type ip.
 5. GET `/api/whitelist`.
 
 Kết quả mong đợi:
@@ -1282,7 +1282,7 @@ Mức ưu tiên: `P0`
 
 Bước test:
 1. Start agent Admin.
-2. Kiểm tra file `profiles/backup.saint-snapshot.json`.
+2. Kiểm tra file `%LOCALAPPDATA%\SAINT\profiles\backup.saint-snapshot.json`.
 3. Stop agent.
 
 Kết quả mong đợi:
@@ -1613,7 +1613,7 @@ Mức ưu tiên: `P1`
 Bước test:
 1. `cd agent`.
 2. Chạy PyInstaller với `saint_agent.spec`.
-3. Mở `dist/SAINT/SAINT.exe`.
+3. Mở `dist/SAINT.exe`.
 4. Kiểm tra UAC admin prompt.
 5. Chạy smoke test GUI.
 

@@ -19,7 +19,7 @@
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
 | `IPDetector` | `class` | [ip_detector.py:13](../../../agent/utils/ip_detector.py#L13) | TTL 300s cho IP cache |
-| `.get_local_ip(force_refresh=False)` | `(bool) -> str` | [ip_detector.py:21](../../../agent/utils/ip_detector.py#L21) | 3 methods: ① UDP socket connect 8.8.8.8:80 + getsockname (best) ② `gethostname → gethostbyname` ③ `netifaces` iterate non-loopback/link-local. Fallback `127.0.0.1` |
+| `.get_local_ip(force_refresh=False)` | `(bool) -> str` | [ip_detector.py:21](../../../agent/utils/ip_detector.py#L21) | 3 methods: ① default IPv4 gateway/interface via `netifaces` ② `gethostname → gethostbyname` ③ `netifaces` iterate non-loopback/link-local. Fallback `127.0.0.1` |
 | `.get_admin_status(force_refresh=False)` | `(bool) -> bool` | [ip_detector.py:92](../../../agent/utils/ip_detector.py#L92) | Windows: `ctypes.windll.shell32.IsUserAnAdmin`. Linux/Mac: `os.geteuid() == 0`. **Cached vĩnh viễn** (admin status không đổi runtime) |
 | `.get_cache_debug_info()` | `() -> Dict` | [ip_detector.py:113](../../../agent/utils/ip_detector.py#L113) | cached_ip, last_check_iso, cache_age, ttl, cache_valid |
 | `get_local_ip(force_refresh=False)` | `(bool) -> str` | [ip_detector.py:128](../../../agent/utils/ip_detector.py#L128) | **Module-level** wrapper qua singleton `_ip_detector`. **Dùng cái này** thay vì tạo `IPDetector()` mới |
@@ -67,7 +67,7 @@
 ## Gotchas
 - **Singleton `_ip_detector` ở module level** (ip_detector.py:125): không reset được giữa các test. Nếu cần test, gọi `get_ip_detector().get_local_ip(force_refresh=True)`.
 - **Admin status cached VĨNH VIỄN** (ip_detector.py:93): nếu user mở agent không admin, sau đó relaunch as admin trong cùng process (hiếm), `_cached_admin_status` vẫn `False`. Process restart = fix. Hoặc `force_refresh=True`.
-- **Method 1 (UDP connect 8.8.8.8)** không thực sự gửi packet - chỉ `getsockname` sau khi connect. Nhưng cần đường ra Internet để OS chọn interface đúng. Mạng air-gapped → fall qua method 2/3.
+- **Method 1 (default gateway/interface)** không cần public DNS hay Internet; lấy IPv4 trên interface default của hệ thống. Nếu không có default gateway thì fall qua method 2/3.
 - **`netifaces` cần build native** (ip_detector.py:6): trên CI/dev có thể fail import. Method 3 sẽ bị skip silently - fallback method 2 hoặc localhost.
 - **`safe_execute` vs `critical_operation`**: hai pattern khác nhau. `safe_execute` swallow exception trả default. `critical_operation` re-raise. Đừng nhầm - dùng `safe_execute` khi caller có thể handle missing value, `critical_operation` khi caller MUỐN crash nếu fail.
 - **`retry_operation` import `sleep` ngầm** trong wrapper (error_handler.py:92): import-on-call → tránh circular. Hậu quả: lần retry đầu tiên có thêm 1ms import overhead. Vô hại.

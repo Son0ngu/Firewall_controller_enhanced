@@ -10,19 +10,17 @@ check needed).
 """
 
 import logging
-import subprocess
 import threading
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QObject, QTimer, Qt, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..components.data_table import DataTable
 from ..styles import (
-    ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE, ACCENT_RED, FG_PRIMARY,
-    FG_SECONDARY,
+    ACCENT_GREEN, ACCENT_ORANGE, FG_PRIMARY, FG_SECONDARY,
 )
 
 logger = logging.getLogger("gui_qt.firewall")
@@ -67,9 +65,9 @@ class FirewallView(QWidget):
 
     def _build_header(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        title = QLabel("🔥 Firewall Rules")
+        title = QLabel("Firewall Rules")
         title.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {ACCENT_BLUE};"
+            f"font-size: 24px; font-weight: bold; color: {FG_PRIMARY};"
         )
         layout.addWidget(title)
         layout.addStretch(1)
@@ -88,7 +86,7 @@ class FirewallView(QWidget):
         layout.setContentsMargins(20, 12, 20, 12)
         layout.setSpacing(30)
 
-        self._policy_label = QLabel("🛡 Policy: Loading...")
+        self._policy_label = QLabel("Policy: Loading...")
         self._policy_label.setStyleSheet(
             f"font-size: 14px; font-weight: bold; color: {FG_PRIMARY};"
         )
@@ -100,7 +98,7 @@ class FirewallView(QWidget):
         )
         layout.addWidget(self._rule_count_label)
 
-        self._mode_label = QLabel("⚙️ Mode: --")
+        self._mode_label = QLabel("Mode: --")
         self._mode_label.setStyleSheet(
             f"font-size: 14px; color: {FG_SECONDARY};"
         )
@@ -221,7 +219,7 @@ class FirewallView(QWidget):
             self._policy_label.setStyleSheet(
                 f"font-size: 14px; font-weight: bold; color: {ACCENT_ORANGE};"
             )
-        self._policy_label.setText(f"🛡 Policy: {policy_status}")
+        self._policy_label.setText(f"Policy: {policy_status}")
 
         # Counts
         self._rule_count_label.setText(f"Rules: {len(rules)}")
@@ -235,7 +233,7 @@ class FirewallView(QWidget):
             self._mode_label.setStyleSheet(
                 f"font-size: 14px; color: {FG_SECONDARY};"
             )
-        self._mode_label.setText(f"⚙️ Mode: {mode}")
+        self._mode_label.setText(f"Mode: {mode}")
 
         self._table.set_data(rules)
         self._status_label.setText(f"Loaded {len(rules)} rules")

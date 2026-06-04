@@ -74,6 +74,17 @@ class InitResult:
         return not self.has_failure()
 
 
+def _latest_component_status(
+    result: InitResult,
+    name: str,
+) -> Optional[ComponentStatus]:
+    """Return the latest recorded status for a lifecycle component."""
+    for component in reversed(result.components):
+        if component.name == name:
+            return component
+    return None
+
+
 @dataclass
 class LifecycleContext:
     """Mutable context passed to each lifecycle component."""
@@ -434,8 +445,8 @@ def _init_whitelist_manager(agent: AgentRuntime, config: Dict, result: InitResul
 
 def _init_whitelist_sync(agent: AgentRuntime, config: Dict, result: InitResult) -> None:
     """Step 2.5: do the initial whitelist sync *before* the firewall flips
-    Default Deny. If the sync fails (auth, server down) the firewall step
-    will still run, but we record DEGRADED so the user sees the warning."""
+    Default Deny. Firewall enforcement is allowed only after this step records
+    OK, so a bad URL/API key cannot create allow rules by itself."""
     if not config.get("whitelist", {}).get("auto_sync", True):
         result.record("whitelist_sync", STATUS_SKIPPED,
                       "auto_sync disabled in config")
@@ -446,13 +457,15 @@ def _init_whitelist_sync(agent: AgentRuntime, config: Dict, result: InitResult) 
         sync_success = agent.whitelist.sync_now()
         if sync_success:
             stats = agent.whitelist.get_stats()
-            domains = stats.get('domain_count', 0)
-            ips = stats.get('ip_count', 0)
+            domains = stats.get('domains_count', stats.get('domain_count', 0))
+            ips = stats.get('ips_count', stats.get('ip_count', 0))
             logger.info(f"Whitelist synced: {domains} domains, {ips} IPs")
             result.record("whitelist_sync", STATUS_OK,
                           f"{domains} domains, {ips} IPs")
         else:
-            logger.warning("Whitelist sync failed - firewall may block connections")
+            logger.warning(
+                "Whitelist sync failed - firewall enforcement will stay disabled"
+            )
             result.record("whitelist_sync", STATUS_DEGRADED,
                           "sync failed (auth or server unreachable)")
     except Exception as e:
@@ -475,6 +488,22 @@ def _init_firewall(agent: AgentRuntime, config: Dict, result: InitResult) -> Non
         logger.info("Step 3: Firewall disabled in config")
         result.record("firewall", STATUS_SKIPPED, "disabled in config")
         return
+
+    sync_status = _latest_component_status(result, "whitelist_sync")
+    if sync_status is None or sync_status.status != STATUS_OK:
+        detail = sync_status.detail if sync_status else "whitelist sync did not run"
+        logger.warning(
+            "Step 3: Firewall enforcement skipped because whitelist sync is "
+            "not ready: %s",
+            detail,
+        )
+        result.record(
+            "firewall",
+            STATUS_SKIPPED,
+            f"waiting for successful whitelist sync ({detail})",
+        )
+        return
+
     if not admin_status:
         logger.warning(
             "Step 3: Firewall requires administrator privileges - "
@@ -496,7 +525,7 @@ def _init_firewall(agent: AgentRuntime, config: Dict, result: InitResult) -> Non
             if success:
                 logger.info(message)
             else:
-                logger.warning("⚠️ WinPcap auto-install: %s", message)
+                logger.warning("WinPcap auto-install: %s", message)
                 logger.warning("Packet capture may not work without WinPcap/Npcap")
         else:
             logger.info("WinPcap/Npcap already installed")
@@ -541,10 +570,9 @@ def _init_firewall(agent: AgentRuntime, config: Dict, result: InitResult) -> Non
     if agent.whitelist and hasattr(agent.whitelist, "_state"):
         whitelist_ips = agent.whitelist._state.get_all_ips()
         whitelist_domains = agent.whitelist._state.get_all_domains()
-        whitelist_domains.update(agent.whitelist._state.get_all_patterns())
 
     logger.info(
-        "Whitelist data: %d IPs, %d domains/patterns",
+        "Whitelist data: %d IPs, %d exact domains",
         len(whitelist_ips), len(whitelist_domains),
     )
 
@@ -656,6 +684,18 @@ def _init_packet_sniffer(agent: AgentRuntime, config: Dict, result: InitResult) 
 
     logger.info("Step 7: Initializing packet sniffer...")
     try:
+        from capture.scapy_config import ensure_pcap_driver
+        if not ensure_pcap_driver():
+            logger.warning(
+                "Packet capture skipped - Npcap/WinPcap driver was not found"
+            )
+            result.record(
+                "packet_sniffer",
+                STATUS_SKIPPED,
+                "Npcap/WinPcap driver not installed",
+            )
+            return
+
         from capture import PacketSniffer
         from .handlers import create_domain_handler
 

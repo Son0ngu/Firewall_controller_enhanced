@@ -14,8 +14,41 @@ build (or test) may opt in to the localhost fallback explicitly.
 """
 
 from typing import Dict, Iterable, List, Optional
+from urllib.parse import urlparse, urlunparse
 
 DEV_DEFAULT_URL = "http://localhost:5000"
+KNOWN_UI_ROUTE_SEGMENTS = {"api-keys", "login", "dashboard", "settings"}
+
+
+def normalize_server_url(url: str) -> str:
+    """Normalize a user-entered controller URL to the API base URL.
+
+    Settings help text points users at ``/api-keys`` to create a key, so it is
+    natural for them to paste that whole browser URL into "Server URL". Runtime
+    components append their own API paths, so known UI routes are stripped.
+    Unknown paths are preserved because some deployments may mount SAINT under
+    a subpath, for example ``https://example.edu/saint``.
+    """
+    stripped = str(url or "").strip()
+    if not stripped:
+        return ""
+
+    parsed = urlparse(stripped)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return stripped.rstrip("/")
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    base_parts = path_parts
+    for idx, part in enumerate(path_parts):
+        if part.lower() in KNOWN_UI_ROUTE_SEGMENTS:
+            base_parts = path_parts[:idx]
+            break
+
+    normalized_path = "/" + "/".join(base_parts) if base_parts else ""
+
+    return urlunparse(
+        (parsed.scheme.lower(), parsed.netloc, normalized_path, "", "", "")
+    ).rstrip("/")
 
 
 def collect_server_urls(config: Optional[Dict], allow_dev_default: bool = False) -> List[str]:
@@ -46,7 +79,7 @@ def collect_server_urls(config: Optional[Dict], allow_dev_default: bool = False)
     seen = set()
     cleaned: List[str] = []
     for u in urls:
-        stripped = u.strip()
+        stripped = normalize_server_url(u)
         if not stripped or stripped in seen:
             continue
         seen.add(stripped)

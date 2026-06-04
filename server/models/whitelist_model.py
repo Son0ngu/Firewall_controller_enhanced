@@ -364,6 +364,8 @@ class WhitelistModel:
                 return self._validate_ip(value)
             elif entry_type == "url":
                 return self._validate_url(value)
+            elif entry_type == "pattern":
+                return self._validate_pattern(value)
             else:
                 return {"valid": False, "message": f"Unknown entry type: {entry_type}"}
                 
@@ -379,6 +381,21 @@ class WhitelistModel:
             return {"valid": True, "message": "Valid domain"}
         else:
             return {"valid": False, "message": "Invalid domain format"}
+
+    def _validate_pattern(self, pattern: str) -> Dict:
+        """Validate wildcard hostname pattern format."""
+        if not pattern or "/" in pattern or "?" in pattern or "#" in pattern:
+            return {"valid": False, "message": "Invalid pattern format"}
+        if "*" not in pattern:
+            return self._validate_domain(pattern)
+        labels = pattern.split(".")
+        if any("*" in label and label != "*" for label in labels):
+            return {"valid": False, "message": "Wildcard must occupy a full label"}
+        domain_candidate = ".".join("x" if label == "*" else label for label in labels)
+        result = self._validate_domain(domain_candidate)
+        if result["valid"]:
+            return {"valid": True, "message": "Valid pattern"}
+        return {"valid": False, "message": "Invalid pattern format"}
     
     def _validate_ip(self, ip: str) -> Dict:
         """Validate IP address format"""

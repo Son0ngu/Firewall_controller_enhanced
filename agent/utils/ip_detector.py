@@ -40,20 +40,27 @@ class IPDetector:
             age = cache_age(self._last_ip_check)
             logger.debug(f"IP cache miss: expired (age: {age:.1f}s > {self._ip_cache_ttl}s)")
         
-        # Method 1: Connect to external server (most reliable)
+        # Method 1: Use the OS default IPv4 gateway/interface. This avoids
+        # hardcoding any public resolver just to discover our local address.
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                local_ip = s.getsockname()[0]
-                
-                if local_ip and local_ip != "127.0.0.1":
-                    self._cached_local_ip = local_ip
-                    self._last_ip_check = current_time
-                    logger.debug(f"Detected local IP (method 1): {local_ip} at {now_iso()}")
-                    return local_ip
+            gateways = netifaces.gateways()
+            default_gateway = gateways.get("default", {}).get(netifaces.AF_INET)
+            if default_gateway:
+                _gateway_ip, interface = default_gateway[:2]
+                addresses = netifaces.ifaddresses(interface)
+                for addr in addresses.get(netifaces.AF_INET, []):
+                    local_ip = addr.get("addr")
+                    if local_ip and not local_ip.startswith(("127.", "169.254.")):
+                        self._cached_local_ip = local_ip
+                        self._last_ip_check = current_time
+                        logger.debug(
+                            f"Detected local IP (default interface): "
+                            f"{local_ip} at {now_iso()}"
+                        )
+                        return local_ip
         except Exception as e:
-            logger.debug(f"Method 1 failed: {e}")
-        
+            logger.debug(f"Default interface detection failed: {e}")
+
         # Method 2: Hostname resolution
         try:
             hostname = socket.gethostname()
@@ -62,10 +69,10 @@ class IPDetector:
             if local_ip and local_ip != "127.0.0.1":
                 self._cached_local_ip = local_ip
                 self._last_ip_check = current_time
-                logger.debug(f"Detected local IP (method 2): {local_ip} at {now_iso()}")
+                logger.debug(f"Detected local IP (hostname): {local_ip} at {now_iso()}")
                 return local_ip
         except Exception as e:
-            logger.debug(f"Method 2 failed: {e}")
+            logger.debug(f"Hostname IP detection failed: {e}")
         
         # Method 3: Network interfaces with netifaces
         try:
@@ -78,10 +85,10 @@ class IPDetector:
                         if not ip.startswith(('127.', '169.254.')):
                             self._cached_local_ip = ip
                             self._last_ip_check = current_time
-                            logger.debug(f"Detected local IP (method 3): {ip} at {now_iso()}")
+                            logger.debug(f"Detected local IP (interface scan): {ip} at {now_iso()}")
                             return ip
         except Exception as e:
-            logger.debug(f"Method 3 failed: {e}")
+            logger.debug(f"Interface scan IP detection failed: {e}")
         
         # Fallback
         logger.warning("Could not detect local IP, using localhost")
