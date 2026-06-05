@@ -554,14 +554,13 @@ class TestWhitelistService:
         assert "operation=update" in caplog.text
         assert f"group_id={gid}" in caplog.text
 
-    def test_delete_domain_accepts_real_embedded_object_id(self, whitelist_service, group_model):
+    def test_delete_entry_accepts_real_embedded_object_id(self, whitelist_service, group_model):
         group = create_group(group_model, "RealOid Delete Group", whitelist=[
             {"value": "real-oid-delete.com", "type": "domain"},
         ])
         entry_id = str(group["whitelist"][0]["_id"])
 
-        result = whitelist_service.delete_domain(entry_id)
-        assert result["success"] is True
+        assert whitelist_service.delete_entry(entry_id) is True
 
         updated_group = group_model.find_by_id(str(group["_id"]))
         values = [

@@ -866,7 +866,7 @@ class TestWhitelistControllerTeacherFiltering:
             {"_id": "d2", "value": "school.edu", "scope": "group", "group_id": "g1"},
             {"_id": "d3", "value": "other.com", "scope": "group", "group_id": "g99"},
         ]
-        service.get_all_domains.return_value = {"domains": all_domains, "total": 3}
+        service.get_all_entries.return_value = {"items": all_domains, "total": 3}
 
         with app.test_request_context('/api/whitelist?limit=100&offset=0'):
             g.current_user = teacher_user
@@ -899,7 +899,7 @@ class TestWhitelistControllerTeacherFiltering:
             {"_id": f"d{i}", "value": f"other{i}.com", "scope": "group", "group_id": "g99"}
             for i in range(4, 6)
         ]
-        service.get_all_domains.return_value = {"domains": all_domains, "total": 5}
+        service.get_all_entries.return_value = {"items": all_domains, "total": 5}
 
         # Request page 2 with limit=2
         with app.test_request_context('/api/whitelist?limit=2&offset=2'):

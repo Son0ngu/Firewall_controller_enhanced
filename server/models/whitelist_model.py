@@ -586,7 +586,8 @@ class WhitelistModel:
             search_term = filters["search"]
             query["$or"] = [
                 {"value": {"$regex": search_term, "$options": "i"}},
-                {"notes": {"$regex": search_term, "$options": "i"}}
+                {"category": {"$regex": search_term, "$options": "i"}},
+                {"notes": {"$regex": search_term, "$options": "i"}},
             ]
         
         # Default to active entries only

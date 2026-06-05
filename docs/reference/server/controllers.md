@@ -26,9 +26,9 @@ Blueprint mount vào Flask app với `url_prefix='/api'` ở `app.py`. Tổng 10
 | `GET`  | `/api/agents/debug/status` | `debug_status` | login | - | Debug snapshot — chỉ register khi `ENABLE_DEBUG_ENDPOINTS=True` (default `False`). Production: route không tồn tại → 404. |
 | `GET`  | `/api/agents/debug/direct` | `debug_direct_call` | login | - | Check reachable — cùng gate `ENABLE_DEBUG_ENDPOINTS`. |
 | `GET`  | `/api/whitelist/agent-sync` | `WhitelistController.agent_sync` | JWT | - | **Agent kéo whitelist** |
-| `GET`  | `/api/whitelist` | `list_domains` | login | teacher filtered (global+own groups) | List entries |
+| `GET`  | `/api/whitelist` | `list_domains` | login | teacher filtered (global+own groups) | List unified entries; response giữ `domains` alias cho UI cũ |
 | `POST` | `/api/whitelist` | `add_domain` | login | teacher: own group only | Add entry |
-| `DELETE` | `/api/whitelist/<domain_id>` | `delete_domain` | login | teacher ownership | Xoá entry |
+| `DELETE` | `/api/whitelist/<domain_id>` | `delete_domain` | login | teacher ownership | Compatibility route; internally calls `bulk_delete_entries([id])` |
 | `POST` | `/api/whitelist/import` | `import_domains` | login | teacher: cần group_id | Bulk import |
 | `GET`  | `/api/whitelist/export` | `export_domains` | login | - | Export JSON/TXT |
 | `GET`  | `/api/whitelist/statistics` | `get_statistics` | login | - | Stats |
@@ -113,9 +113,9 @@ Blueprint mount vào Flask app với `url_prefix='/api'` ở `app.py`. Tổng 10
 
 **Handlers**:
 - `agent_sync()` - GET `?since=&agent_id=&global_version=&group_version=&policy_mode=`. JWT auth. Trả format full hoặc versioned
-- `list_domains()` - GET `?agent_id=&group_id=&limit=&offset=&search=`. Scoped khi có agent_id/group_id; otherwise full + paginated. Teacher: fetch all → filter Python → paginate (line 184-208)
+- `list_domains()` - GET `?agent_id=&group_id=&limit=&offset=&search=`. Scoped khi có agent_id/group_id; otherwise calls unified `get_all_entries(...)` + paginated. Teacher: fetch all → filter Python → paginate.
 - `add_domain()` - POST. Teacher block `scope=global` không có `group_id`. Emit `whitelist_updated`
-- `delete_domain(domain_id)` - DELETE. Teacher block global entries (line 282-293)
+- `delete_domain(domain_id)` - DELETE compatibility handler. Teacher block global entries; delete path uses unified bulk entry delete.
 - `import_domains()` - POST `{domains: [...], category, group_id}`. Teacher require `group_id`
 - `export_domains()` - GET `?format=json|txt&category=`. Teacher OK xem (whitelist:read), không có log export gate
 - `get_statistics()` - GET

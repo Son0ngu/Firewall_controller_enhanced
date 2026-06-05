@@ -168,7 +168,7 @@ class WhitelistController:
     # ========================================================================
 
     def list_domains(self):
-        """List all whitelist domains - vietnam ONLY"""
+        """List whitelist entries through the unified entry API."""
         try:
             agent_id = request.args.get('agent_id')
             group_id = request.args.get('group_id')
@@ -195,9 +195,14 @@ class WhitelistController:
             if is_teacher:
                 teacher_group_ids = self.rbac_service.get_teacher_group_ids(user)
                 if teacher_group_ids is not None:
-                    # Fetch all domains (no pagination at DB level)
-                    all_result = self.service.get_all_domains(10000, 0, search)
-                    all_domains = all_result.get("domains", []) if isinstance(all_result, dict) else []
+                    # Fetch all entries (no pagination at DB level) before
+                    # teacher-scope filtering.
+                    filters = {"search": search} if search else None
+                    all_result = self.service.get_all_entries(filters)
+                    all_domains = (
+                        all_result.get("items")
+                        or all_result.get("domains", [])
+                    ) if isinstance(all_result, dict) else []
 
                     # Filter: teacher sees global + their groups
                     filtered = []
@@ -212,14 +217,18 @@ class WhitelistController:
                     paginated = filtered[offset:offset + limit]
                     result = {
                         "success": True,
+                        "items": paginated,
                         "domains": paginated,
                         "total": total,
+                        "limit": limit,
+                        "offset": offset,
                         "timestamp": now_iso(),
                     }
                     return jsonify(result), 200
 
-            # Admin / Agent: normal service call
-            result = self.service.get_all_domains(limit, offset, search)
+            # Admin: unified entry list with legacy-compatible `domains`.
+            filters = {"search": search} if search else None
+            result = self.service.get_all_entries(filters, limit=limit, offset=offset)
 
             if isinstance(result, dict):
                 result["timestamp"] = now_iso()
@@ -293,7 +302,23 @@ class WhitelistController:
                 if not allowed:
                     return self._error_response(error, 403)
 
-            result = self.service.delete_domain(domain_id)
+            result = self.service.bulk_delete_entries([domain_id])
+            deleted_count = int(result.get("deleted_count", 0) or 0)
+            if deleted_count > 0:
+                result = {
+                    **result,
+                    "success": True,
+                    "entry_id": domain_id,
+                    "message": "Item removed successfully",
+                }
+            else:
+                errors = result.get("errors") or []
+                result = {
+                    **result,
+                    "success": False,
+                    "error": errors[0] if errors else "Entry not found",
+                    "entry_id": domain_id,
+                }
 
             if self.socketio and result.get('success'):
                 self.socketio.emit('whitelist_updated', {

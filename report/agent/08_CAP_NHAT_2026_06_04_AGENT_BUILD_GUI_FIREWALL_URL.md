@@ -521,3 +521,34 @@ Build note:
 
 - PyInstaller van in warning Scapy/WinPcap trong luc collect dependency neu pcap service khong chay/quyen khong du; runtime da co lifecycle preflight de skip packet sniffer ro rang khi thieu Npcap/WinPcap.
 - `dist\profiles\backup.saint-snapshot.json` neu con ton tai la snapshot legacy cu tu lan chay truoc, khong phai DLL/runtime folder cua PyInstaller. Ban moi ghi snapshot mac dinh vao `%LOCALAPPDATA%\SAINT\profiles\backup.saint-snapshot.json` va restore van fallback duoc file legacy.
+
+## 16. Whitelist legacy domain service cleanup
+
+Nguoi dung hoi co the xoa `WhitelistService.get_all_domains()` va
+`WhitelistService.delete_domain()` khong. Ket qua trace:
+
+- Frontend `server/views/static/js/whitelist.js` dang goi route
+  `/api/whitelist` va `DELETE /api/whitelist/<id>`, khong goi truc tiep
+  service method.
+- Route `/api/whitelist` van can giu de tuong thich UI, nhung ben trong da
+  migrate sang unified entry API.
+- `WhitelistService.get_all_domains()` va `WhitelistService.delete_domain()`
+  da duoc xoa.
+
+Fix chinh:
+
+- `server/controllers/whitelist_controller.py::list_domains` goi
+  `service.get_all_entries(filters, limit, offset)`.
+- `server/controllers/whitelist_controller.py::delete_domain` goi
+  `service.bulk_delete_entries([domain_id])`.
+- `server/services/whitelist_service.py::get_all_entries` them pagination va
+  tra ca `items` lan `domains` de frontend cu van doc duoc.
+- `server/models/whitelist_model.py::build_query_from_filters` search them
+  `category`.
+- Update tests khong mock/goi 2 method legacy nua.
+
+Verification:
+
+```text
+targeted whitelist/controller tests: 50 passed
+```

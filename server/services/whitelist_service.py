@@ -177,13 +177,21 @@ class WhitelistService:
 
         return True, None
     
-    def get_all_entries(self, filters: Dict = None) -> Dict:
+    def get_all_entries(
+        self,
+        filters: Dict = None,
+        limit: int = None,
+        offset: int = 0,
+    ) -> Dict:
         """Get all whitelist entries with optional filtering - vietnam ONLY"""
         query = {}
         if filters:
             query = self.model.build_query_from_filters(filters)
         
         entries = self.model.find_all_entries(query)
+        total_count = len(entries)
+        if limit is not None:
+            entries = entries[offset:offset + limit]
         
         # Format entries for response
         formatted_entries = []
@@ -223,8 +231,12 @@ class WhitelistService:
             formatted_entries.append(formatted_entry)
         
         return {
+            "items": formatted_entries,
             "domains": formatted_entries,
             "success": True,
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
             "server_time": now_iso()
         }
     
@@ -1455,48 +1467,6 @@ class WhitelistService:
 
     # sync_for_agent removed - dead code, replaced by get_agent_sync_data()
 
-    def get_all_domains(self, limit: int = 100, offset: int = 0, search: str = None) -> Dict:
-        """Get all domains with pagination — vietnam ONLY.
-
-        Deprecated: prefer :meth:`list_entries` which honours scope/group/type
-        filters and returns the unified entry shape.
-        """
-        _warn_legacy_domain_api("get_all_domains")
-        try:
-            # Build query
-            query = {}
-            if search:
-                query["$or"] = [
-                    {"value": {"$regex": search, "$options": "i"}},
-                    {"category": {"$regex": search, "$options": "i"}}
-                ]
-            
-            # Get domains
-            domains = self.model.find_all_entries(query)
-            
-            # Apply pagination
-            total_count = len(domains)
-            paginated_domains = domains[offset:offset + limit]
-            
-            return {
-                "success": True,
-                "domains": paginated_domains,
-                "total": total_count,
-                "limit": limit,
-                "offset": offset,
-                "server_time": now_iso()  # vietnam ISO
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error getting all domains: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "domains": [],
-                "total": 0,
-                "server_time": now_iso()  # vietnam ISO
-            }
-    
     def add_domain(self, domain_value: str, category: str = "general") -> Dict:
         """Add new domain to whitelist — vietnam ONLY.
 
@@ -1547,73 +1517,6 @@ class WhitelistService:
             
         except Exception as e:
             self.logger.error(f"Error adding domain {domain_value}: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "server_time": now_iso()  # vietnam ISO
-            }
-    
-    def delete_domain(self, domain_id: str) -> Dict:
-        """Delete domain from whitelist — supports global entries AND group pseudo-IDs.
-
-        Deprecated: prefer :meth:`delete_entry` / :meth:`bulk_delete_entries`.
-        """
-        _warn_legacy_domain_api("delete_domain")
-        try:
-            ref = parse_group_pseudo_id(domain_id)
-            if ref is not None:
-                _log_legacy_group_pseudo_id_usage(
-                    "delete_domain", ref, domain_id
-                )
-                if self._delete_group_entry(ref.group_id, ref.value, ref.entry_type):
-                    return {
-                        "success": True,
-                        "domain_id": domain_id,
-                        "domain_value": ref.value,
-                        "server_time": now_iso(),
-                    }
-                return {
-                    "success": False,
-                    "error": "Entry not found in group",
-                    "server_time": now_iso(),
-                }
-            if is_group_pseudo_id(domain_id):
-                # Prefix matched but parsing failed → bad ID shape.
-                return {
-                    "success": False,
-                    "error": "Invalid group pseudo-ID format",
-                    "server_time": now_iso(),
-                }
-
-            # Global entry or real embedded ObjectId. Route through the
-            # canonical unified delete path so legacy callers are not stuck
-            # on pseudo-IDs during the rollout.
-            existing = self.model.find_entry_by_id(domain_id)
-            try:
-                success = self.delete_entry(domain_id)
-            except ValueError:
-                return {
-                    "success": False,
-                    "error": "Domain not found",
-                    "server_time": now_iso()
-                }
-
-            if success:
-                return {
-                    "success": True,
-                    "domain_id": domain_id,
-                    "domain_value": existing.get("value") if existing else None,
-                    "server_time": now_iso()
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Failed to delete domain",
-                    "server_time": now_iso()
-                }
-                
-        except Exception as e:
-            self.logger.error(f"Error deleting domain {domain_id}: {e}")
             return {
                 "success": False,
                 "error": str(e),
