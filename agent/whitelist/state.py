@@ -104,6 +104,26 @@ class WhitelistState:
                     self._group_id = new_group_id
                     return False
 
+                # Anti-wipe guard: nếu server trả empty trong khi cache đang có data
+                # và không có group_changed, đây gần như chắc chắn là race condition
+                # giữa các lần sync trong giai đoạn init (manager.start_sync() gọi
+                # sync_now() lần thứ 2 ngay sau lifecycle Step 2.5). Giữ cache để
+                # firewall/GUI không bị mất rule, vẫn cập nhật version để không loop.
+                prev_total = len(self._domains) + len(self._patterns) + len(self._ips)
+                new_total = len(new_domains) + len(new_patterns) + len(new_ips)
+                if prev_total > 0 and new_total == 0 and not group_changed:
+                    logger.warning(
+                        "Server returned empty whitelist while %d entries cached "
+                        "(domains=%d, patterns=%d, ips=%d); keeping cached state "
+                        "(suspected race condition during sync). "
+                        "Set group_changed or call clear() explicitly to wipe.",
+                        prev_total, len(self._domains), len(self._patterns), len(self._ips),
+                    )
+                    self._version = str(data.get("global_version", data.get("version", self._version)))
+                    self._group_version = str(data.get("group_version", self._group_version))
+                    self._group_id = new_group_id
+                    return False
+
                 self._domains = new_domains
                 self._patterns = new_patterns
                 self._ips = new_ips

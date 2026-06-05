@@ -400,7 +400,8 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `AgentController` | `set_root(self, root)` | *(Tkinter-era API; không còn dùng ở Qt port - Qt frontend dùng `QtSignalBridge` để drain queue thay thế.)* | `agent/controllers/agent_controller.py` |
 | `AgentController` | `start_agent(self)` | Start agent in background thread. | `agent/controllers/agent_controller.py:165` |
 | `AgentController` | `stop_agent(self)` | Xử lý request/UI action, validate input và điều phối service/component tương ứng. | `agent/controllers/agent_controller.py:191` |
-| `AgentController` | `_agent_worker(self)` | Worker thread: gọi `initialize_components(InitResult)`, vào main loop 1s/tick. Mỗi tick gọi `_update_stats` rồi emit `stats_updated` **chỉ khi snapshot khác lần trước** (diff-emit). Payload kèm `is_registered` + `firewall_enabled` để dashboard không phải pull. | `agent/controllers/agent_controller.py` |
+| `AgentController` | `_agent_worker(self)` | Worker thread: gắn `_on_whitelist_ready` callback lên runtime (để lifecycle wire GUI sớm — thêm 2026-06-05), gọi `initialize_components(InitResult)`, vào main loop 1s/tick. Mỗi tick gọi `_update_stats` rồi emit `stats_updated` **chỉ khi snapshot khác lần trước** (diff-emit). Payload kèm `is_registered` + `firewall_enabled` để dashboard không phải pull. | `agent/controllers/agent_controller.py` |
+| `AgentController` | `_on_whitelist_ready(self, manager)` | Callback do `lifecycle._init_whitelist_sync` gọi ngay sau Step 2.5 — wire `WhitelistController().set_whitelist_manager(manager)` để GUI Whitelist tab populate sớm thay vì đợi đủ 7 step (~1-3 phút). Idempotent: controller là singleton, block fallback ở cuối `_agent_worker` vẫn chạy an toàn. | `agent/controllers/agent_controller.py:490` |
 | `AgentController` | `_update_stats(self)` | Update internal statistics. | `agent/controllers/agent_controller.py:319` |
 | `AgentController` | `get_agent_info(self)` | Get current agent information. | `agent/controllers/agent_controller.py:349` |
 | `AgentController` | `get_stats(self)` | Get current agent statistics. | `agent/controllers/agent_controller.py:372` |
@@ -797,7 +798,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | --- | --- | --- | --- |
 | `WhitelistState` | `__init__(self)` | Hàm hỗ trợ nghiệp vụ trong module tương ứng. | `agent/whitelist/state.py:13` |
 | `WhitelistState` | `_parse_entries(self, data)` | Parse domains/ips from server response into sets. | `agent/whitelist/state.py:27` |
-| `WhitelistState` | `update(self, data)` | Hàm hỗ trợ nghiệp vụ trong module tương ứng. | `agent/whitelist/state.py:65` |
+| `WhitelistState` | `update(self, data)` | Áp dụng response sync từ Server vào state. Short-circuit khi `up_to_date=true` hoặc khi parsed mới = current. **Anti-wipe guard** (thêm 2026-06-05): nếu `prev_total>0`, `new_total==0`, và `not group_changed` → giữ cache + log warning + cập nhật version bookkeeping, return False — tránh race condition giữa initial sync (Step 2.5) và periodic sync (Step 4) làm wipe state đã populated. | `agent/whitelist/state.py:65` |
 | `WhitelistState` | `_calculate_checksum(self)` | Calculate checksum of current state. | `agent/whitelist/state.py:124` |
 | `WhitelistState` | `is_domain_allowed(self, domain)` | Hàm hỗ trợ nghiệp vụ trong module tương ứng. | `agent/whitelist/state.py:133` |
 | `WhitelistState` | `is_ip_allowed(self, ip)` | Check if IP is in whitelist. | `agent/whitelist/state.py:157` |

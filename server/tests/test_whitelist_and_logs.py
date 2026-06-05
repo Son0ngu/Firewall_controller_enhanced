@@ -419,6 +419,70 @@ class TestWhitelistService:
         assert result["success"] is True
         assert len(result["domains"]) >= 1
 
+    def test_management_list_all_groups_includes_global_and_group(
+        self, whitelist_service_with_entries, group_model
+    ):
+        group = create_group(group_model, "Management All", whitelist=[])
+        gid = str(group["_id"])
+        whitelist_service_with_entries.add_entry(
+            {"value": "mgmt-global.com", "type": "domain", "scope": "global"},
+            "127.0.0.1",
+        )
+        whitelist_service_with_entries.add_entry(
+            {"value": "mgmt-group.com", "type": "domain", "scope": "group", "group_id": gid},
+            "127.0.0.1",
+        )
+
+        result = whitelist_service_with_entries.get_all_entries({"status": "all"})
+        values = {entry["value"] for entry in result["items"]}
+
+        assert "mgmt-global.com" in values
+        assert "mgmt-group.com" in values
+
+    def test_management_group_filter_excludes_global(
+        self, whitelist_service_with_entries, group_model
+    ):
+        group = create_group(group_model, "Management Group Filter", whitelist=[])
+        gid = str(group["_id"])
+        whitelist_service_with_entries.add_entry(
+            {"value": "only-global.com", "type": "domain", "scope": "global"},
+            "127.0.0.1",
+        )
+        whitelist_service_with_entries.add_entry(
+            {"value": "only-group.com", "type": "domain", "scope": "group", "group_id": gid},
+            "127.0.0.1",
+        )
+
+        result = whitelist_service_with_entries.get_all_entries({"group_id": gid})
+        values = {entry["value"] for entry in result["items"]}
+
+        assert values == {"only-group.com"}
+
+    def test_management_inactive_filter_and_sync_exclusion(
+        self, whitelist_service_with_entries, group_model, agent_model
+    ):
+        group = create_group(group_model, "Inactive Group", whitelist=[])
+        gid = str(group["_id"])
+        whitelist_service_with_entries.add_entry(
+            {
+                "value": "inactive-group.com",
+                "type": "domain",
+                "scope": "group",
+                "group_id": gid,
+                "is_active": False,
+            },
+            "127.0.0.1",
+        )
+        agent = insert_agent(agent_model, gid, hostname="InactiveSyncPC")
+
+        inactive = whitelist_service_with_entries.get_all_entries({"status": "inactive"})
+        values = {entry["value"] for entry in inactive["items"]}
+        sync = whitelist_service_with_entries.get_agent_sync_data(agent_id=agent["agent_id"])
+        sync_values = {entry["value"] for entry in sync["domains"]}
+
+        assert "inactive-group.com" in values
+        assert "inactive-group.com" not in sync_values
+
     def test_delete_entry_via_service(self, whitelist_service):
         result = whitelist_service.add_entry({"value": "del-svc.com", "type": "domain"}, "127.0.0.1")
         entry_id = result["id"]
@@ -1345,7 +1409,7 @@ class TestLogController:
 # ============================================================================
 
 class TestRBACWhitelistTeacher:
-    """Teacher cannot add/delete global whitelist, can only access own groups."""
+    """Teacher can read whitelist but cannot modify group/global whitelist entries."""
 
     @pytest.fixture
     def app(self, whitelist_model, whitelist_service, rbac_service, group_model):
@@ -1379,7 +1443,7 @@ class TestRBACWhitelistTeacher:
                 })
                 assert resp.status_code == 403
 
-    def test_teacher_can_add_to_own_group(self, app, group_model):
+    def test_teacher_cannot_add_to_own_group(self, app, group_model):
         teacher = make_teacher()
         group = create_group(group_model, "My Teacher Group", created_by=teacher["_id"])
         gid = str(group["_id"])
@@ -1390,8 +1454,7 @@ class TestRBACWhitelistTeacher:
                     "value": f"own-{uuid.uuid4().hex[:6]}.com", "type": "domain",
                     "scope": "group", "group_id": gid,
                 })
-                # Should succeed (201) or at least not 403
-                assert resp.status_code != 403
+                assert resp.status_code == 403
 
     def test_teacher_cannot_delete_global(self, app, whitelist_model):
         entry_id = whitelist_model.insert_entry({"value": "nodelete.com", "type": "domain", "scope": "global"})

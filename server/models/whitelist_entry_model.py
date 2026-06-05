@@ -17,6 +17,18 @@ from pymongo.database import Database
 from time_utils import now_vietnam, parse_agent_timestamp, to_vietnam
 
 
+def _coerce_active(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off", "inactive"}
+    return bool(value)
+
+
 class WhitelistEntryModel:
     """Repository for ``whitelist_entries`` collection."""
 
@@ -50,6 +62,7 @@ class WhitelistEntryModel:
         entry.setdefault("category", "uncategorized")
         entry.setdefault("priority", "normal")
         entry.setdefault("is_active", True)
+        entry["is_active"] = _coerce_active(entry.get("is_active"), default=True)
         entry.setdefault("created_at", now)
         entry.setdefault("added_date", now)
         entry["updated_at"] = entry.get("updated_at") or now
@@ -98,6 +111,15 @@ class WhitelistEntryModel:
         result = self.collection.insert_many(normalised)
         return [str(inserted_id) for inserted_id in result.inserted_ids]
 
+    def list_entries(self, group_id: str = None, include_inactive: bool = True) -> List[Dict]:
+        query = {"scope": "group"}
+        if group_id:
+            query["group_id"] = str(group_id)
+        if not include_inactive:
+            query["is_active"] = True
+        cursor = self.collection.find(query).sort("added_date", ASCENDING)
+        return [self._serialise(entry) for entry in cursor]
+
     def list_group_entries(self, group_id: str, include_inactive: bool = True) -> List[Dict]:
         query = {"scope": "group", "group_id": str(group_id)}
         if not include_inactive:
@@ -144,11 +166,13 @@ class WhitelistEntryModel:
             payload = {**(update_data or {}), "updated_at": now_vietnam()}
             if payload.get("value"):
                 payload["value"] = str(payload["value"]).strip().lower()
+            if "is_active" in payload:
+                payload["is_active"] = _coerce_active(payload.get("is_active"), default=True)
             result = self.collection.update_one(
                 {"_id": ObjectId(entry_id)},
                 {"$set": payload},
             )
-            return result.modified_count > 0
+            return result.matched_count > 0
         except Exception as exc:
             self.logger.error(f"Error updating whitelist entry {entry_id}: {exc}")
             return False

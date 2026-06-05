@@ -710,7 +710,7 @@ class TestGroupController:
         assert resp.status_code == 200
         assert resp.get_json()["data"]["name"] == "UpdAdminNew"
 
-    def test_controller_update_group_teacher_own(self, app, client, group_model, teacher_a):
+    def test_controller_update_group_teacher_own_forbidden(self, app, client, group_model, teacher_a):
         """Teacher update group mình tạo - OK."""
         created = group_model.create_group("UpdTeacher", "", [], created_by=TEACHER_A_ID)
         gid = str(created["_id"])
@@ -718,7 +718,7 @@ class TestGroupController:
         with self._mock_auth(teacher_a):
             resp = client.patch(f'/api/groups/{gid}', json={"description": "updated"})
 
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     def test_controller_update_group_teacher_forbidden(self, app, client, group_model, teacher_a):
         """Teacher update group của teacher khác - 403."""
@@ -743,7 +743,7 @@ class TestGroupController:
         assert resp.status_code == 200
         assert resp.get_json()["success"] is True
 
-    def test_controller_delete_group_teacher_own(self, app, client, group_model, teacher_a):
+    def test_controller_delete_group_teacher_own_forbidden(self, app, client, group_model, teacher_a):
         """Teacher xóa group mình tạo - OK."""
         created = group_model.create_group("DelTeacher", "", [], created_by=TEACHER_A_ID)
         gid = str(created["_id"])
@@ -751,7 +751,7 @@ class TestGroupController:
         with self._mock_auth(teacher_a):
             resp = client.delete(f'/api/groups/{gid}')
 
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     def test_controller_delete_group_teacher_forbidden(self, app, client, group_model, teacher_a):
         """Teacher xóa group của teacher khác - 403."""

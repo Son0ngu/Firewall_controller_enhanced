@@ -30,9 +30,9 @@ class GroupController:
         self.blueprint.add_url_rule('/groups/<group_id>', 'get_group',
             require_login(self.get_group), methods=['GET'])
         self.blueprint.add_url_rule('/groups/<group_id>', 'update_group',
-            require_login(self.update_group), methods=['PATCH'])
+            require_login(require_admin(self.update_group)), methods=['PATCH'])
         self.blueprint.add_url_rule('/groups/<group_id>', 'delete_group',
-            require_login(self.delete_group), methods=['DELETE'])
+            require_login(require_admin(self.delete_group)), methods=['DELETE'])
         # Admin-only: assign teachers to group
         self.blueprint.add_url_rule('/groups/<group_id>/teachers', 'set_teachers',
             require_login(require_admin(self.set_teachers)), methods=['POST'])
@@ -99,12 +99,11 @@ class GroupController:
 
     def update_group(self, group_id: str):
         try:
-            # Teacher ownership check before update
+            # Group management is admin-only. Teachers use whitelist profiles
+            # for lesson-specific rules and cannot mutate group policy.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                group = self.service.get_group(group_id)
-                if not self.rbac_service.can_access_group(user, group):
-                    return jsonify({"success": False, "error": "No permission for this Group"}), 403
+                return jsonify({"success": False, "error": "Admin access only"}), 403
 
             data = request.get_json() or {}
             updated = self.service.update_group(group_id, data)
@@ -117,12 +116,11 @@ class GroupController:
 
     def delete_group(self, group_id: str):
         try:
-            # Teacher ownership check before delete
+            # Group management is admin-only. Teachers use whitelist profiles
+            # for lesson-specific rules and cannot mutate group policy.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                group = self.service.get_group(group_id)
-                if not self.rbac_service.can_access_group(user, group):
-                    return jsonify({"success": False, "error": "No permission for this Group"}), 403
+                return jsonify({"success": False, "error": "Admin access only"}), 403
 
             self.service.delete_group(group_id)
             return jsonify({"success": True, "message": "Group deleted"}), 200

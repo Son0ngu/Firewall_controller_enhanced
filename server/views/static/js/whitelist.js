@@ -152,6 +152,12 @@ function refreshBulkActionsUI() {
     if (deleteBtn) {
         deleteBtn.disabled = !hasSelection;
     }
+    ['bulkActivateBtn', 'bulkDeactivateBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.disabled = !hasSelection;
+        }
+    });
 }
 
 async function bulkDeleteItems() {
@@ -186,21 +192,66 @@ async function bulkDeleteItems() {
     }
 }
 
+async function setItemsActive(itemIds, active) {
+    if (!itemIds || itemIds.length === 0) {
+        notify('warning', 'Select at least one item first.');
+        return;
+    }
+
+    const actionButtons = document.querySelectorAll('#bulkActions button, .btn-action');
+    actionButtons.forEach(btn => btn.disabled = true);
+
+    try {
+        const result = assertNoServerError(
+            await SaintAPI.post('/api/whitelist/bulk-update', {
+                item_ids: itemIds,
+                is_active: active,
+            })
+        );
+        const updated = result.updated_count ?? itemIds.length;
+        showSuccess(`${updated} item(s) ${active ? 'activated' : 'deactivated'} successfully.`);
+        selectedItems.clear();
+        await loadItems();
+    } catch (error) {
+        showError(`Failed to ${active ? 'activate' : 'deactivate'} item(s): ` + error.message);
+    } finally {
+        actionButtons.forEach(btn => btn.disabled = false);
+        refreshBulkActionsUI();
+    }
+}
+
+async function bulkSetItemsActive(active) {
+    if (selectedItems.size === 0) {
+        notify('warning', 'Select items before changing status.');
+        return;
+    }
+    await setItemsActive(Array.from(selectedItems), active);
+}
+
 /**
  * Load items from API with better error handling
  */
 async function loadItems() {
     try {
         SaintLog.debug(' Loading whitelist items...');
-        const query = selectedGroupId ? `?group_id=${selectedGroupId}` : '';
+        const params = new URLSearchParams();
+        const search = document.getElementById('item-search')?.value?.trim();
+        const type = document.getElementById('type-filter')?.value;
+        const status = document.getElementById('status-filter')?.value;
+        const groupFilter = document.getElementById('group-filter')?.value || selectedGroupId;
+
+        if (search) params.set('search', search);
+        if (type) params.set('type', type);
+        if (status) params.set('status', status);
+        if (groupFilter) params.set('group_id', groupFilter);
+
+        const query = params.toString() ? `?${params.toString()}` : '';
         const data = assertNoServerError(await SaintAPI.get(`/api/whitelist${query}`));
 
         // Server hands back several response shapes depending on the
         // endpoint variant — merge/domains/items/whitelist or a bare array.
         // Keep the same tolerance as the previous hand-rolled fetch.
-        if (selectedGroupId && data.merged && Array.isArray(data.merged)) {
-            itemsData = data.merged;
-        } else if (data.domains && Array.isArray(data.domains)) {
+        if (data.domains && Array.isArray(data.domains)) {
             itemsData = data.domains;
         } else if (data.items && Array.isArray(data.items)) {
             itemsData = data.items;
@@ -234,7 +285,7 @@ async function loadItems() {
  */
 function updateStatistics() {
     const total = itemsData.length;
-    const active = itemsData.filter(item => item.active !== false).length;
+    const active = itemsData.filter(item => item.active !== false && item.is_active !== false).length;
     const domains = itemsData.filter(item => (item.type || 'domain') === 'domain').length;
     const ips = itemsData.filter(item => item.type === 'ip').length;
     
@@ -252,12 +303,13 @@ function renderItems(items) {
     const container = document.getElementById('itemsContainer');
 
     if (items.length === 0) {
+        const isTeacherReadOnly = window.SAINT_AUTH && window.SAINT_AUTH.isTeacher && !isProfileEditMode;
         container.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-list"></i>
                 <h5 class="fw-bold">No Items in Whitelist</h5>
-                <p>Start by adding trusted domains, IPs, URLs, or other resources.</p>
-                <div class="d-flex justify-content-center gap-2 flex-wrap">
+                <p>${isTeacherReadOnly ? 'No whitelist items match the current filters.' : 'Start by adding trusted domains, IPs, URLs, or other resources.'}</p>
+                <div class="d-flex justify-content-center gap-2 flex-wrap" ${isTeacherReadOnly ? 'style="display:none !important;"' : ''}>
                     <button class="btn btn-success btn-sm" data-type="domain">
                         <i class="fas fa-globe me-1"></i>Add Domain
                     </button>
@@ -303,6 +355,7 @@ function renderItems(items) {
             { class: 'active', text: 'Active', icon: 'check-circle' } :
             { class: 'inactive', text: 'Inactive', icon: 'times-circle' };
         const typeConfig = typeConfigs[itemType] || typeConfigs.domain;
+        const isTeacherReadOnly = window.SAINT_AUTH && window.SAINT_AUTH.isTeacher && !isProfileEditMode;
         
         // FIX: Better date handling - check multiple date fields
         let created = '';
@@ -338,7 +391,7 @@ function renderItems(items) {
                 <div class="col-md-1">
                     <div class="form-check">
                         <input class="form-check-input item-checkbox" type="checkbox" 
-                               value="${itemId}" ${!itemId ? 'disabled' : ''}>
+                               value="${itemId}" ${!itemId || isTeacherReadOnly ? 'disabled' : ''}>
                     </div>
                 </div>
                 <div class="col-md-7">
@@ -389,10 +442,20 @@ function renderItems(items) {
                 <div class="col-md-4 text-end">
                     ${(() => {
                         // Teacher in read-only mode (no profile selected): hide remove buttons
-                        const isTeacher = window.SAINT_AUTH && window.SAINT_AUTH.isTeacher;
-                        if (isTeacher && !isProfileEditMode) return '';
+                        if (isTeacherReadOnly) return '';
+                        const statusAction = isActive ? 'deactivate' : 'activate';
+                        const statusLabel = isActive ? 'Deactivate' : 'Activate';
+                        const statusClass = isActive ? 'btn-outline-warning' : 'btn-outline-success';
                         return `
                         <div class="btn-group btn-group-sm">
+                            <button class="btn ${statusClass} btn-action"
+                                    data-action="${statusAction}"
+                                    data-item-id="${itemId}"
+                                    title="${statusLabel} this item"
+                                    ${!itemId ? 'disabled' : ''}>
+                                <i class="fas fa-power-off me-1"></i>
+                                <span>${statusLabel}</span>
+                            </button>
                             <button class="btn btn-outline-danger btn-action"
                                     data-action="remove"
                                     data-item-id="${itemId}"
@@ -443,6 +506,10 @@ async function handleItemAction(event) {
 
     if (action === 'remove') {
         await removeItem(itemId, groupId, scope, itemType, itemValue);
+    } else if (action === 'activate') {
+        await setItemsActive([itemId], true);
+    } else if (action === 'deactivate') {
+        await setItemsActive([itemId], false);
     }
 }
 
@@ -451,29 +518,14 @@ async function handleItemAction(event) {
  */
 async function removeItem(itemId, groupId = '', scope = 'global', itemType = '', itemValue = '') {
     if (!confirm('Are you sure you want to remove this item?')) return;
-    
-    // FIX: If scope is 'group', remove from group whitelist
-    if (scope === 'group' && groupId) {
-        try {
-            SaintLog.debug('Removing group item:', { groupId, itemType, itemValue });
-            await removeGroupItem(groupId, itemType, itemValue);
-            showSuccess('Item removed from group whitelist');
-            await Promise.all([loadGroups(), loadItems()]);
-        } catch (error) {
-            console.error('Error removing group item:', error);
-            showError('Failed to remove group item: ' + error.message);
-        }
-        return;
-    }
 
-    // FIX: For global items, must have valid ID
     if (!itemId) {
         showError('Cannot remove item: Missing ID');
         return;
     }
 
     try {
-        SaintLog.debug('Removing global item:', itemId);
+        SaintLog.debug('Removing item:', { itemId, groupId, scope, itemType, itemValue });
 
         let result;
         try {
@@ -498,50 +550,14 @@ async function removeItem(itemId, groupId = '', scope = 'global', itemType = '',
 }
 
 async function addItemToGroup(groupId, itemData) {
-    const group = groupsData.find(g => g._id === groupId);
-    if (!group) {
-        await loadGroups();
-    }
-
-    const currentGroup = groupsData.find(g => g._id === groupId);
-    const whitelist = currentGroup?.whitelist ? [...currentGroup.whitelist] : [];
-    whitelist.push({
-        value: itemData.value,
-        type: itemData.type,
-        category: itemData.description || 'uncategorized',
-        notes: itemData.notes || ''
-    });
-
-    await updateGroupWhitelist(groupId, whitelist);
-}
-
-async function removeGroupItem(groupId, itemType, itemValue) {
-    const group = groupsData.find(g => g._id === groupId);
-    if (!group) {
-        await loadGroups();
-    }
-
-    const currentGroup = groupsData.find(g => g._id === groupId);
-    const whitelist = (currentGroup?.whitelist || []).filter(entry => {
-        const entryValue = typeof entry === 'string' ? entry : entry.value;
-        const entryType = typeof entry === 'string' ? 'domain' : entry.type || 'domain';
-        return !(entryValue === itemValue && entryType === itemType);
-    });
-
-    await updateGroupWhitelist(groupId, whitelist);
-}
-
-async function updateGroupWhitelist(groupId, whitelist) {
-    let result;
-    try {
-        result = await SaintAPI.patch(`/api/groups/${groupId}`, { whitelist });
-    } catch (apiErr) {
-        const body = apiErr.body || {};
-        throw new Error(body.error || apiErr.message || 'Failed to update group whitelist');
-    }
-    if (!result || !result.success) {
-        throw new Error((result && result.error) || 'Failed to update group whitelist');
-    }
+    return assertNoServerError(
+        await SaintAPI.post('/api/whitelist', {
+            ...itemData,
+            scope: 'group',
+            group_id: groupId,
+            is_active: itemData.active !== false && itemData.is_active !== false,
+        })
+    );
 }
 
 /**
@@ -563,7 +579,8 @@ async function addItem() {
             scope: formData.get('scope') || 'global',
             description: formData.get('description'),
             notes: formData.get('notes') || '',
-            active: formData.get('active') === 'on'
+            active: formData.get('active') === 'on',
+            is_active: formData.get('active') === 'on'
         };
 
         SaintLog.debug('Sending item data:', itemData);
@@ -691,32 +708,6 @@ function updateSelectedItems() {
 
     checkboxes.forEach(cb => selectedItems.add(cb.value));
     refreshBulkActionsUI();
-}
-
-function filterItems() {
-    const searchTerm = document.getElementById('item-search').value.toLowerCase();
-    const typeFilter = document.getElementById('type-filter').value;
-    const statusFilter = document.getElementById('status-filter').value;
-    const groupFilter = document.getElementById('group-filter').value;
-    const itemRows = document.querySelectorAll('.item-row');
-    
-    itemRows.forEach(row => {
-        const value = row.dataset.value;
-        const type = row.dataset.type;
-        const status = row.dataset.status;
-        const group = row.dataset.group || '';
-
-        const matchesSearch = value.includes(searchTerm);
-        const matchesType = !typeFilter || type === typeFilter;
-        const matchesStatus = !statusFilter || status === statusFilter;
-        const matchesGroup = !groupFilter || group === groupFilter;
-
-        if (matchesSearch && matchesType && matchesStatus && matchesGroup) {
-            row.style.display = 'block';
-        } else {
-            row.style.display = 'none';
-        }
-    });
 }
 
 /**
@@ -886,7 +877,8 @@ async function bulkImportItems() {
             scope: scope,
             group_id: groupId,
             notes: 'Bulk import',
-            active: true
+            active: true,
+            is_active: true
         });
     });
 
@@ -1288,9 +1280,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Filter and search
-    document.getElementById('item-search').addEventListener('input', filterItems);
-    document.getElementById('type-filter').addEventListener('change', filterItems);
-    document.getElementById('status-filter').addEventListener('change', filterItems);
+    let searchTimer = null;
+    document.getElementById('item-search').addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(loadItems, 250);
+    });
+    document.getElementById('type-filter').addEventListener('change', loadItems);
+    document.getElementById('status-filter').addEventListener('change', loadItems);
     document.getElementById('group-filter').addEventListener('change', function() {
         selectedGroupId = this.value;
         loadItems();
@@ -1303,6 +1299,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     // document.getElementById('bulkActionsBtn').addEventListener('click', toggleBulkActionsPanel); // Removed
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDeleteItems);
+    const bulkActivateBtn = document.getElementById('bulkActivateBtn');
+    const bulkDeactivateBtn = document.getElementById('bulkDeactivateBtn');
+    if (bulkActivateBtn) {
+        bulkActivateBtn.addEventListener('click', () => bulkSetItemsActive(true));
+    }
+    if (bulkDeactivateBtn) {
+        bulkDeactivateBtn.addEventListener('click', () => bulkSetItemsActive(false));
+    }
     
     // REMOVED: Agent-specific handling, only keep Global and Group
     document.getElementById('scopeSelect').addEventListener('change', function() {

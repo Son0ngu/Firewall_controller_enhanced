@@ -15,6 +15,19 @@ import re
 # Import time utilities - vietnam ONLY
 from time_utils import now_vietnam, to_vietnam, parse_agent_timestamp
 
+
+def _coerce_active(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off", "inactive"}
+    return bool(value)
+
+
 class WhitelistModel:
     """Model for whitelist data operations - vietnam ONLY"""
     
@@ -178,6 +191,7 @@ class WhitelistModel:
             
             #  FIX: Set essential defaults BEFORE validation
             entry_data.setdefault("is_active", True)
+            entry_data["is_active"] = _coerce_active(entry_data.get("is_active"), default=True)
             entry_data.setdefault("type", "domain")
             entry_data.setdefault("scope", "global")
 
@@ -439,6 +453,8 @@ class WhitelistModel:
         try:
             # Add updated timestamp
             update_data["updated_at"] = now_vietnam()
+            if "is_active" in update_data:
+                update_data["is_active"] = _coerce_active(update_data.get("is_active"), default=True)
 
             entry = self.collection.find_one({"_id": ObjectId(entry_id)})
 
@@ -555,6 +571,7 @@ class WhitelistModel:
                 entry["created_at"] = current_time
                 entry["updated_at"] = current_time
                 entry.setdefault("is_active", True)
+                entry["is_active"] = _coerce_active(entry.get("is_active"), default=True)
                 entry.setdefault("type", "domain")
                 entry.setdefault("scope", "global")
             

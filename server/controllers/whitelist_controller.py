@@ -20,9 +20,6 @@ from time_utils import now_iso, parse_agent_timestamp
 from middleware.auth import require_jwt, require_jwt_or_api_key
 from middleware.rbac import inject_current_user, require_login
 
-from config.rbac_config import check_permission
-
-
 class WhitelistController:
     """Controller for whitelist operations"""
 
@@ -172,10 +169,11 @@ class WhitelistController:
         try:
             agent_id = request.args.get('agent_id')
             group_id = request.args.get('group_id')
+            effective = str(request.args.get('effective', '')).lower() in {'1', 'true', 'yes'}
 
             is_teacher, user = self._is_teacher()
 
-            if agent_id or group_id:
+            if agent_id or effective:
                 # RBAC: Teacher can only view whitelist of their own groups
                 if is_teacher and group_id:
                     if not self._teacher_can_access_group(user, group_id):
@@ -188,7 +186,15 @@ class WhitelistController:
             # Get pagination parameters
             limit = min(int(request.args.get('limit', 100)), 1000)
             offset = int(request.args.get('offset', 0))
-            search = request.args.get('search', '').strip()
+            filters = {}
+            for key in ('search', 'type', 'status', 'scope', 'group_id'):
+                value = request.args.get(key, '').strip()
+                if value:
+                    filters[key] = value
+
+            if is_teacher and group_id:
+                if not self._teacher_can_access_group(user, group_id):
+                    return self._error_response("No permission to view whitelist for this Group", 403)
 
             # RBAC: Teacher - fetch ALL then filter + paginate in Python
             # (post-filter approach; for large datasets, push filter into model)
@@ -197,7 +203,6 @@ class WhitelistController:
                 if teacher_group_ids is not None:
                     # Fetch all entries (no pagination at DB level) before
                     # teacher-scope filtering.
-                    filters = {"search": search} if search else None
                     all_result = self.service.get_all_entries(filters)
                     all_domains = (
                         all_result.get("items")
@@ -227,7 +232,6 @@ class WhitelistController:
                     return jsonify(result), 200
 
             # Admin: unified entry list with legacy-compatible `domains`.
-            filters = {"search": search} if search else None
             result = self.service.get_all_entries(filters, limit=limit, offset=offset)
 
             if isinstance(result, dict):
@@ -253,15 +257,13 @@ class WhitelistController:
             entry_type = data.get('type', 'domain')
             client_ip = get_client_ip()
 
-            # RBAC: Teacher can only add to their own groups, not global
+            # RBAC: Teachers use Whitelist Profiles; group whitelist writes are admin-only.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                entry_group_id = data.get('group_id')
-                entry_scope = data.get('scope', 'global')
-                if entry_scope == 'global' and not entry_group_id:
-                    return self._error_response("Teachers cannot add to global whitelist", 403)
-                if entry_group_id and not self._teacher_can_access_group(user, entry_group_id):
-                    return self._error_response("No permission to add whitelist to this Group", 403)
+                return self._error_response(
+                    "Teachers cannot modify group whitelist. Use Whitelist Profiles.",
+                    403,
+                )
 
             result = self.service.add_entry({**data, "type": entry_type, "value": entry_value}, client_ip)
 
@@ -292,15 +294,13 @@ class WhitelistController:
                     "success": False, "error": "Invalid domain ID format", "timestamp": now_iso()
                 }), 400
 
-            # RBAC: Teacher ownership check on the entry
+            # RBAC: Teachers use Whitelist Profiles; group whitelist writes are admin-only.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                teacher_group_ids = self.rbac_service.get_teacher_group_ids(user) or []
-                allowed, error = self.service.validate_teacher_entry_access(
-                    domain_id, teacher_group_ids, "delete"
+                return self._error_response(
+                    "Teachers cannot modify group whitelist. Use Whitelist Profiles.",
+                    403,
                 )
-                if not allowed:
-                    return self._error_response(error, 403)
 
             result = self.service.bulk_delete_entries([domain_id])
             deleted_count = int(result.get("deleted_count", 0) or 0)
@@ -352,14 +352,13 @@ class WhitelistController:
             if not isinstance(domains, list):
                 return self._error_response("Domains must be a list", 400)
 
-            # RBAC: Teacher can only import to their own groups
+            # RBAC: Teachers use Whitelist Profiles; group whitelist writes are admin-only.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                import_group_id = data.get('group_id')
-                if not import_group_id:
-                    return self._error_response("Teacher phai chi dinh group_id khi import", 403)
-                if not self._teacher_can_access_group(user, import_group_id):
-                    return self._error_response("No permission to import to this Group", 403)
+                return self._error_response(
+                    "Teachers cannot modify group whitelist. Use Whitelist Profiles.",
+                    403,
+                )
 
             result = self.service.import_domains(domains, data.get('category', 'imported'))
 
@@ -437,15 +436,13 @@ class WhitelistController:
             if len(items) > 1000:
                 return jsonify({"success": False, "error": "Maximum 1000 items per bulk operation"}), 400
 
-            # RBAC: Teacher check on group_id of items
+            # RBAC: Teachers use Whitelist Profiles; group whitelist writes are admin-only.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                teacher_group_ids = self.rbac_service.get_teacher_group_ids(user) or []
-                for item in items:
-                    item_group = item.get('group_id')
-                    if not item_group or str(item_group) not in teacher_group_ids:
-                        return self._error_response(
-                            "Teachers can only add whitelist to their own Groups", 403)
+                return self._error_response(
+                    "Teachers cannot modify group whitelist. Use Whitelist Profiles.",
+                    403,
+                )
 
             client_ip = get_client_ip()
 
@@ -464,21 +461,18 @@ class WhitelistController:
                 return jsonify({"success": False, "error": "No item IDs provided"}), 400
 
             item_ids = data['item_ids']
-            active = data.get('active', True)
+            active = data.get('is_active', data.get('active', True))
 
             if not isinstance(item_ids, list):
                 return jsonify({"success": False, "error": "Item IDs must be an array"}), 400
 
-            # RBAC: Teacher ownership check on each entry
+            # RBAC: Teachers use Whitelist Profiles; group whitelist writes are admin-only.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                teacher_group_ids = self.rbac_service.get_teacher_group_ids(user) or []
-                for item_id in item_ids:
-                    allowed, error = self.service.validate_teacher_entry_access(
-                        item_id, teacher_group_ids, "edit"
-                    )
-                    if not allowed:
-                        return self._error_response(error, 403)
+                return self._error_response(
+                    "Teachers cannot modify group whitelist. Use Whitelist Profiles.",
+                    403,
+                )
 
             updated_count = 0
             errors = []
@@ -513,16 +507,13 @@ class WhitelistController:
             if not isinstance(item_ids, list):
                 return jsonify({"success": False, "error": "Item IDs must be an array"}), 400
 
-            # RBAC: Teacher ownership check
+            # RBAC: Teachers use Whitelist Profiles; group whitelist writes are admin-only.
             is_teacher, user = self._is_teacher()
             if is_teacher:
-                teacher_group_ids = self.rbac_service.get_teacher_group_ids(user) or []
-                for item_id in item_ids:
-                    allowed, error = self.service.validate_teacher_entry_access(
-                        item_id, teacher_group_ids, "delete"
-                    )
-                    if not allowed:
-                        return self._error_response(error, 403)
+                return self._error_response(
+                    "Teachers cannot modify group whitelist. Use Whitelist Profiles.",
+                    403,
+                )
 
             result = self.service.bulk_delete_entries(item_ids)
             return jsonify(result), 200

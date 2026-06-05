@@ -225,10 +225,11 @@ class WhitelistView(QWidget):
             self._last_resolved_domains = set()
             filtered = []
             for item in data:
-                if item.get("type", "").lower() != "domain":
-                    continue
-                ip = item.get("ip", "")
-                if filter_text and filter_text not in ip.lower():
+                haystack = " ".join(
+                    str(item.get(key, ""))
+                    for key in ("ip", "type", "status", "source")
+                ).lower()
+                if filter_text and filter_text not in haystack:
                     continue
                 filtered.append(item)
             self._table.set_data(filtered)

@@ -611,3 +611,58 @@ node --check server/views/static/js/logs.js
 git diff --check
 -> pass, chi LF/CRLF warnings tren Windows
 ```
+
+## 18. Agent Qt GUI blank Firewall/Whitelist fix
+
+Nguoi dung report: Qt Agent GUI mo tab Firewall Rules / IP Whitelist nhung bang
+trong hoac khong cap nhat, nghi co the goi sai API giua Agent va GUI.
+
+Ket luan trace:
+
+- Firewall tab khong goi API server; no doc live `FirewallManager` neu agent
+  da start, neu chua co manager thi fallback doc Windows Firewall rule provider.
+- Fallback Firewall GUI dang hardcode rule prefix `FirewallController` va import
+  provider bang `agent.firewall.provider`; tuy context chay source/EXE co the
+  can top-level `firewall.provider`. Neu prefix/import lech thi table co the
+  trong du Windows co rule.
+- IP Whitelist tab khong goi API truc tiep; no doc local cache tu
+  `WhitelistController`, controller nay sync tu `WhitelistManager` sau khi
+  Agent start/sync server.
+- Bug GUI: default Whitelist table chi render entry type `Domain`; IP/pattern
+  entries bi loc bo, nen neu whitelist server tra IP hoac pattern thi bang nhin
+  nhu trong.
+
+Fix chinh:
+
+- `WhitelistView._update_table()` default mode hien ca `Domain`, `Pattern`, `IP`.
+  Search filter chuyen sang match tren `ip/type/status/source`.
+- `Resolved IPs` mode van chi resolve exact domains; pattern/IP khong bi dua
+  vao DNS resolver.
+- `FirewallView` fallback doc `rule_prefix` tu config thay vi hardcode.
+- `FirewallView` fallback import provider robust theo ca `firewall.provider` va
+  `agent.firewall.provider`.
+
+Reference:
+
+| Noi dung | Reference |
+| --- | --- |
+| Whitelist default table hien moi loai entry | `agent/gui_qt/views/whitelist.py:225` |
+| Firewall fallback doc `rule_prefix` tu config | `agent/gui_qt/views/firewall.py:254` |
+| Firewall fallback import provider robust | `agent/gui_qt/views/firewall.py:275` |
+| Regression Qt WhitelistView hien Domain/Pattern/IP | `agent/tests/test_qt_views.py:50` |
+
+Verification:
+
+```text
+pytest agent/tests/test_qt_views.py agent/tests/test_gui_logs.py -q --tb=short
+-> 2 passed
+
+pytest agent/tests -q --tb=short
+-> 36 passed
+
+compileall firewall.py whitelist.py test_qt_views.py
+-> pass
+
+git diff --check
+-> pass, chi LF/CRLF warnings tren Windows
+```

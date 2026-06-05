@@ -351,6 +351,13 @@ class AgentController:
             # Pass the controller's runtime down explicitly so a test
             # using ``AgentController(runtime=my_runtime)`` doesn't have
             # its component handles attached to the singleton.
+            #
+            # Gắn callback hook lên runtime trước khi lifecycle chạy. Lifecycle
+            # sẽ gọi callback này ngay sau Step 2.5 (whitelist sync xong), giúp
+            # GUI nhận manager sớm thay vì phải đợi đủ 7 step. Callback hiện
+            # tại chỉ wire WhitelistController; mọi exception trong callback
+            # đã được lifecycle bọc try/except nên không phá flow init.
+            self._runtime._on_whitelist_ready_callback = self._on_whitelist_ready
             init_result = initialize_components(self._config, runtime=self._runtime)
             if init_result.has_failure():
                 failed = [c.name for c in init_result.components if c.status == 'failed']
@@ -479,7 +486,30 @@ class AgentController:
                 })
 
             logger.info(f"Agent worker #{worker_id} finished")
-    
+
+    def _on_whitelist_ready(self, manager) -> None:
+        """Called by lifecycle right after Step 2.5 (initial whitelist sync).
+
+        Wires the GUI's WhitelistController to the freshly-synced manager
+        so the IP Whitelist tab populates in ~10–20s instead of waiting for
+        all 7 lifecycle steps to finish (~1–3 minutes).
+
+        Idempotent: WhitelistController is a singleton, and
+        ``set_whitelist_manager`` rebinds + re-syncs cleanly if called again
+        from the fallback block at the end of ``_agent_worker``.
+        """
+        try:
+            from .whitelist_controller import WhitelistController
+            WhitelistController().set_whitelist_manager(manager)
+            logger.info(
+                "WhitelistController wired early (via lifecycle callback)"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Early WhitelistController wire failed: {e}; "
+                "will retry from _agent_worker post-init fallback"
+            )
+
     def _update_stats(self):
         """Update internal statistics."""
         try:

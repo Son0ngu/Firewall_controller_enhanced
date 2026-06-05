@@ -472,6 +472,20 @@ def _init_whitelist_sync(agent: AgentRuntime, config: Dict, result: InitResult) 
         logger.warning(f"Whitelist sync error: {e}")
         result.record("whitelist_sync", STATUS_DEGRADED, str(e))
 
+    # Early GUI wire-up: nếu caller (AgentController) gắn callback lên
+    # runtime trước khi gọi initialize_components, fire ngay tại đây để
+    # WhitelistController bám vào manager ngay sau khi state đã có data.
+    # Callback là tùy chọn — headless/tests không gắn, attr không tồn tại,
+    # getattr trả None, không làm gì. Lỗi trong callback không phá lifecycle.
+    callback = getattr(agent, "_on_whitelist_ready_callback", None)
+    if callback is not None:
+        try:
+            callback(agent.whitelist)
+        except Exception as e:
+            logger.warning(
+                f"_on_whitelist_ready_callback raised, ignoring: {e}"
+            )
+
 
 def _init_firewall(agent: AgentRuntime, config: Dict, result: InitResult) -> None:
     """Step 3: init FirewallManager + enable whitelist_only mode.

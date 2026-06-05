@@ -27,10 +27,8 @@ TEACHER_PERMISSIONS = [
     # Dashboard
     "dashboard:read",
 
-    # Groups (view only Groups assigned by admin - no create/delete)
+    # Groups (view only Groups assigned by admin)
     "groups:read",
-    "groups:update",
-    "groups:manage_agents",
 
     # Whitelist Profiles (per-teacher whitelist in Group)
     "whitelist_profile:create",
@@ -42,12 +40,8 @@ TEACHER_PERMISSIONS = [
     "agents:read",
     "agents:detail",
 
-    # Whitelist (limited by ownership - own Groups only)
+    # Whitelist (read-only; teachers edit lesson-specific Whitelist Profiles)
     "whitelist:read",
-    "whitelist:create",
-    "whitelist:update",
-    "whitelist:delete",
-    "whitelist:sync",
 
     # Logs (view only logs from Agents in own Groups)
     "logs:read",
@@ -65,9 +59,17 @@ ADMIN_EXTRA_PERMISSIONS = [
     "agents:delete",
     "agents:command",
 
-    # Group lifecycle (admin owns create/delete; teacher only reads/updates assigned groups)
+    # Group lifecycle and management
     "groups:create",
+    "groups:update",
     "groups:delete",
+    "groups:manage_agents",
+
+    # Full whitelist management
+    "whitelist:create",
+    "whitelist:update",
+    "whitelist:delete",
+    "whitelist:sync",
 
     # API Keys
     "api_keys:read",

@@ -200,7 +200,8 @@ class FirewallView(QWidget):
                     mode = "Whitelist Only (idle)"
             else:
                 # No manager wired yet - fall back to netsh.
-                rules = self._get_rules_from_netsh()
+                rule_prefix = self._get_rule_prefix()
+                rules = self._get_rules_from_netsh(rule_prefix)
                 policy_status = self._get_policy_from_netsh()
         except Exception as e:
             logger.error(f"Firewall load failed: {e}")
@@ -250,7 +251,33 @@ class FirewallView(QWidget):
     # future PowerShell/NetSecurity migration work for the GUI automatically.
 
     @staticmethod
-    def _get_rules_from_netsh() -> List[Dict]:
+    def _get_rule_prefix() -> str:
+        """Read the configured SAINT firewall rule prefix for fallback mode."""
+        try:
+            try:
+                from config.loader import load_config
+            except ImportError:
+                from agent.config.loader import load_config
+
+            config = load_config()
+            return (
+                config.get("firewall", {}).get("rule_prefix")
+                or "FirewallController"
+            )
+        except Exception as e:
+            logger.debug("Failed to read firewall rule_prefix from config: %s", e)
+            return "FirewallController"
+
+    @staticmethod
+    def _get_default_provider():
+        try:
+            from firewall.provider import get_default_provider
+        except ImportError:
+            from agent.firewall.provider import get_default_provider
+        return get_default_provider()
+
+    @staticmethod
+    def _get_rules_from_netsh(rule_prefix: Optional[str] = None) -> List[Dict]:
         """Return SAINT-owned outbound rules in the legacy dict shape.
 
         Kept under the old name to avoid touching call sites. The provider
@@ -258,12 +285,12 @@ class FirewallView(QWidget):
         legacy ``{rule_name, direction, action, protocol, ip}`` shape so the
         table widget keeps rendering as before.
         """
-        from agent.firewall.provider import get_default_provider
         out: List[Dict] = []
+        prefix = rule_prefix or "FirewallController"
         try:
-            provider = get_default_provider()
+            provider = FirewallView._get_default_provider()
             for rule in provider.list_rules(
-                rule_prefix="FirewallController", direction="out",
+                rule_prefix=prefix, direction="out",
                 enabled_only=True,
             ):
                 out.append({
@@ -287,9 +314,8 @@ class FirewallView(QWidget):
         Translation from FirewallPolicyStatus lives here because the GUI
         uses Vietnamese-leaning labels that don't belong in the provider.
         """
-        from agent.firewall.provider import get_default_provider
         try:
-            status = get_default_provider().get_policy_status()
+            status = FirewallView._get_default_provider().get_policy_status()
         except Exception:
             return "Unknown"
         if not status:

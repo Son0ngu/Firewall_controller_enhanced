@@ -237,9 +237,10 @@
         // Teacher permissions (same as config/rbac_config.py TEACHER_PERMISSIONS)
         const teacherPermissions = [
             'profile:read', 'profile:change_password', 'dashboard:read',
-            'groups:read', 'groups:create', 'groups:update', 'groups:delete', 'groups:manage_agents',
+            'groups:read',
             'agents:read', 'agents:detail',
-            'whitelist:read', 'whitelist:create', 'whitelist:update', 'whitelist:delete', 'whitelist:sync',
+            'whitelist:read',
+            'whitelist_profile:create', 'whitelist_profile:update', 'whitelist_profile:delete', 'whitelist_profile:activate',
             'logs:read',
         ];
 

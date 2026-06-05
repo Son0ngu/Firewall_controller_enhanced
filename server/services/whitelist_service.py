@@ -42,6 +42,19 @@ from services.whitelist_normalization import canonicalize_whitelist_entry
 logger = logging.getLogger(__name__)
 
 
+def _coerce_active(value, default: bool = True) -> bool:
+    """Coerce UI/API active flags without treating ``"false"`` as truthy."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off", "inactive"}
+    return bool(value)
+
+
 def _apply_entry_update(entry: Dict, update_data: Dict) -> None:
     """Mutate an embedded whitelist entry in place with ``update_data``.
 
@@ -53,7 +66,7 @@ def _apply_entry_update(entry: Dict, update_data: Dict) -> None:
         if k in ("updated_at",):
             continue
         if k == "is_active":
-            entry[k] = bool(v)
+            entry[k] = _coerce_active(v)
         else:
             entry[k] = v
 
@@ -183,62 +196,153 @@ class WhitelistService:
         limit: int = None,
         offset: int = 0,
     ) -> Dict:
-        """Get all whitelist entries with optional filtering - vietnam ONLY"""
-        query = {}
-        if filters:
-            query = self.model.build_query_from_filters(filters)
-        
-        entries = self.model.find_all_entries(query)
+        """Return raw management whitelist rows, not effective merged rows.
+
+        The admin UI needs to inspect and edit configured entries as they
+        physically exist: global entries, first-class group entries, and legacy
+        embedded ``groups.whitelist[]`` rows. Agent sync still uses
+        ``get_agent_sync_data`` / ``get_scoped_whitelist`` for effective merge.
+        """
+        filters = filters or {}
+        entries = self._collect_management_entries()
+        entries = self._filter_management_entries(entries, filters)
         total_count = len(entries)
         if limit is not None:
             entries = entries[offset:offset + limit]
         
-        # Format entries for response
-        formatted_entries = []
-        for entry in entries:
-            # FIX: Ensure all required fields are present
-            formatted_entry = {
-                "_id": entry.get("_id"),  # Keep _id for frontend
-                "id": entry.get("_id"),   # Also add id for compatibility
-                "type": entry.get("type", "domain"),
-                "value": entry.get("value", ""),  # Always use 'value'
-                "category": entry.get("category", "uncategorized"),
-                "priority": entry.get("priority", "normal"),
-                "added_by": entry.get("added_by", "unknown"),
-                "is_active": entry.get("is_active", True),
-                "scope": entry.get("scope", "global"),
-                "added_date": None
-            }
-            
-            # FIX: Proper date handling
-            if entry.get("added_date"):
-                try:
-                    if hasattr(entry["added_date"], 'isoformat'):
-                        formatted_entry["added_date"] = entry["added_date"].isoformat()
-                    else:
-                        formatted_entry["added_date"] = str(entry["added_date"])
-                except Exception:
-                    formatted_entry["added_date"] = None
-            
-            # Add optional fields if they exist
-            if entry.get("notes"):
-                formatted_entry["notes"] = entry.get("notes")
-            if entry.get("group_id"):
-                formatted_entry["group_id"] = entry.get("group_id")
-            if entry.get("group_name"):
-                formatted_entry["group_name"] = entry.get("group_name")
-            
-            formatted_entries.append(formatted_entry)
-        
         return {
-            "items": formatted_entries,
-            "domains": formatted_entries,
+            "items": entries,
+            "domains": entries,
             "success": True,
             "total": total_count,
             "limit": limit,
             "offset": offset,
             "server_time": now_iso()
         }
+
+    def _collect_management_entries(self) -> List[Dict]:
+        """Collect global, first-class group, and legacy embedded rows."""
+        groups = self.group_model.list_groups({}) if self.group_model else []
+        group_lookup = {str(group.get("_id")): group for group in groups or []}
+        source_rank = {
+            "groups.whitelist": 1,
+            "whitelist": 2,
+            "whitelist_entries": 3,
+        }
+        merged: Dict[tuple, Dict] = {}
+
+        def put(raw_entry: Dict, source: str, group: Optional[Dict] = None) -> None:
+            formatted = self._format_management_entry(raw_entry, source, group_lookup, group)
+            if not formatted:
+                return
+            key = (
+                formatted.get("scope", "global"),
+                formatted.get("group_id") or "",
+                formatted.get("type", "domain"),
+                formatted.get("value", ""),
+            )
+            current = merged.get(key)
+            if not current or source_rank.get(source, 0) >= source_rank.get(current.get("source"), 0):
+                merged[key] = formatted
+
+        # Legacy/global collection. Some older rows may carry scope=group here.
+        for entry in self.model.find_raw_entries({}, sort_field="added_date"):
+            put(entry, "whitelist")
+
+        if self.entry_model:
+            for entry in self.entry_model.list_entries(include_inactive=True):
+                group = group_lookup.get(str(entry.get("group_id") or ""))
+                put(entry, "whitelist_entries", group)
+
+        # Embedded fallback for groups that have not migrated to whitelist_entries.
+        for group in groups or []:
+            for entry in self._normalize_group_entries(group, include_inactive=True):
+                put(entry, "groups.whitelist", group)
+
+        entries = list(merged.values())
+        entries.sort(key=lambda item: str(item.get("added_date") or ""), reverse=True)
+        return entries
+
+    def _format_management_entry(
+        self,
+        entry: Dict,
+        source: str,
+        group_lookup: Dict[str, Dict],
+        group: Optional[Dict] = None,
+    ) -> Optional[Dict]:
+        entry_type, value = canonicalize_whitelist_entry(
+            entry.get("type", "domain"),
+            entry.get("value") or entry.get("domain") or entry.get("ip") or entry.get("url") or "",
+        )
+        if not value:
+            return None
+
+        scope = entry.get("scope", "global")
+        group_id = str(entry.get("group_id") or "")
+        if scope == "group" and group_id and not group:
+            group = group_lookup.get(group_id)
+
+        raw_id = entry.get("_id") or entry.get("id")
+        entry_id = str(raw_id) if raw_id is not None else None
+        is_active = _coerce_active(entry.get("is_active", entry.get("active", True)))
+
+        added_date = entry.get("added_date") or entry.get("created_at")
+        if added_date is not None:
+            try:
+                added_date = added_date.isoformat() if hasattr(added_date, "isoformat") else str(added_date)
+            except Exception:
+                added_date = None
+
+        formatted = {
+            "_id": entry_id,
+            "id": entry_id,
+            "type": entry_type,
+            "value": value,
+            "category": entry.get("category") or entry.get("description") or "uncategorized",
+            "priority": entry.get("priority", "normal"),
+            "added_by": entry.get("added_by", "unknown"),
+            "is_active": is_active,
+            "active": is_active,
+            "scope": scope,
+            "added_date": added_date,
+            "source": source,
+        }
+        if entry.get("notes"):
+            formatted["notes"] = entry.get("notes")
+        if group_id:
+            formatted["group_id"] = group_id
+            formatted["group_name"] = entry.get("group_name") or (group or {}).get("name")
+        return formatted
+
+    def _filter_management_entries(self, entries: List[Dict], filters: Dict) -> List[Dict]:
+        type_filter = (filters.get("type") or "").strip().lower()
+        status_filter = (filters.get("status") or "").strip().lower()
+        scope_filter = (filters.get("scope") or "").strip().lower()
+        group_filter = str(filters.get("group_id") or "").strip()
+        search = (filters.get("search") or "").strip().lower()
+
+        filtered = []
+        for entry in entries:
+            if type_filter and entry.get("type") != type_filter:
+                continue
+            if status_filter in {"active", "inactive"}:
+                should_be_active = status_filter == "active"
+                if _coerce_active(entry.get("is_active", True)) != should_be_active:
+                    continue
+            if group_filter:
+                if entry.get("scope") != "group" or str(entry.get("group_id") or "") != group_filter:
+                    continue
+            elif scope_filter and entry.get("scope", "global") != scope_filter:
+                continue
+            if search:
+                haystack = " ".join(
+                    str(entry.get(key, "") or "").lower()
+                    for key in ("value", "category", "notes", "group_name", "type", "scope")
+                )
+                if search not in haystack:
+                    continue
+            filtered.append(entry)
+        return filtered
     
     def add_entry(self, entry_data: Dict, client_ip: str) -> Dict:
         """Add new entry to whitelist - vietnam ONLY"""
@@ -257,6 +361,10 @@ class WhitelistService:
 
         scope = entry_data.get("scope", "global")
         group_id = entry_data.get("group_id")
+        is_active = _coerce_active(
+            entry_data.get("is_active", entry_data.get("active")),
+            default=True,
+        )
         if scope == "group" and group_id:
             group = self.group_model.find_by_id(group_id)
             if not group:
@@ -292,7 +400,7 @@ class WhitelistService:
                 "priority": entry_data.get("priority", "normal"),
                 "added_by": client_ip,
                 "added_date": current_time,
-                "is_active": True,
+                "is_active": is_active,
             }
             if entry_data.get("notes"):
                 processed_entry["notes"] = entry_data.get("notes")
@@ -354,7 +462,7 @@ class WhitelistService:
             "priority": entry_data.get("priority", "normal"),
             "added_by": client_ip,
             "added_date": current_time,
-            "is_active": True
+            "is_active": is_active
         }
 
         # Add optional fields if specified
@@ -631,7 +739,7 @@ class WhitelistService:
                 entry_type = entry.get("type", "domain")
                 priority = entry.get("priority", "normal")
                 category = entry.get("category", "uncategorized")
-                is_active = entry.get("is_active", True)
+                is_active = _coerce_active(entry.get("is_active"), default=True)
                 # The migration script
                 # ``2026_backfill_group_whitelist_entry_ids.py`` stamps each
                 # embedded entry with a real ObjectId. Prefer it when
@@ -702,7 +810,7 @@ class WhitelistService:
                 "type": entry_type,
                 "priority": entry.get("priority", "normal"),
                 "category": entry.get("category", "uncategorized"),
-                "is_active": entry.get("is_active", True),
+                "is_active": _coerce_active(entry.get("is_active"), default=True),
                 "scope": "group",
                 "group_id": str(entry.get("group_id") or group_id),
                 "group_name": group_name,
@@ -1135,7 +1243,10 @@ class WhitelistService:
                     "priority": entry_data.get("priority", "normal"),
                     "added_by": client_ip,
                     "added_date": current_time,
-                    "is_active": True
+                    "is_active": _coerce_active(
+                        entry_data.get("is_active", entry_data.get("active")),
+                        default=True,
+                    ),
                 }
 
                 if scope == "group" and group_id:

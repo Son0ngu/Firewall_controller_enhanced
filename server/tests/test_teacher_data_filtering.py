@@ -438,12 +438,14 @@ class TestRBACConfigPermissions:
 
     def test_teacher_allowed_permissions(self):
         from config.rbac_config import check_permission
-        # Teacher: view assigned groups, manage agents inside them, manage own whitelist.
-        # Teacher CANNOT create/delete groups (admin-only lifecycle).
+        # Teacher: view assigned groups and manage lesson-specific whitelist profiles.
+        # Group whitelist and group management are admin-only.
         allowed = [
-            "groups:read", "groups:update",
+            "groups:read",
             "agents:read", "agents:detail",
-            "whitelist:read", "whitelist:create", "whitelist:update", "whitelist:delete",
+            "whitelist:read",
+            "whitelist_profile:create", "whitelist_profile:update",
+            "whitelist_profile:delete", "whitelist_profile:activate",
             "logs:read",
             "profile:read", "profile:change_password",
         ]
@@ -453,8 +455,9 @@ class TestRBACConfigPermissions:
     def test_teacher_denied_permissions(self):
         from config.rbac_config import check_permission
         denied = [
-            "groups:create", "groups:delete",
+            "groups:create", "groups:update", "groups:delete", "groups:manage_agents",
             "agents:delete",
+            "whitelist:create", "whitelist:update", "whitelist:delete", "whitelist:sync",
             "logs:export",
             "logs:delete",
             "users:create", "users:read", "users:update", "users:delete",
@@ -623,7 +626,7 @@ class TestGroupControllerTeacherFiltering:
             assert call_kwargs[1].get("created_by") is None or \
                    call_kwargs.kwargs.get("created_by") is None
 
-    def test_delete_group_teacher_own_group(self, app, teacher_user):
+    def test_delete_group_teacher_own_group_forbidden(self, app, teacher_user):
         mock_service = MagicMock()
         mock_rbac = MagicMock()
         mock_service.get_group.return_value = {"_id": "g1", "created_by": teacher_user["_id"]}
@@ -636,8 +639,8 @@ class TestGroupControllerTeacherFiltering:
             g.current_role = "teacher"
 
             resp, status = ctrl.delete_group("g1")
-            assert status == 200
-            mock_service.delete_group.assert_called_once_with("g1")
+            assert status == 403
+            mock_service.delete_group.assert_not_called()
 
     def test_delete_group_teacher_other_group_403(self, app, teacher_user):
         mock_service = MagicMock()
@@ -926,7 +929,7 @@ class TestWhitelistControllerTeacherFiltering:
             resp, status = ctrl.add_domain()
             assert status == 403
 
-    def test_add_domain_teacher_own_group_ok(self, app, teacher_user):
+    def test_add_domain_teacher_own_group_forbidden(self, app, teacher_user):
         ctrl, model, service, rbac = self._make_controller(app)
         rbac.get_teacher_group_ids.return_value = ["g1"]
 
@@ -939,7 +942,8 @@ class TestWhitelistControllerTeacherFiltering:
             g.current_role = "teacher"
 
             resp, status = ctrl.add_domain()
-            assert status == 201
+            assert status == 403
+            service.add_entry.assert_not_called()
 
     def test_add_domain_teacher_other_group_403(self, app, teacher_user):
         ctrl, model, service, rbac = self._make_controller(app)
@@ -982,8 +986,8 @@ class TestWhitelistControllerTeacherFiltering:
             resp, status = ctrl.import_domains()
             assert status == 403
 
-    def test_bulk_add_teacher_checks_group_ids(self, app, teacher_user):
-        """Teacher bulk add: all items must be in teacher's groups."""
+    def test_bulk_add_teacher_forbidden(self, app, teacher_user):
+        """Teacher bulk add is blocked; teachers use Whitelist Profiles."""
         ctrl, model, service, rbac = self._make_controller(app)
         rbac.get_teacher_group_ids.return_value = ["g1"]
 
