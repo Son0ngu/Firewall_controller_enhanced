@@ -617,6 +617,36 @@ class TestWhitelistService:
         assert "sync-global.com" in domain_values
         assert "sync-group.com" in domain_values
 
+    def test_agent_sync_group_entry_overrides_duplicate_global(
+        self, whitelist_service, group_model, agent_model
+    ):
+        whitelist_service.add_entry({
+            "value": "duplicate-sync.com",
+            "type": "domain",
+            "category": "global",
+            "priority": "normal",
+        }, "127.0.0.1")
+        group = create_group(group_model, "Group Override Sync", whitelist=[
+            {
+                "value": "duplicate-sync.com",
+                "type": "domain",
+                "category": "group",
+                "priority": "high",
+            }
+        ])
+        agent = insert_agent(agent_model, str(group["_id"]), hostname="OverrideSyncPC")
+
+        result = whitelist_service.get_agent_sync_data(agent_id=agent["agent_id"])
+
+        entries = [
+            entry for entry in result["domains"]
+            if entry.get("value") == "duplicate-sync.com"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["scope"] == "group"
+        assert entries[0]["category"] == "group"
+        assert entries[0]["priority"] == "high"
+
     def test_agent_sync_payload_canonicalizes_legacy_urls(self, whitelist_service, group_model, agent_model):
         whitelist_service.add_entry({
             "value": "https://sync-login.example.com/oauth?x=1",
@@ -679,6 +709,42 @@ class TestWhitelistService:
         profile_entry = next(entry for entry in entries if entry.get("value") == "profile-only-sync.com")
         assert profile_entry["category"] == "lesson"
         assert not str(profile_entry.get("_id")).endswith("::None")
+
+    def test_agent_sync_active_profile_keeps_global_and_replaces_group(
+        self,
+        whitelist_service_with_profiles,
+        whitelist_profile_service,
+        group_model,
+        agent_model,
+    ):
+        whitelist_service_with_profiles.add_entry({
+            "value": "global-profile-sync.com",
+            "type": "domain",
+            "category": "global",
+        }, "127.0.0.1")
+        group = create_group(group_model, "Profile Merge Group", whitelist=[
+            {"value": "group-base-sync.com", "type": "domain", "category": "base"}
+        ])
+        agent = insert_agent(
+            agent_model, str(group["_id"]), hostname="ProfileMergePC"
+        )
+        profile = whitelist_profile_service.create_profile(
+            str(group["_id"]),
+            ObjectId(),
+            "teacher-profile",
+            "Lesson Profile",
+            domains=[{"value": "lesson-sync.com", "type": "domain"}],
+        )
+        whitelist_profile_service.activate_profile(profile["_id"])
+
+        result = whitelist_service_with_profiles.get_agent_sync_data(
+            agent_id=agent["agent_id"]
+        )
+
+        values = {entry.get("value") for entry in result["domains"]}
+        assert "global-profile-sync.com" in values
+        assert "lesson-sync.com" in values
+        assert "group-base-sync.com" not in values
 
     def test_agent_sync_data_up_to_date(self, whitelist_service, group_model, agent_model):
         group = create_group(group_model, "UpToDate Group")
@@ -989,6 +1055,35 @@ class TestLogService:
         result = log_service.get_all_logs({"agent_id": "filter-agent"})
         assert result["success"] is True
         assert len(result["logs"]) >= 1
+
+    def test_get_all_logs_enriches_current_agent_hostname(
+        self, log_service, log_model, agent_model, group_model
+    ):
+        group = create_group(group_model, "Log Host Rename")
+        insert_agent(
+            agent_model,
+            str(group["_id"]),
+            hostname="sirnbx",
+            agent_id="renamed-log-agent",
+        )
+        log_model.insert_logs([{
+            "agent_id": "renamed-log-agent",
+            "agent_host": "sonbx",
+            "level": "INFO",
+            "action": "INFO",
+            "message": "Agent shutdown",
+        }])
+
+        result = log_service.get_all_logs({"agent_id": "renamed-log-agent"})
+
+        assert result["success"] is True
+        assert result["total"] == 1
+        log = result["logs"][0]
+        assert log["agent_id"] == "renamed-log-agent"
+        assert log["agent_host"] == "sirnbx"
+        assert log["current_agent_host"] == "sirnbx"
+        assert log["logged_agent_host"] == "sonbx"
+        assert log["agent_host_changed"] is True
 
     def test_get_all_logs_time_range(self, log_service):
         log_service.receive_logs({"logs": [

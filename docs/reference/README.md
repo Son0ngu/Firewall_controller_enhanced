@@ -5,6 +5,7 @@ Bộ tham chiếu API per-module cho agent và server. **Trước khi viết hel
 Khác biệt với các docs còn lại:
 - [docs/SYSTEM_OVERVIEW.md](../SYSTEM_OVERVIEW.md) → **kiến trúc** (luồng, sơ đồ, vì sao).
 - Thư mục này → **API surface** (class/function nào tồn tại, signature, vị trí, ai gọi).
+- [current-flows.md](current-flows.md) → **flow runtime hiện tại**: whitelist CRUD/sync/merge, agent firewall apply, config/build.
 
 ---
 
@@ -39,7 +40,7 @@ Khác biệt với các docs còn lại:
 | [server/services](server/services.md) | 12 business logic services | ✅ |
 | [server/controllers](server/controllers.md) | 10 Flask Blueprints + full endpoint map | ✅ |
 | [server/scripts](server/scripts.md) | `seed_rbac.py` - bootstrap admin user | ✅ |
-| [server/tests](server/tests.md) | 7 integration test files (~489 cases, real MongoDB) | ✅ |
+| [server/tests](server/tests.md) | Server regression suite (~545 cases, real MongoDB/mocks theo fixture) | ✅ |
 
 ---
 

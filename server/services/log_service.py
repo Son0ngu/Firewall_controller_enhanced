@@ -25,6 +25,52 @@ class LogService:
         self.model = log_model
         self.agent_model = agent_model  # Store agent_model reference
         self.socketio = socketio
+
+    def _agent_display_name(self, agent: Dict) -> str:
+        """Return the same agent label order used by the logs filter UI."""
+        if not agent:
+            return ""
+        for field in ("hostname", "display_name", "agent_id"):
+            value = agent.get(field)
+            if value:
+                return str(value)
+        return ""
+
+    def _current_agent_names(self, agent_ids: List[str]) -> Dict[str, str]:
+        """Map agent_id -> current display name without trusting stale log text."""
+        if not self.agent_model or not agent_ids:
+            return {}
+
+        unique_ids = sorted({aid for aid in agent_ids if aid and aid != "unknown"})
+        if not unique_ids:
+            return {}
+
+        names = {}
+        try:
+            if hasattr(self.agent_model, "get_all_agents"):
+                agents = self.agent_model.get_all_agents(
+                    {"agent_id": {"$in": unique_ids}},
+                    limit=max(len(unique_ids), 1),
+                )
+                for agent in agents:
+                    agent_id = agent.get("agent_id")
+                    display = self._agent_display_name(agent)
+                    if agent_id and display:
+                        names[str(agent_id)] = display
+                missing = [aid for aid in unique_ids if aid not in names]
+            else:
+                missing = unique_ids
+
+            if hasattr(self.agent_model, "find_by_agent_id"):
+                for agent_id in missing:
+                    agent = self.agent_model.find_by_agent_id(agent_id)
+                    display = self._agent_display_name(agent)
+                    if display:
+                        names[agent_id] = display
+        except Exception as exc:
+            self.logger.warning(f"Failed to enrich log agent names: {exc}")
+
+        return names
     
     def receive_logs(self, logs_data: Dict, agent_id: str = None) -> Dict:
         """Receive and process logs from agents - vietnam ONLY"""
@@ -287,15 +333,28 @@ class LogService:
             total_count = self.model.count_logs(query)
             
             self.logger.info(f"Found {len(logs)} logs, total count: {total_count}")
+            current_agent_names = self._current_agent_names([
+                str(log.get("agent_id", "")) for log in logs
+            ])
             
             # Format for response
             formatted_logs = []
             for log in logs:
                 try:
+                    agent_id = str(log.get("agent_id", "unknown"))
+                    logged_agent_host = (
+                        log.get("agent_host")
+                        or log.get("hostname")
+                        or log.get("host_name")
+                        or "Unknown Agent"
+                    )
+                    current_agent_host = current_agent_names.get(agent_id)
+                    display_agent_host = current_agent_host or logged_agent_host
+
                     formatted_log = {
                         "id": str(log.get("_id", "")),
                         "timestamp": log.get("timestamp"),
-                        "agent_id": log.get("agent_id", "unknown"),
+                        "agent_id": agent_id,
                         "level": log.get("level", "INFO"),
                         "action": log.get("action", "UNKNOWN"),
                         "domain": log.get("domain", "unknown"),
@@ -306,7 +365,14 @@ class LogService:
                         "port": str(log.get("port", "unknown")),
                         "message": log.get("message", "Log entry"),
                         "source": log.get("source", "agent"),
-                        "agent_host": log.get("agent_host") or log.get("hostname") or log.get("host_name") or "Unknown Agent"
+                        "agent_host": display_agent_host,
+                        "current_agent_host": current_agent_host or "",
+                        "logged_agent_host": logged_agent_host,
+                        "agent_host_changed": bool(
+                            current_agent_host
+                            and logged_agent_host != "Unknown Agent"
+                            and current_agent_host != logged_agent_host
+                        ),
                     }
                     
                     # Handle timestamps - vietnam only

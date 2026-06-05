@@ -12,7 +12,19 @@ Chi tiết đầy đủ nằm ở `report/2026-05-28_E2E_VALIDATION_AND_OPEN_ITE
 | GUI `/api-keys` và favicon | `/api-keys` DOM fix và `/favicon.ico` đã lên Render; Playwright GUI matrix trong full deep run pass qua các trang chính, gồm API Keys. Sau rà 2026-06-01, modal Create API Key dùng lại shared custom select cho Expiration; dropdown tự mở lên/scroll trong modal nên không còn bị cắt ở `7 days`. |
 | API key rate limit | Không có rate limit backend thật; field/form Rate Limit là UI giả và đã bị gỡ khỏi `/api-keys`. `usage_count` chỉ là counter trọn đời, không phải quota theo giờ. |
 | API key expiration | Có enforce backend thật: `expires_at < now_vietnam()` làm `validate_api_key(...)` invalid, `require_api_key(...)` trả `401 API key has expired`, và expired key không tăng `usage_count`. UI đã tách status `expired` khỏi `revoked`. Regression `server/tests/test_api_key_expiration.py`: 4 passed. |
-| Local regression sau hotfix | `server/tests/test_groups.py`: 73 passed; `server/tests/test_whitelist_and_logs.py`: 119 passed, 3 expected DeprecationWarning; `server/tests/test_app_factory.py`: 4 passed; `agent/tests`: 8 passed; `server/tests/test_teacher_data_filtering.py`: 81 passed; combo `test_app_factory.py test_agent_full.py test_whitelist_and_logs.py`: 184 passed. |
+| Local regression sau hotfix | Historical 2026-05-28 baseline: `server/tests/test_groups.py`: 73 passed; `server/tests/test_whitelist_and_logs.py`: 119 passed, 3 expected DeprecationWarning; `server/tests/test_app_factory.py`: 4 passed; `agent/tests`: 8 passed; `server/tests/test_teacher_data_filtering.py`: 81 passed; combo `test_app_factory.py test_agent_full.py test_whitelist_and_logs.py`: 184 passed. Current 2026-06-05 baseline is listed below. |
+
+## Cap nhat local regression 2026-06-05
+
+Sau cleanup legacy whitelist domain service va flow merge global/group/profile:
+
+| Lenh | Ket qua hien tai |
+| --- | --- |
+| `.\.venv\Scripts\python.exe -m pytest server\tests\test_whitelist_and_logs.py -q --tb=short` | **127 passed**; khong con `WhitelistService.get_all_domains()` / `delete_domain()` DeprecationWarning. |
+| Targeted whitelist flow suite | **170 passed**; cover global whitelist, group whitelist, active profile merge/replace, duplicate override va agent sync payload. |
+| `.\.venv\Scripts\python.exe -m pytest agent\tests server\tests -q --tb=short` | **576 passed, 22 warnings**. Warning con lai la `InsecureKeyLengthWarning` trong test JWT dung secret ngan, khong phai whitelist deprecation. |
+| `.\.venv\Scripts\python.exe -m compileall -q agent server tools` | Pass. |
+| `git diff --check` | Pass; tren Windows co the in warning LF/CRLF theo config. |
 
 Các tồn đọng sau mốc này:
 
@@ -60,7 +72,7 @@ Các tồn đọng sau mốc này:
 | `pytest server\tests -q --tb=short` (full regression sau các bản vá cuối) | **519 passed, 0 failed, 23 warnings**. |
 | `npm.cmd run e2e` (sau khi cài `@playwright/test` và Chromium bằng `npx.cmd playwright install chromium`) | **4 passed**; Flask server được start qua `tools/e2e-server.js`, dùng admin local cấu hình bởi `E2E_ADMIN_USERNAME`/`E2E_ADMIN_PASSWORD` nếu khác default. |
 | `pytest agent\tests\test_lifecycle_components.py -q --tb=short` (sau lifecycle `AgentComponent.start/stop/health`) | **3 passed**; cover start order, reverse stop, cleanup khi start fail, và component-reported failure. |
-| `pytest server\tests\test_whitelist_and_logs.py -q -x --tb=short` (sau `whitelist_entries` collection-first dual path) | **115 passed, 3 expected DeprecationWarning** từ legacy `*_domain` API. |
+| `pytest server\tests\test_whitelist_and_logs.py -q -x --tb=short` (historical 2026-05-27, sau `whitelist_entries` collection-first dual path) | **115 passed, 3 expected DeprecationWarning** từ legacy `*_domain` API. Baseline hiện tại 2026-06-05 là **127 passed**, không còn whitelist deprecation warning. |
 | `pytest server\tests\test_groups.py server\tests\test_teacher_data_filtering.py server\tests\test_app_factory.py -q -x --tb=short` | **153 passed**; group/RBAC/app factory không regression sau schema migration layer. |
 | `python server\scripts\migrations\2026_migrate_group_whitelist_to_entries.py --json --fail-on-invalid` | Dry-run pass; `groups_scanned=0`, `embedded_entries_scanned=0`, `entries_existing=0`, `entries_inserted=0`, `entries_skipped_invalid=0`, `invalid_entries=[]`. |
 | `rg -n "\.collection\." server/controllers server/services server/middleware` | Không còn kết quả. |

@@ -111,7 +111,7 @@
         <mxCell id="ef2f3" value="No (Enable)" style="edgeStyle=orthogonalEdgeStyle;fontFamily=Segoe UI;fontSize=11;fontStyle=1;" edge="1" parent="1" source="f2" target="f3"><mxGeometry relative="1" as="geometry"/></mxCell>
 
         <!-- F4: Add essential IPs -->
-        <mxCell id="f4" value="&lt;b&gt;Add Essential IPs&lt;/b&gt;&lt;br&gt;&lt;i&gt;Server URLs → resolve → whitelist&lt;br&gt;DNS servers (8.8.8.8, etc.)&lt;br&gt;Localhost (127.0.0.1)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="f4" value="&lt;b&gt;Add Essential IPs&lt;/b&gt;&lt;br&gt;&lt;i&gt;Server URLs → resolve → whitelist&lt;br&gt;System DNS servers from Windows config&lt;br&gt;Localhost (127.0.0.1)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="600" y="490" width="300" height="70" as="geometry"/>
         </mxCell>
         <mxCell id="ef3f4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="f3" target="f4"><mxGeometry relative="1" as="geometry"/></mxCell>

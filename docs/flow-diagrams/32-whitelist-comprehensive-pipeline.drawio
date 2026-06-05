@@ -411,7 +411,7 @@
         </mxCell>
 
         <!-- System IPs always allowed -->
-        <mxCell id="system_ips" value="&lt;b&gt;System IPs (Always Allowed)&lt;/b&gt;&lt;br&gt;&lt;i&gt;IP hệ thống luôn được phép&lt;/i&gt;&lt;br&gt;• DNS: 8.8.8.8, 8.8.4.4, 1.1.1.1&lt;br&gt;• Server host IP&lt;br&gt;• Localhost 127.0.0.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+        <mxCell id="system_ips" value="&lt;b&gt;System IPs (Always Allowed)&lt;/b&gt;&lt;br&gt;&lt;i&gt;IP hệ thống luôn được phép&lt;/i&gt;&lt;br&gt;• System DNS from Windows config&lt;br&gt;• Server host IP&lt;br&gt;• Localhost 127.0.0.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
           <mxGeometry x="80" y="1400" width="220" height="90" as="geometry"/>
         </mxCell>
 
@@ -487,7 +487,7 @@
         </mxCell>
 
         <!-- Global Whitelist -->
-        <mxCell id="global_wl" value="&lt;b&gt;🌍 Global Whitelist&lt;/b&gt;&lt;br&gt;&lt;i&gt;Whitelist toàn cục&lt;/i&gt;&lt;hr&gt;• google.com&lt;br&gt;• wikipedia.org&lt;br&gt;• 8.8.8.8 (DNS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+        <mxCell id="global_wl" value="&lt;b&gt;Global Whitelist&lt;/b&gt;&lt;br&gt;&lt;i&gt;Whitelist toàn cục&lt;/i&gt;&lt;hr&gt;• google.com&lt;br&gt;• wikipedia.org&lt;br&gt;• docs.python.org" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
           <mxGeometry x="700" y="1620" width="180" height="110" as="geometry"/>
         </mxCell>
 
@@ -546,7 +546,7 @@
         </mxCell>
 
         <!-- Group C result -->
-        <mxCell id="grp_c_result" value="&lt;b&gt;Agent C nhận được:&lt;/b&gt;&lt;br&gt;&lt;i&gt;(Policy: isolate → entries = [])&lt;/i&gt;&lt;hr&gt;✅ 8.8.8.8 (system DNS)&lt;br&gt;✅ 8.8.4.4 (system DNS)&lt;br&gt;✅ 1.1.1.1 (system DNS)&lt;br&gt;✅ Server IP (heartbeat)&lt;br&gt;❌ &lt;b&gt;TẤT CẢ WEBSITE&lt;/b&gt;&lt;br&gt;❌ google.com&lt;br&gt;❌ wikipedia.org" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+        <mxCell id="grp_c_result" value="&lt;b&gt;Agent C nhận được:&lt;/b&gt;&lt;br&gt;&lt;i&gt;(Policy: isolate → server host only; agent adds local essentials)&lt;/i&gt;&lt;hr&gt;✅ Server IP/domain (heartbeat)&lt;br&gt;✅ System DNS from Windows config&lt;br&gt;✅ Localhost / gateway essentials&lt;br&gt;❌ &lt;b&gt;TẤT CẢ WEBSITE&lt;/b&gt;&lt;br&gt;❌ google.com&lt;br&gt;❌ wikipedia.org" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
           <mxGeometry x="1260" y="1810" width="210" height="160" as="geometry"/>
         </mxCell>
 

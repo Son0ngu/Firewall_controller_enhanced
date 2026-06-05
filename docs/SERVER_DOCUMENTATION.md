@@ -390,7 +390,7 @@ Token đã thu hồi (TTL auto- delete).
   "whitelist": [
     { "value": "google.com", "type": "domain" },
     { "value": "*.microsoft.com", "type": "pattern" },
-    { "value": "8.8.8.8", "type": "ip" }
+    { "value": "192.168.1.10", "type": "ip" }
   ],
   "whitelist_version": 5,
   "active_profile": {

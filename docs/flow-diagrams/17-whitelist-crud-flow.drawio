@@ -101,7 +101,7 @@
         </mxCell>
         <mxCell id="de4" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=9;" edge="1" source="d_d2" target="d_err" parent="1" />
 
-        <mxCell id="d_ok" value="&lt;b&gt;service.delete_domain(id)&lt;/b&gt;&lt;br&gt;SocketIO.emit(&quot;whitelist_updated&quot;)&lt;br&gt;&lt;b&gt;200 OK&lt;/b&gt;&lt;br&gt;&lt;i&gt;Xoá thành công&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="d_ok" value="&lt;b&gt;service.bulk_delete_entries([id])&lt;/b&gt;&lt;br&gt;SocketIO.emit(&quot;whitelist_updated&quot;)&lt;br&gt;&lt;b&gt;200 OK&lt;/b&gt;&lt;br&gt;&lt;i&gt;Xoá thành công&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="630" y="260" width="200" height="55" as="geometry" />
         </mxCell>
         <mxCell id="de5" value="No (Admin)" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="d_d1" target="d_ok" parent="1" />

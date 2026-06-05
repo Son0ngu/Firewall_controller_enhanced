@@ -22,6 +22,19 @@ Source audit xác nhận API key chưa có rate limit thật: không có depende
 
 UI follow-up cùng ngày: Expiration trong modal Create API Key dùng lại shared custom select ở `base.js`. Dropdown giờ tự mở lên khi modal không đủ chỗ bên dưới và `.custom-options` có `max-height` + `overflow-y:auto`, nên giữ đúng style UI mà không còn bị Bootstrap modal cắt ở `7 days`.
 
+## Cập nhật baseline source/docs 2026-06-05
+
+Sau đợt cleanup whitelist legacy và cập nhật tài liệu flow, baseline hiện tại là:
+
+| Hạng mục | Trạng thái hiện tại |
+| --- | --- |
+| Legacy whitelist domain service | `WhitelistService.get_all_domains()` và `WhitelistService.delete_domain()` đã bị xóa. Route tương thích `/api/whitelist` dùng `get_all_entries`; `DELETE /api/whitelist/<id>` dùng `bulk_delete_entries([id])`. |
+| Whitelist merge flow | Global whitelist luôn được giữ; group whitelist của active profile được merge thêm và override duplicate cùng `type:value`; đổi profile sẽ thay group entries theo profile mới. |
+| Whitelist URL handling | Full URL được canonicalize về hostname; wildcard chỉ áp dụng ở hostname pattern; DNS resolver không nhận URL/path/query/wildcard. |
+| Local regression | `agent/tests + server/tests`: **576 passed, 22 warnings**. Warning còn lại là JWT test secret ngắn, không còn whitelist deprecation warning. |
+| Whitelist regression | `server/tests/test_whitelist_and_logs.py`: **127 passed**; targeted whitelist flow suite: **170 passed**. |
+| Flow documentation | Cập nhật `docs/reference/current-flows.md` và `report/2026-06-05_CURRENT_CODE_DOC_FLOW_AUDIT.md`. |
+
 | Nhóm vấn đề | Trạng thái | Ghi chú hiện tại |
 | --- | --- | --- |
 | Audit IP luôn `127.0.0.1` | Đã xử lý | Thêm `server/utils/request_ip.py`; audit/auth/agent/log/whitelist dùng `get_client_ip()` với ưu tiên `X-Forwarded-For`, `X-Real-IP`, rồi `remote_addr`. |
@@ -270,7 +283,7 @@ Trạng thái 2026-05-26:
 - `GroupModel.update_group` cũng normalises `groups.whitelist[]`: `_id` string từ frontend được convert lại thành `ObjectId`, entry mới không `_id` được stamp, legacy bare string được promote sang dict. Điểm này chặn lỗi PATCH group vô tình lưu `_id` dạng string khiến dotted-path query `whitelist._id` không match.
 - `_normalize_group_entries` trong serializer ưu tiên trả `_id` thật cho frontend; chỉ fallback sang pseudo-ID khi entry chưa migrated.
 - `WhitelistService._update_group_entry` + `_delete_group_entry_by_oid` accept cả pseudo-ID lẫn real ObjectId. `delete_entry` thử global collection → embedded by ObjectId trước khi báo not-found.
-- Legacy `WhitelistService.delete_domain(...)` đã route qua `delete_entry(...)` cho non-pseudo ID, nên endpoint cũ vẫn xóa được real embedded ObjectId trong thời gian rollout.
+- `DELETE /api/whitelist/<id>` vẫn là route tương thích cho UI, nhưng controller hiện gọi `WhitelistService.bulk_delete_entries([id])`. `WhitelistService.delete_domain(...)` đã bị xóa.
 - `WhitelistService.validate_teacher_entry_access(...)` đã check real embedded ObjectId bằng `GroupModel.find_group_with_embedded_entry(oid)` sau khi không tìm thấy collection entry. Teacher không còn bypass được RBAC bằng cách gửi `_id` thật của embedded entry thuộc group khác.
 - `bulk_add_entries` tolerate legacy `groups.whitelist[]` dạng bare string khi check duplicate, tránh crash trong dữ liệu chưa backfill.
 - `GroupModel.find_group_with_embedded_entry(oid)` query bằng dotted-path `whitelist._id`.
@@ -860,7 +873,7 @@ server/views/static/js/
 | Nhóm | File/điểm code | Tình trạng | Hướng xử lý |
 |---|---|---|---|
 | Change password page | `server/views/templates/change_password.html`, `server/views/static/css/change_password.css` | Đã xóa; route legacy redirect về `/profile` | Giữ redirect một release, sau đó cân nhắc xóa route |
-| Whitelist legacy domain API | `server/services/whitelist_service.py` | Đã deprecate; 5 method `*_domain` emit `DeprecationWarning` ở runtime | Xóa shim sau khi entry API fully adopted ở frontend |
+| Whitelist legacy domain API | `server/services/whitelist_service.py` | `get_all_domains` và `delete_domain` đã xóa; controller dùng `get_all_entries` và `bulk_delete_entries`. Còn `add_domain`/`import_domains`/`export_domains` là helper legacy ít dùng | Migrate nốt import/export nếu frontend đổi sang entry API hoàn toàn |
 | Group whitelist pseudo-ID | `server/services/whitelist_service.py`, `server/models/whitelist_entry_model.py`, `whitelist_entry_id.py` | Group write mới đã chuyển sang `whitelist_entries` với `_id` thật. Read path merge collection + embedded fallback; collection thắng khi trùng `type:value`. Update/delete/RBAC accept real collection `_id`, real embedded ObjectId, và pseudo-ID legacy. Migration script `2026_migrate_group_whitelist_to_entries.py` copy embedded rows sang collection | Chạy migration write staging/production → xác nhận không còn legacy pseudo-ID client → release sau xóa fallback embedded + pseudo-ID generator |
 | Direct Mongo outside model | `server/controllers/*`, `server/services/*`, `server/middleware/rbac.py` | Đã dọn; controller gọi service validator, service/middleware gọi model/service methods. `require_group_ownership` dùng `GroupModel.find_by_id(...)` | Giữ static guard `rg -n "\.collection\." server/controllers server/services server/middleware` |
 | RBAC duplicate | `server/config/rbac_config.py`, `server/services/rbac_service.py` | Đã xử lý. `RBACService.is_teacher_request` (static) + `assert_group_access` là single owner; controllers chỉ thin-wrap | Khi đổi rule, sửa ở service rồi update test ở `test_teacher_data_filtering.py` |

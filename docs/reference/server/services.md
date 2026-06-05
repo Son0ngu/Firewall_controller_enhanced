@@ -127,23 +127,23 @@ Cap nhat 2026-05-27: `WhitelistService` nhan them `entry_model` (`WhitelistEntry
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
 | `__init__(whitelist_model, agent_model, group_model, socketio=None, entry_model=None, policy_service=None, profile_service=None)` | | [whitelist_service.py](../../../server/services/whitelist_service.py) | `entry_model` la collection-first repo cho group whitelist entries. |
-| `.get_all_entries(filters=None, limit=None, offset=0)` | `→ Dict` | [whitelist_service.py:38](../../../server/services/whitelist_service.py#L38) | Unified list format `{items, domains, total, success, server_time}`; `domains` giữ để tương thích UI cũ |
-| `.add_entry(entry_data, client_ip)` | `→ Dict` | [whitelist_service.py:89](../../../server/services/whitelist_service.py#L89) | **Re-activate inactive entry** nếu trùng value (re-add behavior). Auto-bump version. Emit `whitelist_added` |
-| `.test_entry(entry_data)` | `→ Dict` | [whitelist_service.py:196](../../../server/services/whitelist_service.py#L196) | Validate + DNS test |
-| `.test_dns(domain)` | | [whitelist_service.py:247](../../../server/services/whitelist_service.py#L247) | |
-| `.get_scoped_whitelist(agent_id=None, group_id=None)` | `→ Dict` | [whitelist_service.py:450](../../../server/services/whitelist_service.py#L450) | Trả `{global, group, merged, global_version, group_version, group_id, group_name}` cho UI |
-| `.get_agent_sync_data(since_datetime, agent_id, global_version, group_version, agent_policy_mode="none")` | `→ Dict` | [whitelist_service.py:498](../../../server/services/whitelist_service.py#L498) | **Trái tim sync flow**. Versioned short-circuit nếu agent có version mới + policy không đổi. Otherwise: merge global + (active profile HOẶC group base). Apply policy override (isolate/custom) qua `policy_service.apply_policy_to_sync`. Trả `{domains, type: "full"|"versioned", up_to_date, ...}` |
-| `.delete_entry(entry_id)` | `→ bool` | [whitelist_service.py:610](../../../server/services/whitelist_service.py#L610) | Canonical single delete cho global rows, first-class group rows, và embedded group rows có ObjectId thật |
-| `.bulk_delete_entries(item_ids)` | `→ Dict` | [whitelist_service.py:637](../../../server/services/whitelist_service.py#L637) | Canonical bulk delete; vẫn hỗ trợ fallback pseudo-ID `group::<gid>::<type>::<value>` cho legacy embedded rows |
-| `.bulk_add_entries(entries_data, client_ip)` | | [whitelist_service.py:709](../../../server/services/whitelist_service.py#L709) | Split scope global vs group. Max 1000 per op |
-| `.get_statistics()` | | [whitelist_service.py:832](../../../server/services/whitelist_service.py#L832) | |
-| `.update_entry(entry_id, update_data)` | `→ bool` | [whitelist_service.py:849](../../../server/services/whitelist_service.py#L849) | Support pseudo-ID cho group entry (toggle is_active) |
+| `.get_all_entries(filters=None, limit=None, offset=0)` | `→ Dict` | [whitelist_service.py:180](../../../server/services/whitelist_service.py#L180) | Unified list format `{items, domains, total, success, server_time}`; `domains` giữ để tương thích UI cũ |
+| `.add_entry(entry_data, client_ip)` | `→ Dict` | [whitelist_service.py:243](../../../server/services/whitelist_service.py#L243) | **Re-activate inactive entry** nếu trùng value (re-add behavior). Auto-bump version. Emit `whitelist_added` |
+| `.test_entry(entry_data)` | `→ Dict` | [whitelist_service.py:418](../../../server/services/whitelist_service.py#L418) | Validate + DNS test |
+| `.test_dns(domain)` | | [whitelist_service.py:471](../../../server/services/whitelist_service.py#L471) | |
+| `.get_scoped_whitelist(agent_id=None, group_id=None)` | `→ Dict` | [whitelist_service.py:777](../../../server/services/whitelist_service.py#L777) | Trả `{global, group, merged, global_version, group_version, group_id, group_name}` cho UI |
+| `.get_agent_sync_data(since_datetime, agent_id, global_version, group_version, agent_policy_mode="none")` | `→ Dict` | [whitelist_service.py:827](../../../server/services/whitelist_service.py#L827) | **Trái tim sync flow**. Versioned short-circuit nếu agent có version mới + policy không đổi. Otherwise: merge global + (active profile HOẶC group base). Apply policy override (isolate/custom) qua `policy_service.apply_policy_to_sync`. Trả `{domains, type: "full"|"versioned", up_to_date, ...}` |
+| `.delete_entry(entry_id)` | `→ bool` | [whitelist_service.py:941](../../../server/services/whitelist_service.py#L941) | Canonical single delete cho global rows, first-class group rows, và embedded group rows có ObjectId thật |
+| `.bulk_delete_entries(item_ids)` | `→ Dict` | [whitelist_service.py:1009](../../../server/services/whitelist_service.py#L1009) | Canonical bulk delete; vẫn hỗ trợ fallback pseudo-ID `group::<gid>::<type>::<value>` cho legacy embedded rows |
+| `.bulk_add_entries(entries_data, client_ip)` | | [whitelist_service.py:1081](../../../server/services/whitelist_service.py#L1081) | Split scope global vs group. Max 1000 per op |
+| `.get_statistics()` | | [whitelist_service.py:1236](../../../server/services/whitelist_service.py#L1236) | |
+| `.update_entry(entry_id, update_data)` | `→ bool` | [whitelist_service.py:1253](../../../server/services/whitelist_service.py#L1253) | Support pseudo-ID cho group entry (toggle is_active) |
 | `.add_domain(...) / .import_domains(...) / .export_domains(...)` | | [whitelist_service.py](../../../server/services/whitelist_service.py) | Legacy domain helpers còn lại; `get_all_domains` và `delete_domain` đã xóa, controller dùng unified entry API |
-| `_normalize_group_entries(group, include_inactive=True)` | `→ List[Dict]` | [whitelist_service.py:370](../../../server/services/whitelist_service.py#L370) | Convert string/dict entries trong group sang dict chuẩn với pseudo-ID `group::<gid>::<type>::<value>` |
-| `_merge_whitelists(global_entries, group_entries)` | | [whitelist_service.py:420](../../../server/services/whitelist_service.py#L420) | Merge theo key `type:value`. **Group entry thắng** global. Preserve priority="high" |
-| `_get_detailed_changes(since_dt)` | | [whitelist_service.py:302](../../../server/services/whitelist_service.py#L302) | Diff added/removed/modified - hiện không dùng trong sync path |
-| `_update_group_entry(pseudo_id, update_data)` | | [whitelist_service.py:886](../../../server/services/whitelist_service.py#L886) | Update inline trong groups.whitelist. Upgrade string entry → dict |
-| `_delete_group_entry(group_id, value, entry_type)` | | [whitelist_service.py:935](../../../server/services/whitelist_service.py#L935) | |
+| `_normalize_group_entries(group, include_inactive=True)` | `→ List[Dict]` | [whitelist_service.py:607](../../../server/services/whitelist_service.py#L607) | Convert string/dict entries trong group sang dict chuẩn với pseudo-ID `group::<gid>::<type>::<value>` |
+| `_merge_whitelists(global_entries, group_entries)` | | [whitelist_service.py:747](../../../server/services/whitelist_service.py#L747) | Merge theo key `type:value`. **Group entry thắng** global. Preserve priority="high" |
+| `_get_detailed_changes(since_dt)` | | [whitelist_service.py:526](../../../server/services/whitelist_service.py#L526) | Diff added/removed/modified - hiện không dùng trong sync path |
+| `_update_group_entry(entry_id, update_data)` | | [whitelist_service.py:1322](../../../server/services/whitelist_service.py#L1322) | Update group whitelist entry by first-class/embedded ObjectId or legacy pseudo-ID. |
+| `_delete_group_entry(group_id, value, entry_type)` | | [whitelist_service.py:1422](../../../server/services/whitelist_service.py#L1422) | |
 
 ### `services/group_service.py` - `GroupService`
 

@@ -38,7 +38,11 @@ function extractAgentFromObject(obj) {
 }
 
 function getAgentDisplayName(log) {
-    return log.agent_host || log.hostname || log.host_name || log.agent_id || 'Unknown Agent';
+    return log.current_agent_host || log.agent_host || log.hostname || log.host_name || log.agent_id || 'Unknown Agent';
+}
+
+function getLoggedAgentDisplayName(log) {
+    return log.logged_agent_host || log.hostname || log.host_name || '';
 }
 
 // Delegate to the shared helper so XSS-escape behavior is identical across
@@ -294,7 +298,7 @@ async function loadLogs() {
             if (logsData.length > 0) {
                 SaintLog.debug('First log sample:', JSON.stringify(logsData[0], null, 2));
             }
-            renderLogs(logsData);
+            renderLogs(filterLogsBySelectedAgent(logsData));
             await updateStatistics();
         } else {
             console.error('No valid logs array in response');
@@ -307,6 +311,20 @@ async function loadLogs() {
         showError('Error loading logs: ' + error.message);
         await updateStatistics();
     }
+}
+
+function filterLogsBySelectedAgent(logs) {
+    if (!currentFilter.agent || !Array.isArray(logs)) {
+        return logs;
+    }
+
+    const expected = currentFilter.agent.toString();
+    const filtered = logs.filter(log => (log.agent_id || log.agent || '').toString() === expected);
+    const hidden = logs.length - filtered.length;
+    if (hidden > 0) {
+        console.warn(`Hidden ${hidden} log(s) with unexpected agent_id for selected filter ${expected}`);
+    }
+    return filtered;
 }
 
 /**
@@ -449,6 +467,10 @@ function renderLogs(logs) {
             const dest_ip = log.dest_ip || log.ip || log.destination_ip || 'N/A';
             const agentId = (log.agent_id || log.agent || '').toString();
             const agentHost = getAgentDisplayName(log);
+            const loggedAgentHost = getLoggedAgentDisplayName(log);
+            const hostChangeTitle = log.agent_host_changed && loggedAgentHost
+                ? ` title="Logged as ${escapeHtml(loggedAgentHost)}"`
+                : '';
             const protocol = log.protocol || 'N/A';
             const port = log.port ? log.port.toString() : 'N/A';
             const detailText = getLogDetailText(log);
@@ -471,7 +493,7 @@ function renderLogs(logs) {
                                 <div class="d-flex align-items-center mb-2">
                                     <span class="log-level ${level}">${level}</span>
                                     <span class="log-timestamp ms-2">${timestamp}</span>
-                                    <span class="log-agent ms-2">${agentHost}</span>
+                                    <span class="log-agent ms-2"${hostChangeTitle}>${agentHost}</span>
                                 </div>
                                 
                                 <div class="row">
@@ -772,6 +794,9 @@ function showLogDetails(logId) {
                     <tr><td class="fw-semibold">Source IP:</td><td><code>${log.source_ip || log.ip || 'Unknown'}</code></td></tr>
                     <tr><td class="fw-semibold">Destination:</td><td>${log.destination || log.domain || log.url || 'N/A'}</td></tr>
                     <tr><td class="fw-semibold">Agent:</td><td><span class="log-agent">${getAgentDisplayName(log)}</span></td></tr>
+                    ${log.agent_host_changed && getLoggedAgentDisplayName(log) ? `
+                    <tr><td class="fw-semibold">Logged as:</td><td><span class="text-muted">${escapeHtml(getLoggedAgentDisplayName(log))}</span></td></tr>
+                    ` : ''}
                 </table>
             </div>
             <div class="col-md-6">
@@ -812,7 +837,7 @@ function exportLogs(logs = logsData) {
             log.level || log.action || '',
             log.source_ip || log.ip || '',
             log.destination || log.domain || log.url || '',
-            log.agent_id || log.agent || '',
+            getAgentDisplayName(log),
             (log.message || '').replace(/,/g, ';')
         ].join(','))
     ].join('\n');

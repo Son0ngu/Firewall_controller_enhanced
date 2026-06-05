@@ -292,9 +292,9 @@ Auth note 2026-05-28: `POST /api/logs` vẫn là agent-facing và dùng `require
 | `WhitelistController` | `_is_teacher(self)` | Check if current request is from a teacher via web UI. | `server/controllers/whitelist_controller.py:89` |
 | `WhitelistController` | `_teacher_can_access_group(self, user, group_id)` | Check if teacher owns this group_id. | `server/controllers/whitelist_controller.py:96` |
 | `WhitelistController` | `agent_sync(self)` | Sync whitelist for agents - vietnam ONLY | `server/controllers/whitelist_controller.py:109` |
-| `WhitelistController` | `list_domains(self)` | List all whitelist domains - vietnam ONLY | `server/controllers/whitelist_controller.py:160` |
+| `WhitelistController` | `list_domains(self)` | Compatibility GET `/api/whitelist`; list unified whitelist entries via `WhitelistService.get_all_entries`, giữ `domains` alias cho UI cũ. | `server/controllers/whitelist_controller.py:170` |
 | `WhitelistController` | `add_domain(self)` | Add new entry to whitelist | `server/controllers/whitelist_controller.py:223` |
-| `WhitelistController` | `delete_domain(self, domain_id)` | Delete domain from whitelist - vietnam ONLY | `server/controllers/whitelist_controller.py:268` |
+| `WhitelistController` | `delete_domain(self, domain_id)` | Compatibility DELETE `/api/whitelist/<id>`; validate RBAC rồi gọi `WhitelistService.bulk_delete_entries([id])`. | `server/controllers/whitelist_controller.py:285` |
 | `WhitelistController` | `import_domains(self)` | Import multiple domains - vietnam ONLY | `server/controllers/whitelist_controller.py:315` |
 | `WhitelistController` | `export_domains(self)` | Export whitelist domains - vietnam ONLY | `server/controllers/whitelist_controller.py:355` |
 | `WhitelistController` | `get_statistics(self)` | Get whitelist statistics - vietnam ONLY | `server/controllers/whitelist_controller.py:384` |
@@ -885,33 +885,31 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 
 | Class | Công dụng | Vị trí |
 | --- | --- | --- |
-| `WhitelistService` | Service class for whitelist business logic - vietnam ONLY | `server/services/whitelist_service.py:106` |
+| `WhitelistService` | Service class for whitelist business logic | `server/services/whitelist_service.py:107` |
 
 | Class | Method | Công dụng | Vị trí |
 | --- | --- | --- | --- |
-| `WhitelistService` | `__init__(self, whitelist_model, agent_model, group_model, socketio=None, entry_model=None, policy_service=None, profile_service=None)` | Khởi tạo service với model + tuỳ chọn `entry_model` (`WhitelistEntryModel`) để ghi/đọc collection `whitelist_entries` mới; fallback embedded khi `entry_model=None`. Import `WhitelistEntryModel` bọc trong `if TYPE_CHECKING / else try-except` để legacy isolated test không kéo dependency này, đồng thời Pylance vẫn resolve được type. | `server/services/whitelist_service.py:106` |
-| `WhitelistService` | `validate_teacher_entry_access(self, item_id, teacher_group_ids, action)` | Kiểm tra quyền teacher trên global/group whitelist entry và pseudo-ID `group::<group_id>::<type>::<value>`; controller không query Mongo trực tiếp. | `server/services/whitelist_service.py:35` |
-| `WhitelistService` | `get_all_entries(self, filters)` | Get all whitelist entries with optional filtering - vietnam ONLY | `server/services/whitelist_service.py:38` |
-| `WhitelistService` | `add_entry(self, entry_data, client_ip)` | Add new entry to whitelist - vietnam ONLY | `server/services/whitelist_service.py:89` |
-| `WhitelistService` | `test_entry(self, entry_data)` | Test an entry before adding it - vietnam ONLY | `server/services/whitelist_service.py:196` |
-| `WhitelistService` | `test_dns(self, domain)` | Test DNS resolution for a domain - vietnam ONLY | `server/services/whitelist_service.py:247` |
-| `WhitelistService` | `_get_detailed_changes(self, since_dt)` | Get detailed changes since specified time - vietnam ONLY | `server/services/whitelist_service.py:302` |
-| `WhitelistService` | `_normalize_group_entries(self, group, include_inactive)` | Normalize entries from `group.whitelist[]`; chấp nhận cả shape mới `value/type` và legacy keys `domain/ip/url/port/process`, bỏ qua entry không có value thật. | `server/services/whitelist_service.py:370` |
-| `WhitelistService` | `_merge_whitelists(self, global_entries, group_entries)` | Merge global and group whitelists. | `server/services/whitelist_service.py:420` |
-| `WhitelistService` | `get_scoped_whitelist(self, agent_id, group_id)` | Return global and group whitelist entries with version metadata. | `server/services/whitelist_service.py:450` |
-| `WhitelistService` | `get_agent_sync_data(self, since_datetime, agent_id, global_version, group_version, agent_policy_mode)` | Get whitelist data for agent synchronization with group awareness. | `server/services/whitelist_service.py:498` |
-| `WhitelistService` | `delete_entry(self, entry_id)` | Delete an entry from global or group scope | `server/services/whitelist_service.py:610` |
-| `WhitelistService` | `bulk_delete_entries(self, item_ids)` | Bulk delete multiple whitelist entries (Global and Group) | `server/services/whitelist_service.py:637` |
-| `WhitelistService` | `bulk_add_entries(self, entries_data, client_ip)` | Bulk add entries to whitelist - now with group support | `server/services/whitelist_service.py:709` |
-| `WhitelistService` | `get_statistics(self)` | Get whitelist statistics - vietnam ONLY | `server/services/whitelist_service.py:832` |
-| `WhitelistService` | `update_entry(self, entry_id, update_data)` | Update an entry - supports both global ObjectIds and group pseudo-IDs | `server/services/whitelist_service.py:849` |
-| `WhitelistService` | `_update_group_entry(self, pseudo_id, update_data)` | Update a group whitelist entry identified by pseudo-ID. | `server/services/whitelist_service.py:886` |
-| `WhitelistService` | `_delete_group_entry(self, group_id, value, entry_type)` | Delete an entry from a group's whitelist by value and type. | `server/services/whitelist_service.py:935` |
-| `WhitelistService` | `get_all_domains(self, limit, offset, search)` | Get all domains with pagination - vietnam ONLY | `server/services/whitelist_service.py:958` |
-| `WhitelistService` | `add_domain(self, domain_value, category)` | Add new domain to whitelist - vietnam ONLY | `server/services/whitelist_service.py:995` |
-| `WhitelistService` | `delete_domain(self, domain_id)` | Delete domain from whitelist - supports both global entries and group pseudo-IDs | `server/services/whitelist_service.py:1046` |
-| `WhitelistService` | `import_domains(self, domains, category)` | Import multiple domains - vietnam ONLY | `server/services/whitelist_service.py:1094` |
-| `WhitelistService` | `export_domains(self, format, category)` | Export domains in specified format - vietnam ONLY | `server/services/whitelist_service.py:1155` |
+| `WhitelistService` | `__init__(self, whitelist_model, agent_model, group_model, socketio=None, entry_model=None, policy_service=None, profile_service=None)` | Khởi tạo service với model + tuỳ chọn `entry_model` (`WhitelistEntryModel`) để ghi/đọc collection `whitelist_entries` mới; fallback embedded khi `entry_model=None`. | `server/services/whitelist_service.py:110` |
+| `WhitelistService` | `validate_teacher_entry_access(self, item_id, teacher_group_ids, action)` | Kiểm tra quyền teacher trên global/group whitelist entry và pseudo-ID `group::<group_id>::<type>::<value>`; controller không query Mongo trực tiếp. | `server/services/whitelist_service.py:123` |
+| `WhitelistService` | `get_all_entries(self, filters, limit, offset)` | Unified whitelist entry listing; trả cả `items` và `domains` để tương thích UI cũ. | `server/services/whitelist_service.py:180` |
+| `WhitelistService` | `add_entry(self, entry_data, client_ip)` | Add new entry to whitelist; canonicalize URL/domain trước khi lưu. | `server/services/whitelist_service.py:243` |
+| `WhitelistService` | `test_entry(self, entry_data)` | Test an entry before adding it. | `server/services/whitelist_service.py:418` |
+| `WhitelistService` | `test_dns(self, domain)` | Test DNS resolution for a domain. | `server/services/whitelist_service.py:471` |
+| `WhitelistService` | `_get_detailed_changes(self, since_dt)` | Get detailed changes since specified time. | `server/services/whitelist_service.py:526` |
+| `WhitelistService` | `_normalize_group_entries(self, group, include_inactive)` | Normalize entries from `group.whitelist[]`; chấp nhận shape mới và legacy keys, bỏ qua entry không có value thật. | `server/services/whitelist_service.py:607` |
+| `WhitelistService` | `_merge_whitelists(self, global_entries, group_entries)` | Merge theo `type:value`; group/profile entry thắng global duplicate. | `server/services/whitelist_service.py:747` |
+| `WhitelistService` | `get_scoped_whitelist(self, agent_id, group_id)` | Return global and group whitelist entries with version metadata. | `server/services/whitelist_service.py:777` |
+| `WhitelistService` | `get_agent_sync_data(self, since_datetime, agent_id, global_version, group_version, agent_policy_mode)` | Build agent sync payload: global + active profile hoặc group base; apply policy override. | `server/services/whitelist_service.py:827` |
+| `WhitelistService` | `delete_entry(self, entry_id)` | Canonical single delete cho global rows, first-class group rows và embedded group rows có ObjectId thật. | `server/services/whitelist_service.py:941` |
+| `WhitelistService` | `bulk_delete_entries(self, item_ids)` | Canonical bulk delete; vẫn hỗ trợ pseudo-ID fallback cho legacy embedded group rows. | `server/services/whitelist_service.py:1009` |
+| `WhitelistService` | `bulk_add_entries(self, entries_data, client_ip)` | Bulk add entries to whitelist with global/group support. | `server/services/whitelist_service.py:1081` |
+| `WhitelistService` | `get_statistics(self)` | Get whitelist statistics. | `server/services/whitelist_service.py:1236` |
+| `WhitelistService` | `update_entry(self, entry_id, update_data)` | Update global, group ObjectId, or legacy pseudo-ID entry. | `server/services/whitelist_service.py:1253` |
+| `WhitelistService` | `_update_group_entry(self, entry_id, update_data)` | Update group whitelist entry by first-class/embedded ObjectId or pseudo-ID. | `server/services/whitelist_service.py:1322` |
+| `WhitelistService` | `_delete_group_entry(self, group_id, value, entry_type)` | Delete an entry from a group's whitelist by value and type. | `server/services/whitelist_service.py:1422` |
+| `WhitelistService` | `add_domain(self, domain_value, category)` | Legacy compatibility helper for adding a domain entry. | `server/services/whitelist_service.py:1470` |
+| `WhitelistService` | `import_domains(self, domains, category)` | Legacy compatibility helper for importing domain entries. | `server/services/whitelist_service.py:1526` |
+| `WhitelistService` | `export_domains(self, format, category)` | Legacy compatibility helper for exporting domain entries. | `server/services/whitelist_service.py:1592` |
 
 
 ## Package `server/tests`

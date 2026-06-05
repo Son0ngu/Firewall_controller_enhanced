@@ -17,7 +17,9 @@ Trang thai hien tai:
 
 - Source da cap nhat.
 - Test agent hien tai da pass: `31 passed`.
-- Full server test hien tai da pass: `541 passed`, `25 warnings` cu.
+- Full server+agent regression hien tai da pass: `576 passed`, `22 warnings`.
+- Whitelist regression hien tai: `server/tests/test_whitelist_and_logs.py` = `127 passed`; targeted whitelist flow suite = `170 passed`.
+- Cac warning whitelist legacy `get_all_domains/delete_domain` da het; 22 warning con lai la JWT test secret ngan.
 - Ban EXE can build lai sau khi dong cac process `SAINT` dang chay; lan build sau cung bi Windows khoa file `dist/SAINT.exe`.
 
 ## 1. PyInstaller onefile EXE
@@ -378,18 +380,15 @@ Ket qua:
 31 passed
 ```
 
-Server tests da chay tach theo nhom/file de tranh timeout tong:
+Server tests da chay tach theo nhom/file de tranh timeout tong o moc cu; baseline hien tai da cap nhat ngay ben duoi:
 
 ```text
-127 passed
-118 passed
-5 passed
-78 passed
-88 passed
-119 passed, 3 warnings
+server/tests/test_whitelist_and_logs.py: 127 passed
+targeted whitelist flow suite: 170 passed
+full agent+server regression: 576 passed, 22 warnings
 ```
 
-Tong server tests da verify sau phien moi: `541 passed`.
+Tong regression da verify sau phien moi: `576 passed, 22 warnings`.
 
 Qt smoke test:
 
@@ -461,7 +460,7 @@ Ket qua:
 
 ```text
 31 passed
-541 passed, 25 warnings
+576 passed, 22 warnings
 compileall pass
 ```
 
@@ -511,7 +510,7 @@ Verification da chay:
 
 ```text
 targeted config/snapshot/lifecycle/policy tests: 22 passed
-full regression: 576 passed, 25 warnings
+full regression: 576 passed, 22 warnings
 compileall: pass
 git diff --check: pass (chi LF/CRLF warning tren Windows)
 pyinstaller onefile: pass, tao dist\SAINT.exe
@@ -550,5 +549,65 @@ Fix chinh:
 Verification:
 
 ```text
-targeted whitelist/controller tests: 50 passed
+server/tests/test_whitelist_and_logs.py: 127 passed
+targeted whitelist flow suite: 170 passed
+full agent+server regression: 576 passed, 22 warnings
+```
+
+## 17. Logs agent filter hostname display fix
+
+Nguoi dung report: trong trang Logs, chon filter agent `sirnbx` nhung log card
+lai hien tag `sonbx`.
+
+Ket luan trace:
+
+- Filter backend dang loc theo `agent_id`, khong loc theo hostname text.
+- Log row cu co the da luu `agent_host=sonbx` tai thoi diem agent gui log.
+- Agent hien tai trong collection `agents` co hostname moi `sirnbx`.
+- Vi UI hien `agent_host` snapshot trong log, nguoi dung nhin nhu filter sai
+  du backend query van co the dung `agent_id`.
+
+Fix chinh:
+
+- `LogService.get_all_logs()` enrich hostname hien tai tu `agent_model` theo
+  `agent_id`.
+- API response uu tien `agent_host` hien tai de UI hien dung ten agent dang
+  chon trong dropdown.
+- API van tra `logged_agent_host` de giu forensic history hostname cu trong
+  log luc ghi.
+- API tra `agent_host_changed=True` khi hostname hien tai khac hostname da
+  ghi trong log.
+- UI `logs.js` uu tien `current_agent_host`, them tooltip `Logged as ...` va
+  modal detail dong `Logged as` neu hostname cu khac hostname hien tai.
+- UI co guard `filterLogsBySelectedAgent()` de an log co `agent_id` khac
+  selected agent neu server/client bi stale state.
+
+Reference:
+
+| Noi dung | Reference |
+| --- | --- |
+| Map `agent_id` sang hostname hien tai | `server/services/log_service.py:29`, `server/services/log_service.py:39` |
+| Enrich response voi `current_agent_host`, `logged_agent_host`, `agent_host_changed` | `server/services/log_service.py:345`, `server/services/log_service.py:369` |
+| UI uu tien hostname hien tai | `server/views/static/js/logs.js:41` |
+| UI guard agent_id selected filter | `server/views/static/js/logs.js:316` |
+| Tooltip/detail hostname cu | `server/views/static/js/logs.js:471`, `server/views/static/js/logs.js:797` |
+| Regression test case `sirnbx` hien tai / `sonbx` log cu | `server/tests/test_whitelist_and_logs.py:1059` |
+
+Verification:
+
+```text
+pytest server/tests/test_whitelist_and_logs.py::TestLogService -q --tb=short
+-> 18 passed
+
+pytest server/tests/test_whitelist_and_logs.py::TestLogService::test_get_all_logs_enriches_current_agent_hostname server/tests/test_whitelist_and_logs.py::TestLogService::test_get_all_logs_with_filters -q --tb=short
+-> 2 passed
+
+python -m compileall -q server/services/log_service.py server/tests/test_whitelist_and_logs.py
+-> pass
+
+node --check server/views/static/js/logs.js
+-> pass
+
+git diff --check
+-> pass, chi LF/CRLF warnings tren Windows
 ```
