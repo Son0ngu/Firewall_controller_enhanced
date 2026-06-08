@@ -124,6 +124,153 @@ function getLogDetailText(log) {
     return buildLogDescription(log);
 }
 
+function normalizeFilterValue(value) {
+    return normalizeAgentField(value).toLowerCase();
+}
+
+function isKnownAgentName(value) {
+    const normalized = normalizeFilterValue(value);
+    return normalized && normalized !== 'unknown' && normalized !== 'unknown agent';
+}
+
+function getSelectedAgentRecord() {
+    if (!currentFilter.agent) return null;
+    const selected = currentFilter.agent.toString();
+    return agentsData.find(agent => {
+        const ids = [agent.agent_id, agent._id, agent.id].map(v => normalizeAgentField(v));
+        return ids.includes(selected);
+    }) || null;
+}
+
+function getSelectedAgentNames() {
+    const agent = getSelectedAgentRecord();
+    if (!agent) return [];
+    const names = [
+        agent.hostname,
+        agent.display_name,
+        agent.current_agent_host,
+        agent.agent_host,
+        agent.host_name,
+        agent.agent_name,
+        agent.name,
+        agent.label
+    ].map(normalizeFilterValue).filter(Boolean);
+    return [...new Set(names.filter(isKnownAgentName))];
+}
+
+function getLogAgentNames(log) {
+    const names = [
+        log.current_agent_host,
+        log.agent_host,
+        log.hostname,
+        log.host_name,
+        log.logged_agent_host,
+        log.agent_name,
+        log.machine_name,
+        log.device_name
+    ].map(normalizeFilterValue).filter(Boolean);
+    return [...new Set(names.filter(isKnownAgentName))];
+}
+
+function getLogAgentIds(log) {
+    return [log.agent_id, log.agent, log.agent_uuid]
+        .map(normalizeAgentField)
+        .filter(Boolean);
+}
+
+function logMatchesSelectedAgent(log) {
+    if (!currentFilter.agent) return true;
+
+    const selectedId = currentFilter.agent.toString();
+    const selectedNames = getSelectedAgentNames();
+    const logNames = getLogAgentNames(log);
+
+    // Demo clones can accidentally share an agent_id. If both sides expose a
+    // hostname/display name, treat the visible selected name as authoritative.
+    if (selectedNames.length > 0 && logNames.length > 0) {
+        return logNames.some(name => selectedNames.includes(name));
+    }
+
+    const idMatches = getLogAgentIds(log).some(id => id === selectedId);
+    if (idMatches) return true;
+
+    // Fallback for legacy rows where the filter value was a hostname instead
+    // of an agent_id.
+    const selected = normalizeFilterValue(selectedId);
+    return selected && logNames.some(name => name === selected);
+}
+
+function logMatchesTimeFilter(log) {
+    const timeFilter = currentFilter.time;
+    if (!timeFilter || timeFilter === 'all') return true;
+
+    const timestamp = log.timestamp || log.server_received_at;
+    const parsed = timestamp ? new Date(timestamp) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) return true;
+
+    const now = new Date();
+    const ranges = {
+        '1h': 60 * 60 * 1000,
+        '24h': 24 * 60 * 60 * 1000,
+        '7d': 7 * 24 * 60 * 60 * 1000,
+        '30d': 30 * 24 * 60 * 60 * 1000,
+    };
+    const windowMs = ranges[timeFilter];
+    return !windowMs || parsed.getTime() >= now.getTime() - windowMs;
+}
+
+function getLogSearchText(log) {
+    return [
+        log.source_ip,
+        log.src_ip,
+        log.client_ip,
+        log.dest_ip,
+        log.destination_ip,
+        log.destination,
+        log.domain,
+        log.url,
+        log.protocol,
+        log.port,
+        getAgentDisplayName(log),
+        getLoggedAgentDisplayName(log),
+        getLogDetailText(log),
+        log.action,
+        log.level,
+    ].map(value => normalizeFilterValue(value)).join(' ');
+}
+
+function logMatchesCurrentFilters(log) {
+    if (!log) return false;
+
+    const levelFilter = normalizeFilterValue(currentFilter.level);
+    if (levelFilter) {
+        const level = normalizeFilterValue(log.level || log.action || 'INFO');
+        if (level !== levelFilter) return false;
+    }
+
+    if (!logMatchesSelectedAgent(log)) return false;
+
+    const searchTerm = normalizeFilterValue(currentFilter.search);
+    if (searchTerm && !getLogSearchText(log).includes(searchTerm)) {
+        return false;
+    }
+
+    return logMatchesTimeFilter(log);
+}
+
+function getVisibleLogs(logs = logsData) {
+    if (!Array.isArray(logs)) return [];
+    return logs.filter(logMatchesCurrentFilters).slice(0, currentFilter.limit);
+}
+
+function updateDisplayedLogCount(logs = getVisibleLogs()) {
+    const visibleCount = Array.isArray(logs) ? logs.length : 0;
+    const logCountEl = document.getElementById('logCount');
+    if (logCountEl) {
+        logCountEl.textContent = `${visibleCount.toLocaleString()} displayed`;
+    }
+}
+
 /**
  *  Load FULL statistics với better error handling
  */
@@ -207,18 +354,16 @@ async function updateStatistics() {
             renderStat(warningsEl, allTimeStats.filtered_warnings, allTimeStats.warnings);
             
             // Update log count
-            const logCountEl = document.getElementById('logCount');
-            if (logCountEl) {
-                logCountEl.textContent = `${logsData.length.toLocaleString()} displayed`;
-            }
+            updateDisplayedLogCount();
             
         } else {
             SaintLog.debug(' Using fallback statistics calculation');
             // Fallback: calculate from current logs data
-            const total = logsData.length;
-            const allowed = logsData.filter(log => (log.level === 'ALLOWED' || log.action === 'ALLOWED')).length;
-            const blocked = logsData.filter(log => (log.level === 'BLOCKED' || log.action === 'BLOCKED')).length;
-            const warnings = logsData.filter(log => log.level === 'WARNING').length;
+            const visibleLogs = getVisibleLogs();
+            const total = visibleLogs.length;
+            const allowed = visibleLogs.filter(log => (log.level === 'ALLOWED' || log.action === 'ALLOWED')).length;
+            const blocked = visibleLogs.filter(log => (log.level === 'BLOCKED' || log.action === 'BLOCKED')).length;
+            const warnings = visibleLogs.filter(log => log.level === 'WARNING').length;
             
             document.getElementById('totalLogsCount').innerHTML = `${total.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
             document.getElementById('allowedLogsCount').innerHTML = `${allowed.toLocaleString()}<small class="text-muted d-block">limited view</small>`;
@@ -234,7 +379,7 @@ async function updateStatistics() {
         document.getElementById('allowedLogsCount').textContent = '0';
         document.getElementById('blockedLogsCount').textContent = '0';
         document.getElementById('warningLogsCount').textContent = '0';
-        document.getElementById('logCount').textContent = `${logsData.length.toLocaleString()} displayed`;
+        updateDisplayedLogCount();
     }
 }
 
@@ -298,7 +443,7 @@ async function loadLogs() {
             if (logsData.length > 0) {
                 SaintLog.debug('First log sample:', JSON.stringify(logsData[0], null, 2));
             }
-            renderLogs(filterLogsBySelectedAgent(logsData));
+            renderLogs(getVisibleLogs(logsData));
             await updateStatistics();
         } else {
             console.error('No valid logs array in response');
@@ -319,10 +464,10 @@ function filterLogsBySelectedAgent(logs) {
     }
 
     const expected = currentFilter.agent.toString();
-    const filtered = logs.filter(log => (log.agent_id || log.agent || '').toString() === expected);
+    const filtered = logs.filter(logMatchesSelectedAgent);
     const hidden = logs.length - filtered.length;
     if (hidden > 0) {
-        console.warn(`Hidden ${hidden} log(s) with unexpected agent_id for selected filter ${expected}`);
+        console.warn(`Hidden ${hidden} log(s) outside selected agent filter ${expected}`);
     }
     return filtered;
 }
@@ -419,6 +564,9 @@ function onFilterChange() {
 function renderLogs(logs) {
     SaintLog.debug('🎨 renderLogs called with:', logs ? logs.length : 0, 'logs');
     
+    logs = Array.isArray(logs) ? logs : [];
+    updateDisplayedLogCount(logs);
+
     const container = document.getElementById('logsContainer');
     
     if (!container) {
@@ -426,7 +574,7 @@ function renderLogs(logs) {
         return;
     }
     
-    if (!logs || !Array.isArray(logs) || logs.length === 0) {
+    if (logs.length === 0) {
         SaintLog.debug(' No logs to render');
         container.innerHTML = `
             <div class="empty-state">
@@ -750,26 +898,7 @@ function clearSingleLog(logId) {
  *  Filter logs
  */
 function filterLogs() {
-    const searchTerm = currentFilter.search.toLowerCase();
-    const levelFilter = currentFilter.level;
-    const agentFilter = currentFilter.agent;
-    const logItems = document.querySelectorAll('.log-item');
-    
-    logItems.forEach(item => {
-        const level = item.dataset.level;
-        const agent = item.dataset.agent;
-        const searchText = item.dataset.search;
-        
-        const matchesSearch = !searchTerm || searchText.includes(searchTerm);
-        const matchesLevel = !levelFilter || level === levelFilter.toLowerCase();
-        const matchesAgent = !agentFilter || agent.includes(agentFilter.toLowerCase());
-        
-        if (matchesSearch && matchesLevel && matchesAgent) {
-            item.style.display = 'block';
-        } else {
-            item.style.display = 'none';
-        }
-    });
+    renderLogs(getVisibleLogs(logsData));
 }
 
 /**
@@ -1154,10 +1283,15 @@ try {
         
         socket.on('new_log', function(logData) {
             SaintLog.debug(' New log received:', logData);
+            if (!logMatchesCurrentFilters(logData)) {
+                SaintLog.debug(' New log skipped by active filters:', currentFilter);
+                updateStatistics();
+                return;
+            }
             logsData.unshift(logData);
             logsData = logsData.slice(0, currentFilter.limit);
             updateStatistics();
-            renderLogs(logsData);
+            renderLogs(getVisibleLogs(logsData));
         });
         
         socket.on('logs_cleared', function(data) {

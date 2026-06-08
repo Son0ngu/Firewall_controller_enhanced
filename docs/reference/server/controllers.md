@@ -132,7 +132,7 @@ Blueprint mount vào Flask app với `url_prefix='/api'` ở `app.py`. Tổng 10
 
 **Handlers**:
 - `receive_logs()` - POST `{logs: [...]}`. Agent header `X-Agent-ID`. Status 201 nếu OK
-- `list_logs()` - GET filters. Teacher filter merge bằng `{"$and": [teacher_filter, user_filters]}`
+- `list_logs()` - GET filters. Teacher filter merge bằng `{"$and": [teacher_filter, user_filters]}`. Server filter là `agent_id` exact match; web UI có thể post-filter thêm theo hostname/display_name cho realtime demo clones.
 - `clear_logs()` - DELETE. **Teacher 403**. Body `{action: "all"|"selected"|"old", filters, log_ids}`. "old" = older than 30 days. Emit `logs_cleared`
 - `export_logs()` - GET `?format=json|csv`. **Teacher 403**
 - `get_log_statistics()` - Internal, gọi từ `get_statistics`
@@ -318,6 +318,7 @@ Mọi route wrap `@require_login + @require_admin`.
 
 ### Socket events
 - **Mỗi mutation có socketio emit** nhưng tên event không consistent: `agent_registered`, `agent_heartbeat`, `agent_deleted`, `agent_group_updated`, `agent_policy_changed`, `whitelist_added`, `whitelist_updated`, `whitelist_deleted` (one of), `whitelist_bulk_added`, `api_key_created`, `api_key_revoked`, `admin_login`, `user_created`, `token_refreshed`, `agent_logout`, `logs_cleared`, `new_log`. Frontend subscribe gì = nó decide.
+- `new_log` broadcast là fan-out thẳng cho tất cả clients; Logs page phải tự áp filter hiện tại trước khi prepend/render.
 - **Race condition**: emit AFTER DB write nhưng không transactional. Nếu DB write fail sau emit (hiếm), client thấy event mà data chưa lưu. Acceptable.
 
 ### Legacy/duplicated routes

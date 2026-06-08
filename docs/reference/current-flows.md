@@ -1,6 +1,6 @@
 # SAINT Current Runtime Flows
 
-Last checked against source: 2026-06-05.
+Last checked against source: 2026-06-08.
 
 This page is the current source-readable flow reference for the recent Agent,
 Server, whitelist, packaging, and config changes. It intentionally uses
@@ -13,6 +13,8 @@ Mermaid diagrams so the flow can be reviewed without opening DrawIO.
 | Web whitelist routes | `server/controllers/whitelist_controller.py` |
 | Unified whitelist service | `server/services/whitelist_service.py` |
 | Group/profile whitelist | `server/services/whitelist_profile_service.py`, `server/models/group_model.py` |
+| Group Detail whitelist editor | `server/views/static/js/group_detail.js` |
+| Logs page filters/realtime | `server/views/static/js/logs.js`, `server/services/log_service.py` |
 | Agent whitelist sync | `agent/whitelist/manager.py`, `agent/whitelist/state.py` |
 | Firewall allow rules | `agent/firewall/manager.py`, `agent/firewall/utils.py` |
 | Server URL/config paths | `agent/shared/server_urls.py`, `agent/config/paths.py` |
@@ -59,6 +61,30 @@ flowchart TD
     GLOBALDEL --> SOCKET
     GROUPDEL --> SOCKET
     PSEUDODEL --> SOCKET
+```
+
+## Group Detail Inline Whitelist Flow
+
+The Group Detail page no longer trusts `group.whitelist[]` for the visible
+count. It resolves the group rows from the unified management API so the
+banner and inline editor match the Whitelist page.
+
+```mermaid
+flowchart TD
+    PAGE["Group Detail page"] --> GROUP["GET /api/groups/<group_id>"]
+    PAGE --> WH["GET /api/whitelist?scope=group&group_id=<group_id>&limit=1000"]
+
+    GROUP --> META["Group metadata / whitelist version"]
+    WH --> RAW["items / domains / whitelist / data"]
+    RAW --> NORMALIZE["Normalize rows to entry objects"]
+    NORMALIZE --> FALLBACK{"No unified rows?"}
+    FALLBACK -->|"Yes"| LEGACY["Fallback to group.whitelist[]"]
+    FALLBACK -->|"No"| SET["Set wlGroupData.whitelist = unified rows"]
+    LEGACY --> SET
+
+    SET --> COUNTERS["Update wlCount / wlTotalCount / whitelistCount"]
+    SET --> BANNER["Banner shows real group-base count"]
+    SET --> ADDDEL["Add/Delete use /api/whitelist bulk + DELETE /api/whitelist/<id>"]
 ```
 
 ## Agent Whitelist Sync And Merge Flow
@@ -161,3 +187,31 @@ flowchart TD
 After the whitelist legacy service cleanup, full tests no longer emit
 `get_all_domains` or `delete_domain` deprecation warnings. Remaining warnings
 are JWT HMAC key length warnings from local test secrets shorter than 32 bytes.
+
+## Logs Filter And Realtime Flow
+
+The Logs page uses server-side filtering for the initial fetch, but the realtime
+Socket.IO stream must also respect the active client filter. This matters for
+demo clones where hostname/display name can diverge from the same agent ID.
+
+```mermaid
+flowchart TD
+    UI["Logs page"] --> LOAD["GET /api/logs?agent_id=&level=&search=&time_range=&limit="]
+    LOAD --> SRV["LogService.get_all_logs"]
+    SRV --> LIST["logsData raw buffer"]
+    LIST --> MATCH["Client matcher: level + agent + search + time"]
+    MATCH --> VIEW["Visible logs rendered"]
+
+    SOCKET["Socket.IO new_log"] --> CHECK{"Matches current filters?"}
+    CHECK -->|"No"| SKIP["Skip prepend"]
+    CHECK -->|"Yes"| PREPEND["unshift + re-render visible list"]
+```
+
+Client filter rules:
+
+- If selected agent and log both expose hostname/display name, compare the
+  visible name first.
+- If name is missing, fall back to `agent_id`.
+- Search runs against domain, destination, IPs, protocol, agent labels and
+  reconstructed detail text.
+- `logCount` reflects the rendered subset, not the raw buffer.

@@ -174,6 +174,8 @@ Receive logs từ agent, store, format query results.
 | `.get_comprehensive_statistics(filters=None)` | `→ Dict` | [log_service.py:491](../../../server/services/log_service.py#L491) | Total + filtered counts cho 4 categories: allowed/blocked/warnings/allowed_by_ip |
 | `_build_query_from_filters(filters)` | | [log_service.py:552](../../../server/services/log_service.py#L552) | |
 
+Note 2026-06-08: web Logs page now applies the same active-agent filter on the client side for realtime `new_log` events. The server still filters the initial fetch by exact `agent_id`; the UI can additionally compare visible hostname/display_name for cloned demo machines that share stale agent IDs.
+
 ### `services/agent_policy_service.py` - `AgentPolicyService`
 
 Override mode per-agent: `none` / `isolate` / `custom_whitelist`. Merge vào sync response.

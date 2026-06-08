@@ -1265,50 +1265,104 @@ async function applyPolicy(agentId, mode, reason = '', durationMinutes = null, c
 let wlGroupData = null;
 
 /**
- * Load whitelist entries from group.whitelist[]
+ * Extract whitelist rows from the tolerant API shapes used across the app.
+ */
+function wlExtractItems(data) {
+    if (!data) return [];
+    if (Array.isArray(data.items)) return data.items;
+    if (Array.isArray(data.domains)) return data.domains;
+    if (Array.isArray(data.whitelist)) return data.whitelist;
+    if (data.data && data.data !== data) return wlExtractItems(data.data);
+    if (Array.isArray(data)) return data;
+    return [];
+}
+
+function wlEntryValue(entry) {
+    return typeof entry === 'string'
+        ? entry
+        : (entry?.value || entry?.domain || '');
+}
+
+function wlToEntry(raw, index) {
+    const val = wlEntryValue(raw);
+    const type = typeof raw === 'string' ? 'domain' : (raw.type || 'domain');
+    const category = typeof raw === 'string' ? 'general' : (raw.category || 'general');
+    const priority = typeof raw === 'string' ? 'normal' : (raw.priority || 'normal');
+    const scope = typeof raw === 'string'
+        ? 'group'
+        : (raw.scope || raw._scope || (raw.group_id ? 'group' : 'group'));
+    const fallbackId = `group::${groupId}::${type}::${val}`;
+    const entryId = typeof raw === 'string'
+        ? fallbackId
+        : (raw._id || raw.id || fallbackId);
+
+    return {
+        _id: entryId,
+        id: entryId,
+        value: val,
+        type: type,
+        category: category,
+        priority: priority,
+        is_active: typeof raw === 'string' ? true : raw.is_active !== false,
+        active: typeof raw === 'string' ? true : raw.active !== false,
+        _scope: scope,
+        scope: scope,
+        group_id: typeof raw === 'string' ? groupId : (raw.group_id || groupId),
+        _index: index,
+    };
+}
+
+function wlSetCounts(count) {
+    const countEl = document.getElementById('wlCount');
+    const totalEl = document.getElementById('wlTotalCount');
+    const heroCountEl = document.getElementById('whitelistCount');
+    if (countEl) countEl.textContent = count;
+    if (totalEl) totalEl.textContent = count;
+    if (heroCountEl) heroCountEl.textContent = count;
+}
+
+/**
+ * Load whitelist entries for this group from the unified whitelist API.
  */
 async function wlLoadEntries() {
     const container = document.getElementById('wlDomainList');
     if (!container) return;
 
     try {
-        const data = await SaintAPI.get(`/api/groups/${groupId}`);
+        const [groupResponse, whitelistResponse] = await Promise.all([
+            SaintAPI.get(`/api/groups/${groupId}`),
+            SaintAPI.get(`/api/whitelist?scope=group&group_id=${encodeURIComponent(groupId)}&limit=1000`),
+        ]);
 
-        if (!data.success) {
+        if (!groupResponse.success || !whitelistResponse.success) {
             container.innerHTML = '<div class="wl-empty-state"><p>Error loading whitelist</p></div>';
             return;
         }
 
-        wlGroupData = data.data;
-        const domains = wlGroupData.whitelist || [];
+        wlGroupData = groupResponse.data || {};
 
-        // Convert group whitelist to entry format for rendering
-        const groupEntries = domains.map((d, i) => {
-            const val = typeof d === 'string' ? d : (d.value || '');
-            const type = typeof d === 'string' ? 'domain' : (d.type || 'domain');
-            const category = typeof d === 'string' ? 'general' : (d.category || 'general');
-            const priority = typeof d === 'string' ? 'normal' : (d.priority || 'normal');
-            return {
-                _id: `group|${i}`,
-                value: val,
-                type: type,
-                category: category,
-                priority: priority,
-                is_active: true,
-                _scope: 'group',
-                _index: i,
-            };
-        });
+        // First-class group whitelist entries live in `/api/whitelist`.
+        // Legacy groups may still only have `group.whitelist[]`; keep that
+        // fallback so old demo data remains visible.
+        let groupEntries = wlExtractItems(whitelistResponse)
+            .filter(entry => String(entry.group_id || groupId) === String(groupId))
+            .map(wlToEntry)
+            .filter(entry => entry.value);
+
+        if (groupEntries.length === 0 && Array.isArray(wlGroupData.whitelist)) {
+            groupEntries = wlGroupData.whitelist
+                .map(wlToEntry)
+                .filter(entry => entry.value);
+        }
+
+        wlGroupData.whitelist = groupEntries;
 
         wlAllEntries = groupEntries;
         wlEntries = [...wlAllEntries];
 
         // Update counters
-        const countEl = document.getElementById('wlCount');
-        const totalEl = document.getElementById('wlTotalCount');
         const versionEl = document.getElementById('wlVersion');
-        if (countEl) countEl.textContent = groupEntries.length;
-        if (totalEl) totalEl.textContent = groupEntries.length;
+        wlSetCounts(groupEntries.length);
         if (versionEl) versionEl.textContent = wlGroupData.whitelist_version || 1;
 
         wlRenderList();
@@ -1353,7 +1407,7 @@ function wlRenderList() {
         // Category badge
         let catBadge = '';
         if (category && category !== 'general' && category !== 'uncategorized') {
-            catBadge = `<span class="badge bg-primary-subtle text-primary">${category}</span>`;
+            catBadge = `<span class="badge bg-primary-subtle text-primary">${wlEscapeHtml(category)}</span>`;
         }
 
         // Scope badge
@@ -1364,25 +1418,25 @@ function wlRenderList() {
         // Priority star
         const star = priority === 'high' ? '<i class="fas fa-star wl-priority-star" title="High priority"></i>' : '';
 
-        // Delete button - uses domain index for Default Profile (admin only)
-        const entryIndex = entry._index !== undefined ? entry._index : '';
+        // Delete button - use the whitelist entry id from the management API.
         const isAdminUser = window.SAINT_AUTH && window.SAINT_AUTH.isAdmin;
-        const deleteBtn = (isGlobal || !isAdminUser)
+        const entryIdArg = encodeURIComponent(String(entryId));
+        const deleteBtn = (isGlobal || !isAdminUser || !entryId)
             ? ''
             : `<div class="wl-actions">
-                <button class="btn btn-outline-danger btn-sm" onclick="wlDeleteEntry(${entryIndex})" title="Delete">
+                <button class="btn btn-outline-danger btn-sm" onclick="wlDeleteEntry(decodeURIComponent('${entryIdArg}'))" title="Delete">
                     <i class="fas fa-trash-alt"></i>
                 </button>
                </div>`;
 
         return `
-            <div class="wl-entry" data-entry-id="${entryId}" data-scope="${scope}">
+            <div class="wl-entry" data-entry-id="${wlEscapeHtml(entryId)}" data-scope="${wlEscapeHtml(scope)}">
                 <div class="wl-entry-info">
                     <div class="wl-entry-icon"><i class="${iconClass}"></i></div>
                     <div class="wl-entry-text">
                         <div class="wl-entry-value">${wlEscapeHtml(val)}</div>
                         <div class="wl-entry-badges">
-                            <span class="badge bg-light text-secondary">${type}</span>
+                            <span class="badge bg-light text-secondary">${wlEscapeHtml(type)}</span>
                             ${catBadge}
                             ${scopeBadge}
                         </div>
@@ -1433,16 +1487,19 @@ async function wlAddEntry() {
 
     const type = typeSelect?.value || 'domain';
 
-    // Build new domains array by appending to existing
-    const currentDomains = [...(wlGroupData.whitelist || [])];
     let addedCount = 0;
+    const items = [];
     for (const val of values) {
-        const exists = currentDomains.some(d => {
-            const dVal = typeof d === 'string' ? d : d.value;
-            return dVal === val;
-        });
+        const exists = wlAllEntries.some(d => wlEntryValue(d).toLowerCase() === val);
         if (!exists) {
-            currentDomains.push({ value: val, type: type, category: 'general' });
+            items.push({
+                value: val,
+                type: type,
+                category: 'general',
+                scope: 'group',
+                group_id: groupId,
+                is_active: true,
+            });
             addedCount++;
         }
     }
@@ -1456,9 +1513,7 @@ async function wlAddEntry() {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
     try {
-        const data = await SaintAPI.patch(`/api/groups/${groupId}`, {
-            whitelist: currentDomains,
-        });
+        const data = await SaintAPI.post('/api/whitelist/bulk', { items });
 
         if (data.success) {
             input.value = '';
@@ -1479,21 +1534,15 @@ async function wlAddEntry() {
 /**
  * Delete a whitelist entry
  */
-async function wlDeleteEntry(entryIndex) {
-    if (entryIndex === undefined || !wlGroupData) return;
+async function wlDeleteEntry(entryId) {
+    if (!entryId || !wlGroupData) return;
     if (!confirm('Remove this domain from whitelist?')) return;
 
-    const currentDomains = [...(wlGroupData.whitelist || [])];
-    const idx = parseInt(entryIndex);
-    if (idx < 0 || idx >= currentDomains.length) return;
-
-    const removed = currentDomains.splice(idx, 1);
-    const removedVal = typeof removed[0] === 'string' ? removed[0] : removed[0]?.value;
+    const entry = wlAllEntries.find(item => String(item._id || item.id) === String(entryId));
+    const removedVal = wlEntryValue(entry);
 
     try {
-        const data = await SaintAPI.patch(`/api/groups/${groupId}`, {
-            whitelist: currentDomains,
-        });
+        const data = await SaintAPI.del(`/api/whitelist/${encodeURIComponent(entryId)}`);
 
         if (data.success) {
             showNotification('success', `Deleted "${removedVal}"`);

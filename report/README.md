@@ -1,3 +1,14 @@
+# Cap nhat 2026-06-08
+
+- Group Detail whitelist count va Logs agent filter realtime update duoc ghi chi tiet tai `server/11_CAP_NHAT_2026_06_08_GROUP_DETAIL_WHITELIST_LOG_FILTER.md`.
+- Noi dung chinh: Group Detail khong con dem `group.whitelist[]` cu ma doc `/api/whitelist?scope=group&group_id=...`, banner `Using Group Base Whitelist` hien dung count that; Logs page dung matcher chung cho API/search/socket, `new_log` realtime khong chen vao list neu khong match agent filter hien tai.
+- Verification trong phien: `node --check` cho `group_detail.js` va `logs.js` pass; targeted group whitelist add/delete tests `3 passed`.
+
+# Cap nhat 2026-06-05
+
+- Server whitelist group filter/status update duoc ghi chi tiet tai `server/10_CAP_NHAT_2026_06_05_WHITELIST_GROUP_FILTER_STATUS.md`.
+- Noi dung chinh: tach management list khoi effective whitelist, All Groups hien global + group, filter group chi hien group entries, Active/Inactive co tac dung that va inactive khong sync xuong agent, teacher chi read whitelist va dung Whitelist Profile, group/whitelist management la admin-only.
+
 # Cap nhat 2026-06-04
 
 - Agent build/GUI/firewall/URL update duoc ghi chi tiet tai `agent/08_CAP_NHAT_2026_06_04_AGENT_BUILD_GUI_FIREWALL_URL.md`.

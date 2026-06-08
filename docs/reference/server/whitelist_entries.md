@@ -14,6 +14,12 @@ Trang thai hien tai la **collection-first dual path**:
 - Pseudo-ID `group::<group_id>::<type>::<value>` chi con la fallback cho legacy embedded row chua migrate/backfill.
 - Embedded array chua bi xoa trong code/deploy nay de co rollback an toan.
 
+Frontend note 2026-06-08:
+
+- Group Detail page khong con doc count tu `group.whitelist[]` khi render banner.
+- Inline editor lay entries tu `/api/whitelist?scope=group&group_id=...`.
+- `GET /api/groups/<id>` chi giu metadata/version, khong phai source count that cua UI.
+
 ## Collection schema
 
 Collection: `whitelist_entries`
