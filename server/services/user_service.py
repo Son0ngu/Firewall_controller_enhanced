@@ -15,7 +15,7 @@ from services.audit_service import AuditService
 from config.rbac_config import VALID_ROLES, get_all_permissions
 
 MIN_PASSWORD_LENGTH = 8
-MAX_PASSWORD_LENGTH = 128
+MAX_PASSWORD_BYTES = 72
 
 
 class UserService:
@@ -73,8 +73,8 @@ class UserService:
             # Validate password
             if len(password) < MIN_PASSWORD_LENGTH:
                 return False, {}, f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
-            if len(password) > MAX_PASSWORD_LENGTH:
-                return False, {}, f"Password must not exceed {MAX_PASSWORD_LENGTH} characters"
+            if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+                return False, {}, f"Password must not exceed {MAX_PASSWORD_BYTES} UTF-8 bytes (bcrypt limit)"
 
             # Hash password
             password_hash = bcrypt.hashpw(
@@ -215,6 +215,8 @@ class UserService:
 
             if len(new_password) < MIN_PASSWORD_LENGTH:
                 return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
+            if len(new_password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+                return False, f"Password must not exceed {MAX_PASSWORD_BYTES} UTF-8 bytes (bcrypt limit)"
 
             new_hash = bcrypt.hashpw(
                 new_password.encode("utf-8"),
@@ -281,38 +283,34 @@ class UserService:
     # SEED DEFAULT ADMIN
     # ========================================================================
 
-    def ensure_default_admin(self, username: str = "admin",
-                             password: str = "admin123456") -> Optional[Dict]:
-        """Create default admin if no admin exists"""
+    def ensure_default_admin(self, username: str = None,
+                             password: str = None) -> Optional[Dict]:
+        """Create default admin if no admin exists and credentials are supplied."""
         try:
             admin_count = self.user_model.count_users({"role": "admin"})
             if admin_count > 0:
                 self.logger.info("Admin already exists, skipping seed")
                 return None
 
-            password_hash = bcrypt.hashpw(
-                password.encode("utf-8"),
-                bcrypt.gensalt(rounds=12)
-            ).decode("utf-8")
-
-            user_data = {
-                "username": username,
-                "password_hash": password_hash,
-                "email": None,
-                "role": "admin",
-                "created_by": None,  # System created
-            }
-
-            user = self.user_model.create(user_data)
+            if not username or not password:
+                self.logger.info("Default admin bootstrap skipped (no credentials provided)")
+                return None
+            success, user_data, error = self.create_user(
+                username=username,
+                password=password,
+                role="admin",
+            )
+            if not success:
+                self.logger.error(f"Error creating default admin: {error}")
+                return None
 
             self.logger.warning("=" * 60)
             self.logger.warning("DEFAULT ADMIN CREATED!")
             self.logger.warning(f"  Username: {username}")
-            self.logger.warning(f"  Password: {password}")
-            self.logger.warning("  CHANGE THIS PASSWORD IMMEDIATELY!")
+            self.logger.warning("  Password is not logged; copy it from your seed source immediately.")
             self.logger.warning("=" * 60)
 
-            return self._sanitize_user(user)
+            return user_data
 
         except Exception as e:
             self.logger.error(f"Error creating default admin: {e}")

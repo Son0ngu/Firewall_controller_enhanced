@@ -16,6 +16,16 @@ Run firewall-only `20260527_235108` vẫn là smoke lịch sử hữu ích, như
 
 Kết luận vận hành: PowerShell/NetSecurity write backend đã đạt packet-level smoke trên một máy Windows admin thật và đã pass trong full deep Render E2E. Tuy nhiên vẫn cần canary thêm máy lab trước khi đổi default rộng, vì rủi ro khóa mạng phụ thuộc driver/firewall policy/local security software từng máy. Những phần chưa test thật sự: multi-machine vật lý, reboot/service autostart sau reboot và soak dài hơn 30 phút.
 
+## Cập nhật an toàn Default Deny 2026-06-08
+
+Đã fix các đường bật whitelist firewall (`FirewallManager.setup_whitelist_firewall()` và `enable_whitelist_mode()`) để không bật Default Deny trước khi tạo allow rules. Thứ tự mới:
+
+1. Tạo self-allow rules cho chương trình Agent.
+2. Tạo toàn bộ allow rules cho whitelist IP + essential IP.
+3. Chỉ khi hai bước trên thành công mới bật Windows Firewall Default Deny.
+
+`RulesManager.create_allow_rules_batch()` cũng được đổi sang fail-closed: batch chỉ thành công khi tất cả IP trong batch tạo rule thành công, không còn coi "tạo được ít nhất một rule" là đủ. Unit test mới xác nhận Default Deny không được gọi nếu self-allow hoặc allow batch thất bại.
+
 ## Cơ chế bảo mật
 
 | Cơ chế | Source | Ý nghĩa |
@@ -39,6 +49,8 @@ Kết luận vận hành: PowerShell/NetSecurity write backend đã đạt packe
 
 - `create_self_allow_rules()` allow chương trình Agent.
 - `_resolve_server_urls()` resolve và allow Server URL trước khi bật policy.
+- `setup_whitelist_firewall()` và `enable_whitelist_mode()` đều theo nguyên tắc allow-before-deny; nếu self-allow hoặc allow batch thất bại thì không bật Default Deny.
+- `sync_whitelist_changes()` now keeps protected essential/server IPs, and `remove_ip_from_whitelist()` refuses to remove them.
 - `shared/server_urls.py::collect_server_urls(config, allow_dev_default=False)` là resolver URL Server chung; khi chưa cấu hình Server, Agent ở first-run offline mode thay vì tự fallback về `http://localhost:5000`.
 - `PolicyManager.backup_current_policy()` và restore policy.
 - `RulesManager.clear_all_rules()` dọn rule theo prefix.

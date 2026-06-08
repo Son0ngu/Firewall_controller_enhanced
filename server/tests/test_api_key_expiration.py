@@ -5,7 +5,6 @@ from bson import ObjectId
 from flask import Flask, jsonify
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from middleware.auth import init_auth_middleware, require_api_key
 from models.api_key_model import APIKeyModel
 from services.api_key_service import APIKeyService

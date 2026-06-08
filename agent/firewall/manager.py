@@ -89,6 +89,7 @@ class FirewallManager:
         
         # State tracking
         self.essential_ips: Set[str] = set()
+        self.server_ips: Set[str] = set()
         self.whitelist_mode_active = False
         
         # Check admin privileges
@@ -134,30 +135,32 @@ class FirewallManager:
 
             logger.info(f"Total IPs to allow: {len(all_allowed_ips)}")
 
-            # Step 0: Whitelist the agent's own exe (see enable_whitelist_mode
-            # for rationale - survives server IP rotation).
-            self.rules_manager.create_self_allow_rules(sys.executable)
+            # Step 1: Create the agent self-allow rules before Default Deny.
+            # If these fail, enabling block-outbound can strand the agent
+            # without DNS/server access.
+            if not self.rules_manager.create_self_allow_rules(sys.executable):
+                logger.error("Failed to create agent self-allow rules")
+                return False
 
-            # Step 1: Enable Default Deny policy
+            # Step 2: Create remote IP allow rules before Default Deny.
+            if not self.rules_manager.create_allow_rules_batch(all_allowed_ips):
+                logger.error("Failed to create allow rules")
+                return False
+
+            # Step 3: Enable Default Deny only after the allow surface exists.
             if not self.policy_manager.enable_default_deny():
                 logger.error("Failed to enable Default Deny policy")
                 return False
-            
-            # Step 2: Create allow rules
-            success = self.rules_manager.create_allow_rules_batch(all_allowed_ips)
-            
-            if success:
-                self.whitelist_mode_active = True
-                self.essential_ips = essential_ips_valid
-                
-                logger.info("Whitelist firewall with Default Deny setup completed!")
-                logger.info("Windows Firewall Policy: DENY all outbound by default")
-                logger.info(f"Created {len(all_allowed_ips)} ALLOW rules for whitelisted traffic")
-                
-                return True
-            else:
-                logger.error("Failed to create allow rules")
-                return False
+
+            self.whitelist_mode_active = True
+            self.essential_ips = essential_ips_valid
+            self.server_ips = set()
+
+            logger.info("Whitelist firewall with Default Deny setup completed!")
+            logger.info("Windows Firewall Policy: DENY all outbound by default")
+            logger.info(f"Created {len(all_allowed_ips)} ALLOW rules for whitelisted traffic")
+
+            return True
                 
         except Exception as e:
             logger.error(f"Error setting up whitelist firewall: {e}")
@@ -191,6 +194,10 @@ class FirewallManager:
     
     def remove_ip_from_whitelist(self, ip: str) -> bool:
         try:
+            if ip in self.essential_ips or ip in self.server_ips:
+                logger.warning(f"Refusing to remove protected IP {ip}")
+                return False
+
             if ip not in self.allowed_ips:
                 logger.debug(f"IP {ip} not in whitelist")
                 return True
@@ -211,7 +218,8 @@ class FirewallManager:
     def sync_whitelist_changes(self, old_ips: Set[str], new_ips: Set[str]) -> bool:
         try:
             added_ips = new_ips - old_ips
-            removed_ips = old_ips - new_ips
+            protected_ips = self.essential_ips.union(self.server_ips)
+            removed_ips = {ip for ip in (old_ips - new_ips) if ip not in protected_ips}
             
             if not added_ips and not removed_ips:
                 logger.debug("No IP changes to sync")
@@ -258,6 +266,7 @@ class FirewallManager:
             
             # Step 3: Clear state
             self.essential_ips.clear()
+            self.server_ips.clear()
             self.whitelist_mode_active = False
             
             logger.info("Whitelist firewall cleanup completed")
@@ -284,6 +293,7 @@ class FirewallManager:
             
             # Step 3: Clear all state
             self.essential_ips.clear()
+            self.server_ips.clear()
             self.whitelist_mode_active = False
             
             success = rules_success and policy_success
@@ -573,7 +583,9 @@ class FirewallManager:
             # immune to server-side IP rotation (Render.com load balancer)
             # whereas remoteip-based rules break the moment DNS resolves to a
             # different IP than what was whitelisted at startup.
-            self.rules_manager.create_self_allow_rules(sys.executable)
+            if not self.rules_manager.create_self_allow_rules(sys.executable):
+                logger.error("Failed to create agent self-allow rules")
+                return False
 
             # Step 1: Collect all IPs to allow BEFORE enabling Default Deny
             all_allowed_ips = set()
@@ -582,13 +594,17 @@ class FirewallManager:
             essential_ips = FirewallUtils.get_essential_ips()
             all_allowed_ips.update(essential_ips)
             self.essential_ips = essential_ips
+            self.server_ips = set()
             logger.info(f"Essential IPs: {len(essential_ips)}")
             
             # 1b. Resolve server URLs to IPs
             if server_urls:
                 server_ips = self._resolve_server_urls(server_urls)
                 all_allowed_ips.update(server_ips)
+                self.server_ips = server_ips
                 logger.info(f"Server IPs resolved: {len(server_ips)} - {server_ips}")
+            else:
+                self.server_ips = set()
             
             # 1c. Add direct whitelist IPs from server sync
             if whitelist_ips:
@@ -607,8 +623,9 @@ class FirewallManager:
             
             # Step 2: Create allow rules FIRST (before Default Deny)
             logger.info("Step 2: Creating ALLOW rules before enabling Default Deny...")
-            for ip in all_allowed_ips:
-                self.rules_manager.create_allow_rule(ip)
+            if not self.rules_manager.create_allow_rules_batch(all_allowed_ips):
+                logger.error("Failed to create all allow rules; Default Deny will not be enabled")
+                return False
             
             # Step 3: NOW enable Default Deny policy (after rules are created)
             logger.info("Step 3: Enabling Default Deny policy...")

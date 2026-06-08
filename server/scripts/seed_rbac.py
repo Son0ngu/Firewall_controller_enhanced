@@ -1,13 +1,12 @@
 """
 Seed RBAC - Script to initialize default admin user.
-Run once on deploy or automatically on server start.
+Run once on deploy or manually when provisioning.
 
 Usage:
     cd server
-    python scripts/seed_rbac.py
-
-    # Custom admin credentials:
     python scripts/seed_rbac.py --username myadmin --password mypassword123
+
+    # Or provide DEFAULT_ADMIN_USERNAME / DEFAULT_ADMIN_PASSWORD in the environment
 """
 
 import os
@@ -35,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger("seed_rbac")
 
 
-def seed_rbac(admin_username: str = "admin", admin_password: str = "admin123456"):
+def seed_rbac(admin_username: str = None, admin_password: str = None):
     """Seed default admin user (roles are defined in config, not database)"""
 
     logger.info("=" * 60)
@@ -66,7 +65,10 @@ def seed_rbac(admin_username: str = "admin", admin_password: str = "admin123456"
     if admin:
         logger.info("  Admin created successfully!")
     else:
-        logger.info("  Admin user already exists, skipping")
+        if admin_username and admin_password:
+            logger.info("  Admin user already exists or seed credentials were rejected")
+        else:
+            logger.info("  Admin user already exists or credentials were not provided")
 
     # Show all users
     all_users = user_model.get_all_users()
@@ -84,8 +86,8 @@ def seed_rbac(admin_username: str = "admin", admin_password: str = "admin123456"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed RBAC admin user")
-    parser.add_argument("--username", default="admin", help="Admin username (default: admin)")
-    parser.add_argument("--password", default="admin123456", help="Admin password (default: admin123456)")
+    parser.add_argument("--username", default=os.environ.get("DEFAULT_ADMIN_USERNAME"), help="Admin username")
+    parser.add_argument("--password", default=os.environ.get("DEFAULT_ADMIN_PASSWORD"), help="Admin password")
     args = parser.parse_args()
 
     seed_rbac(args.username, args.password)

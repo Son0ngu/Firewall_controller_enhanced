@@ -16,7 +16,7 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 | `.allowed_ips` | `@property -> Set[str]` | [manager.py:273](../../../agent/firewall/manager.py#L273) | Delegate sang `rules_manager.allowed_ips` |
 | `.default_deny_enabled` | `@property -> bool` | [manager.py:278](../../../agent/firewall/manager.py#L278) | Delegate sang `policy_manager` |
 | `.enable_whitelist_mode(server_urls=None, whitelist_ips=None, whitelist_domains=None)` | `(List[str], Set[str], Set[str]) -> bool` | [manager.py:517](../../../agent/firewall/manager.py#L517) | **Entry point khi startup**. Tạo self-allow rules → essential IPs → resolve server URLs → whitelist IPs → resolve domains → tạo allow rules → **rồi mới** enable Default Deny |
-| `.setup_whitelist_firewall(whitelisted_ips, essential_ips=None)` | `(Set[str], Set[str]) -> bool` | [manager.py:86](../../../agent/firewall/manager.py#L86) | Variant ngắn: gộp whitelisted + essential, self-allow, Default Deny, batch allow rules |
+| `.setup_whitelist_firewall(whitelisted_ips, essential_ips=None)` | `(Set[str], Set[str]) -> bool` | [manager.py:86](../../../agent/firewall/manager.py#L86) | Variant ngắn: gộp whitelisted + essential, tạo self-allow, batch allow rules rồi mới bật Default Deny |
 | `.update_whitelist(domains, ips)` | `(Set[str], Set[str]) -> bool` | [manager.py:403](../../../agent/firewall/manager.py#L403) | **Được `WhitelistManager` gọi sau sync**. Resolve domains, sync diff (add/remove) |
 | `.add_ip_to_whitelist(ip, reason="dynamic_addition")` | `(str, str) -> bool` | [manager.py:138](../../../agent/firewall/manager.py#L138) | |
 | `.remove_ip_from_whitelist(ip)` | `(str) -> bool` | [manager.py:162](../../../agent/firewall/manager.py#L162) | |
@@ -58,7 +58,7 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 | `.create_self_allow_rules(program_path)` | `(str) -> bool` | [rules.py:17](../../../agent/firewall/rules.py#L17) | Tạo 3 rule cho exe agent: TCP 443, UDP 53, TCP 53. **Idempotent** qua write provider (delete-then-add). Bằng `program=` không `remoteip=` ⇒ bền với DNS rotation. |
 | `.create_allow_rule(ip)` | `(str) -> bool` | [rules.py:74](../../../agent/firewall/rules.py#L74) | Tên rule: `{prefix}_Allow_{ip_underscored}_{unix_ts}`. Skip nếu đã có. |
 | `.remove_allow_rule(ip)` | `(str) -> bool` | [rules.py:112](../../../agent/firewall/rules.py#L112) | List all → match theo pattern `_<ip>_` → delete từng cái |
-| `.create_allow_rules_batch(ips)` | `(Set[str]) -> bool` | [rules.py:162](../../../agent/firewall/rules.py#L162) | Sorted iteration với `sleep(0.02)` giữa các netsh để giữ stability |
+| `.create_allow_rules_batch(ips)` | `(Set[str]) -> bool` | [rules.py:162](../../../agent/firewall/rules.py#L162) | Sorted iteration với `sleep(0.02)` giữa các netsh để giữ stability; fail-closed, batch chỉ thành công khi mọi rule đều tạo được |
 | `.clear_all_rules()` | `() -> bool` | [rules.py:191](../../../agent/firewall/rules.py#L191) | Xoá mọi rule có prefix khớp `self.rule_prefix` |
 | `.load_existing_rules()` | `() -> None` | [rules.py:240](../../../agent/firewall/rules.py#L240) | Đọc state hiện có vào `allowed_ips` lúc init (cho recovery sau crash) |
 | `.get_rule_count()` | `() -> int` | [rules.py:291](../../../agent/firewall/rules.py#L291) | Đếm rules có prefix |
@@ -115,7 +115,7 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 
 ## Gotchas
 - **IPv4 only** - `is_valid_ip` reject IPv6. Khi DNS trả AAAA, drop. Đừng "fix" bằng cách cho qua - `netsh advfirewall` với IPv6 có quirks (empty stderr on failure).
-- **Thứ tự CRITICAL khi startup**: self-allow → tạo allow rules → **rồi mới** `enable_default_deny`. Đảo lại = self-lock. Xem `enable_whitelist_mode` (manager.py:517-593). `setup_whitelist_firewall` (manager.py:86) có thứ tự khác (deny trước, allow sau) - kế thừa logic cũ và chỉ nên dùng khi đã có self-allow rules từ trước.
+- **Thứ tự CRITICAL khi startup**: self-allow → tạo allow rules → **rồi mới** `enable_default_deny`. Đảo lại = self-lock. Xem `enable_whitelist_mode` (manager.py:517-593). `setup_whitelist_firewall` giờ cũng theo cùng thứ tự này; nếu self-allow hoặc allow batch fail thì Default Deny không được bật.
 - **`save_snapshot(force=False)` mặc định skip-if-exists**: nếu sau crash agent restart, snapshot có thể đã chứa state "post-SAINT-mutation". Ta CHỦ Ý không ghi đè để giữ baseline pre-SAINT thực sự. Muốn ghi mới phải `force=True` (chỉ admin tool hoặc rõ user intent).
 - **`restore_snapshot` KHÔNG re-enable whitelist mode** kể cả khi snapshot ghi nhận đang ở whitelist mode (line 785). Lý do: user click Restore = muốn thoát khỏi SAINT control, ngược lại sẽ bất ngờ.
 - **`restore_snapshot` cần admin** (line 726). Nếu không có admin, `netsh` silent fail mà returncode vẫn 0 ⇒ ta đã thêm guard explicit.

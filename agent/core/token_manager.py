@@ -442,12 +442,11 @@ class TokenManager:
             Dict with token status information
         """
         with self._lock:
-            now = datetime.now()
-            
             access_expires_in = None
             if self._access_expires_at:
                 try:
-                    access_expires_in = (self._access_expires_at - now.replace(tzinfo=self._access_expires_at.tzinfo)).total_seconds()
+                    access_now = datetime.now(self._access_expires_at.tzinfo) if self._access_expires_at.tzinfo else datetime.now()
+                    access_expires_in = (self._access_expires_at - access_now).total_seconds()
                 except (TypeError, AttributeError, OverflowError) as e:
                     self.logger.debug(
                         f"access_expires_in calc failed (expires_at={self._access_expires_at!r}): {e}"
@@ -456,7 +455,8 @@ class TokenManager:
             refresh_expires_in = None
             if self._refresh_expires_at:
                 try:
-                    refresh_expires_in = (self._refresh_expires_at - now.replace(tzinfo=self._refresh_expires_at.tzinfo)).total_seconds()
+                    refresh_now = datetime.now(self._refresh_expires_at.tzinfo) if self._refresh_expires_at.tzinfo else datetime.now()
+                    refresh_expires_in = (self._refresh_expires_at - refresh_now).total_seconds()
                 except (TypeError, AttributeError, OverflowError) as e:
                     self.logger.debug(
                         f"refresh_expires_in calc failed (expires_at={self._refresh_expires_at!r}): {e}"

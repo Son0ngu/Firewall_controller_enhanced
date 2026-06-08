@@ -32,7 +32,6 @@ from unittest.mock import MagicMock, patch
 from bson import ObjectId
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from models.whitelist_model import WhitelistModel
 from models.whitelist_entry_model import WhitelistEntryModel
 from models.whitelist_profile_model import WhitelistProfileModel

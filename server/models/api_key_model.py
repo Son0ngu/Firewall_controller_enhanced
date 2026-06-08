@@ -20,12 +20,10 @@ from time_utils import now_vietnam
 
 logger = logging.getLogger(__name__)
 
-# HMAC key for API key hashing - set in .env for production
-# If not set, falls back to a static default (less secure but functional)
+# HMAC key for API key hashing - must be provided by the environment.
 API_KEY_HMAC_SECRET = os.environ.get("API_KEY_HMAC_SECRET", None)
 if not API_KEY_HMAC_SECRET:
-    API_KEY_HMAC_SECRET = "saint-firewall-api-key-hmac-default"
-    logger.warning("API_KEY_HMAC_SECRET not set - using default. Set in .env for production!")
+    raise RuntimeError("API_KEY_HMAC_SECRET must be set in the environment")
 
 
 class APIKeyModel:

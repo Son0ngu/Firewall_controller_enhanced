@@ -23,7 +23,7 @@ flowchart LR
 ## Luồng xử lý request
 
 1. `server/app.py` import `create_app`; app factory tạo Flask app, CORS, SocketIO, DB connection và register route/error/socketio modules.
-2. `server/bootstrap/container.py` tạo model/service/controller, init auth/RBAC middleware, seed default admin/API key và đăng ký controller blueprint.
+2. `server/bootstrap/container.py` tạo model/service/controller, init auth/RBAC middleware, chạy startup tasks theo env và đăng ký controller blueprint.
 3. Flask nhận request qua page route hoặc API blueprint.
 4. Middleware kiểm tra API Key/JWT/login/permission.
 5. Controller validate request và gọi service.

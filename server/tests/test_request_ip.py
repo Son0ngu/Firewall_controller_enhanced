@@ -5,7 +5,6 @@ from bson import ObjectId
 from flask import Flask
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from services.audit_service import AuditService
 from utils.request_ip import get_client_ip
 

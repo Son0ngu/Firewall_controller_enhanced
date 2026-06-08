@@ -28,7 +28,6 @@ from flask import Flask, g
 # Add server to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-
 # ============================================================================
 # FIXTURES
 # ============================================================================
@@ -38,7 +37,7 @@ def app():
     """Create a minimal Flask app for testing."""
     app = Flask(__name__)
     app.config['TESTING'] = True
-    app.config['SECRET_KEY'] = 'test-secret'
+    app.config['SECRET_KEY'] = 'test-secret-key-2026-06-08-strong'
     return app
 
 

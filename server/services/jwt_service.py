@@ -163,7 +163,7 @@ class JWTService:
                 return False, None, "Invalid token type"
             
             # Check if token is revoked
-            if self._is_token_revoked(payload.get("jti")):
+            if self._is_token_revoked(payload.get("jti"), payload.get("sub")):
                 return False, None, "Token has been revoked"
             
             return True, payload, None
@@ -201,7 +201,7 @@ class JWTService:
                 return False, None, "Invalid token type"
             
             # Check if token is revoked
-            if self._is_token_revoked(payload.get("jti")):
+            if self._is_token_revoked(payload.get("jti"), payload.get("sub")):
                 return False, None, "Refresh token has been revoked"
             
             return True, payload, None
@@ -389,14 +389,17 @@ class JWTService:
             return 0
         
         try:
-            # We can't revoke tokens we don't have, so this just logs the action
-            # In practice, the agent would need to re-authenticate
-            result = self.revoked_tokens.insert_one({
-                "agent_id": agent_id,
-                "revoke_all": True,
-                "revoked_at": now_vietnam(),
-                "expires_at": now_vietnam() + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS),
-            })
+            self.revoked_tokens.update_one(
+                {"agent_id": agent_id, "revoke_all": True},
+                {"$set": {
+                    "agent_id": agent_id,
+                    "revoke_all": True,
+                    "token_type": "all",
+                    "revoked_at": now_vietnam(),
+                    "expires_at": now_vietnam() + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS),
+                }},
+                upsert=True,
+            )
             
             self.logger.info(f"Marked all tokens as revoked for agent {agent_id}")
             return 1
@@ -405,14 +408,18 @@ class JWTService:
             self.logger.error(f"Error revoking all agent tokens: {e}")
             return 0
     
-    def _is_token_revoked(self, jti: str) -> bool:
+    def _is_token_revoked(self, jti: str, agent_id: Optional[str] = None) -> bool:
         """Check if a token is revoked by its JTI"""
         if not jti or self.revoked_tokens is None:
-            return False
+            if not agent_id or self.revoked_tokens is None:
+                return False
         
         try:
-            revoked = self.revoked_tokens.find_one({"jti": jti})
-            return revoked is not None
+            if jti and self.revoked_tokens.find_one({"jti": jti}):
+                return True
+            if agent_id and self.revoked_tokens.find_one({"agent_id": agent_id, "revoke_all": True}):
+                return True
+            return False
         except Exception:
             return False
     
@@ -468,7 +475,7 @@ class JWTService:
             "issued_at": payload.get("iat"),
             "expires_at": expires_at.isoformat() if expires_at else None,
             "is_expired": is_expired,
-            "is_revoked": self._is_token_revoked(payload.get("jti")),
+            "is_revoked": self._is_token_revoked(payload.get("jti"), payload.get("sub")),
         }
 
 

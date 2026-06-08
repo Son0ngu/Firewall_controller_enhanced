@@ -27,7 +27,6 @@ from unittest.mock import MagicMock, patch
 from bson import ObjectId
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from models.agent_model import AgentModel
 from models.group_model import GroupModel
 from services.agent_service import AgentService

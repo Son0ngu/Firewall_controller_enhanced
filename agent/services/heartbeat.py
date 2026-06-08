@@ -69,7 +69,8 @@ class HeartbeatSender:
             logger.info("Heartbeat sender disabled")
             return
         
-        if not self.agent_id or not self.agent_token:
+        auth_headers = get_auth_headers(self.config)
+        if not self.agent_id or (not self.agent_token and not auth_headers):
             logger.warning("Cannot start heartbeat - missing agent credentials")
             return
         

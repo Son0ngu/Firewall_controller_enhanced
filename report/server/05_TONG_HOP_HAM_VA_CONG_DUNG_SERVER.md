@@ -35,14 +35,14 @@ Tài liệu này được sinh từ phân tích AST source code, không import m
 | Function | Công dụng | Vị trí |
 | --- | --- | --- |
 | `initialize_database_indexes(app, db)` | Khởi tạo index cho các model chính và log warning nếu index setup gặp vấn đề không chặn startup. | `server/bootstrap/container.py:46` |
-| `initialize_container(app, socketio, db)` | Tạo model/service/controller, init auth/RBAC middleware, chạy startup tasks, đăng ký blueprint `/api`, attach các service runtime lên Flask app. | `server/bootstrap/container.py:60` |
+| `initialize_container(app, socketio, db)` | Tạo model/service/controller, init auth/RBAC middleware, chạy startup tasks theo env, đăng ký blueprint `/api`, attach các service runtime lên Flask app. | `server/bootstrap/container.py:60` |
 
 
 ### `server/bootstrap/startup_tasks.py`
 
 | Function | Công dụng | Vị trí |
 | --- | --- | --- |
-| `run_startup_tasks(user_service, api_key_service)` | Seed default admin và tạo default API key nếu chưa có, giữ behavior startup cũ nhưng tách khỏi app factory. | `server/bootstrap/startup_tasks.py:8` |
+| `run_startup_tasks(user_service, api_key_service)` | Seed admin khi có `DEFAULT_ADMIN_USERNAME` + `DEFAULT_ADMIN_PASSWORD`; API key bootstrap bị skip, không còn auto-create. | `server/bootstrap/startup_tasks.py:8` |
 
 
 ### `server/routes/pages.py`
@@ -643,7 +643,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 
 | Function | Công dụng | Vị trí |
 | --- | --- | --- |
-| `seed_rbac(admin_username, admin_password)` | Seed default admin user (roles are defined in config, not database) | `server/scripts/seed_rbac.py:38` |
+| `seed_rbac(admin_username=None, admin_password=None)` | Seed admin user khi có credentials (roles are defined in config, not database) | `server/scripts/seed_rbac.py:38` |
 
 
 ## Package `server/services`
@@ -856,7 +856,7 @@ Module chỉ chứa khai báo package/import hoặc hằng số.
 | `UserService` | `toggle_active(self, user_id, is_active, updated_by_user)` | Enable/disable user account | `server/services/user_service.py:176` |
 | `UserService` | `reset_password(self, user_id, new_password, reset_by_user)` | Admin reset Teacher password | `server/services/user_service.py:208` |
 | `UserService` | `delete_user(self, user_id, deleted_by_user)` | Delete user (Admin only) | `server/services/user_service.py:245` |
-| `UserService` | `ensure_default_admin(self, username, password)` | Create default admin if no admin exists | `server/services/user_service.py:284` |
+| `UserService` | `ensure_default_admin(self, username=None, password=None)` | Create default admin if no admin exists and credentials are supplied | `server/services/user_service.py:284` |
 | `UserService` | `_sanitize_user(user)` | Remove sensitive fields | `server/services/user_service.py:326` |
 
 

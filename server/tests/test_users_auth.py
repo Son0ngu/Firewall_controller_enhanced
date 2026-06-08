@@ -22,7 +22,6 @@ from unittest.mock import patch, MagicMock
 from flask import Flask, g
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from models.user_model import UserModel, MAX_FAILED_ATTEMPTS, LOCK_DURATION_MINUTES
 from models.session_model import SessionModel
 from models.audit_model import AuditModel
@@ -142,6 +141,23 @@ def test_jwt_token_info_handles_timezone_aware_expiry():
     assert info["token_type"] == "access"
     assert info["is_expired"] is False
     assert info["expires_at"].endswith("+07:00")
+
+
+def test_revoke_all_agent_tokens_invalidates_existing_tokens(jwt_service):
+    tokens = jwt_service.generate_tokens("agent-revoke-1", "user-revoke-1")
+
+    access_valid_before, _, _ = jwt_service.validate_access_token(tokens["access_token"])
+    refresh_valid_before, _, _ = jwt_service.validate_refresh_token(tokens["refresh_token"])
+
+    assert access_valid_before is True
+    assert refresh_valid_before is True
+    assert jwt_service.revoke_all_agent_tokens("agent-revoke-1") == 1
+
+    access_valid_after, _, _ = jwt_service.validate_access_token(tokens["access_token"])
+    refresh_valid_after, _, _ = jwt_service.validate_refresh_token(tokens["refresh_token"])
+
+    assert access_valid_after is False
+    assert refresh_valid_after is False
 
 
 # ============================================================================
@@ -329,6 +345,13 @@ class TestUserService:
         assert success is False
         assert "8" in error
 
+    def test_create_user_password_too_many_bytes(self, user_service):
+        success, _, error = user_service.create_user(
+            username="byte_limit_user", password="\u00e1" * 37
+        )
+        assert success is False
+        assert "bytes" in error.lower()
+
     def test_create_user_with_audit(self, user_service, audit_model):
         admin = {"_id": ObjectId(), "username": "admin_creator", "role": "admin"}
         success, user, _ = user_service.create_user(
@@ -397,6 +420,14 @@ class TestUserService:
         user = _create_user(user_model, username="svc_shortpw")
         success, error = user_service.reset_password(str(user["_id"]), "short")
         assert success is False
+
+    def test_reset_password_too_many_bytes(self, user_service, user_model):
+        user = _create_user(user_model, username="svc_longpw")
+        success, error = user_service.reset_password(
+            str(user["_id"]), "\u00e1" * 37
+        )
+        assert success is False
+        assert "bytes" in error.lower()
 
     def test_delete_user(self, user_service, user_model):
         user = _create_user(user_model, username="svc_del")
@@ -658,6 +689,15 @@ class TestAdminAuthService:
             str(user["_id"]), "oldpassword1", "short"
         )
         assert success is False
+
+    def test_change_password_too_many_bytes(self, auth_service, user_model):
+        _create_user(user_model, username="chpw_long", password="oldpassword1")
+        user = user_model.find_by_username("chpw_long")
+        success, error = auth_service.change_password(
+            str(user["_id"]), "oldpassword1", "\u00e1" * 37
+        )
+        assert success is False
+        assert "bytes" in error.lower()
 
 
 # ============================================================================

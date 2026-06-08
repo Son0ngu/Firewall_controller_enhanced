@@ -1,5 +1,4 @@
 import os
-import secrets
 import logging
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -65,7 +64,7 @@ class Config:
     """Configuration class for the application - vietnam ONLY"""
     
     # Flask core settings
-    SECRET_KEY = get_env('SECRET_KEY', secrets.token_hex(32))
+    SECRET_KEY = get_env('SECRET_KEY')
     DEBUG = get_env('DEBUG', True)
     TESTING = get_env('TESTING', False)
     

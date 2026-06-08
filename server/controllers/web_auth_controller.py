@@ -105,7 +105,7 @@ class WebAuthController:
     def login(self):
         """
         POST /api/admin/auth/login
-        Body: {"username": "admin", "password": "admin123456"}
+        Body: {"username": "<admin-username>", "password": "<admin-password>"}
         Response: Set httpOnly cookies + return user info
         """
         try:

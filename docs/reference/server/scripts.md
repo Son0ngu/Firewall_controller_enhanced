@@ -3,7 +3,7 @@
 ## Mục đích
 Standalone scripts chạy thủ công cho setup/migration. Ngoài `seed_rbac.py`, repo có migration scripts cho whitelist/profile cleanup và `2026_migrate_group_whitelist_to_entries.py` để copy `groups.whitelist[]` sang `whitelist_entries`.
 
-App bootstrap (`app.py`) cũng tự gọi `user_service.ensure_default_admin()` lần đầu chạy - script này dùng khi cần force tạo với username/password tuỳ chỉnh, hoặc CI/CD bootstrap database fresh.
+App bootstrap (`app.py`) không còn tự seed default admin/API key. Script này dùng khi cần bootstrap admin rõ ràng bằng username/password tuỳ chỉnh, hoặc CI/CD bootstrap database fresh.
 
 ## Public API
 
@@ -11,15 +11,15 @@ App bootstrap (`app.py`) cũng tự gọi `user_service.ensure_default_admin()` 
 
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
-| `seed_rbac(admin_username="admin", admin_password="admin123456")` | `(str, str) -> None` | [seed_rbac.py:38](../../../server/scripts/seed_rbac.py#L38) | Connect Mongo → init `UserService` → list permissions config (info) → seed admin if none |
+| `seed_rbac(admin_username=None, admin_password=None)` | `(Optional[str], Optional[str]) -> None` | [seed_rbac.py:37](../../../server/scripts/seed_rbac.py#L37) | Connect Mongo → init `UserService` → list permissions config (info) → seed admin if credentials are provided |
 | `__main__` | argparse | [seed_rbac.py:85](../../../server/scripts/seed_rbac.py#L85) | CLI: `--username` `--password` |
 
 ## Cách dùng
 
 ```bash
 cd server
-python scripts/seed_rbac.py                                 # default admin/admin123456
 python scripts/seed_rbac.py --username myadmin --password mypassword123
+python scripts/seed_rbac.py  # only works if DEFAULT_ADMIN_USERNAME / DEFAULT_ADMIN_PASSWORD are set
 ```
 
 Whitelist entries migration:
@@ -42,7 +42,7 @@ SAINT RBAC Seeder
 --- Step 1: Role Configuration ---
   Role: admin      | 32 permissions
   Role: teacher    | 19 permissions
---- Step 2: Seeding default admin user ---
+--- Step 2: Seeding admin user from provided credentials ---
   Admin created successfully!
   Total users in system: 1
     - admin           | role=admin    | active=Yes
@@ -66,8 +66,8 @@ SAINT RBAC Seeder
 ## Gotchas
 - **`sys.path.insert(0, ...)`** (line 19) chèn parent dir để `from models.X` work. PHẢI chạy từ `server/` hoặc absolute path. Nếu chạy từ root repo, import sẽ fail.
 - **`load_dotenv()` không pass path** (line 22): tìm `.env` ở cwd. Cần chạy từ `server/` (cùng cấp với `.env`). Khác với `database/config.py` chỉ định path tuyệt đối.
-- **`ensure_default_admin` idempotent**: nếu đã có admin nào trong DB, script log "already exists" và không tạo. Phải `db.users.deleteOne({username:"admin"})` thủ công nếu muốn re-seed.
-- **Default password `admin123456`** weak - đổi ngay sau login. Script log warning cảnh báo.
+- **`ensure_default_admin` idempotent**: nếu đã có admin nào trong DB, script log "already exists" và không tạo. Phải xóa user cũ thủ công nếu muốn re-seed.
+- **Không có default password hardcoded**: credentials phải đến từ args hoặc env, và nên đổi ngay sau login.
 - **Roles không lưu DB** - script chỉ tạo user. Permissions ở `config/rbac_config.py`. Nếu muốn seed thêm test data (groups, agents), tạo script riêng.
 - **Không có tear-down script** - drop DB phải thủ công: `mongosh ... db.dropDatabase()`.
 - **`pragma: no cover`** không có - không skip khi pytest --cov.

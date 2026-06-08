@@ -17,7 +17,6 @@ from unittest.mock import patch
 from flask import Flask, g
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from models.audit_model import AuditModel
 from services.audit_service import AuditService
 from time_utils import now_vietnam, VIETNAM_TZ

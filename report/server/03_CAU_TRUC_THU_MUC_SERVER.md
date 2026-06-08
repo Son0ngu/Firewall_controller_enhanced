@@ -6,7 +6,7 @@ server/
 │   ├── __init__.py
 │   ├── app_factory.py        # tạo Flask app, CORS, SocketIO, DB, register route modules
 │   ├── container.py          # tạo model/service/controller, middleware, register API blueprint
-│   └── startup_tasks.py      # seed default admin/API key
+│   └── startup_tasks.py      # optional admin bootstrap; API key bootstrap skipped
 ├── config/
 │   ├── __init__.py
 │   └── rbac_config.py
@@ -136,7 +136,7 @@ server/
 | Package | Vai trò |
 | --- | --- |
 | `server/app.py` | Entrypoint mỏng: patch gevent, export `create_app`, chạy SocketIO khi gọi trực tiếp. |
-| `server/bootstrap` | App factory, container wiring, startup seed task. |
+| `server/bootstrap` | App factory, container wiring, startup task theo env. |
 | `server/routes` | Page routes, error handlers, SocketIO inbound events. |
 | `server/controllers` | Định nghĩa route API, validate request, gọi service. |
 | `server/services` | Business logic, RBAC filtering, SocketIO events. |

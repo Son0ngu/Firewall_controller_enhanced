@@ -181,7 +181,7 @@ class RulesManager:
                         logger.error(f"Exception creating allow rule for {ip}: {e}")
             
             logger.info(f"Allow rules creation completed: {success_count} success, {error_count} errors")
-            return success_count > 0
+            return error_count == 0 and success_count == len(ips)
             
         except Exception as e:
             logger.error(f"Error creating allow rules batch: {e}")

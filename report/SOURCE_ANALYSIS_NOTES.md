@@ -23,7 +23,7 @@
 ## Cập nhật sau refactor 2026-05-26
 
 - `server/app.py` không còn chứa controller composition, page route, error handler hoặc SocketIO handler; file này giữ `gevent.monkey.patch_all()`, export `create_app` và chạy server khi gọi trực tiếp.
-- App factory thật nằm ở `server/bootstrap/app_factory.py`; container/model/service/controller wiring nằm ở `server/bootstrap/container.py`; seed default admin/API key nằm ở `server/bootstrap/startup_tasks.py`.
+- App factory thật nằm ở `server/bootstrap/app_factory.py`; container/model/service/controller wiring nằm ở `server/bootstrap/container.py`; startup tasks chỉ còn admin bootstrap theo env, còn API key bootstrap đã bỏ khỏi boot path trong `server/bootstrap/startup_tasks.py`.
 - Guard hiện tại: `rg -n "\.collection\." server/controllers server/services server/middleware` không còn kết quả; truy cập Mongo trực tiếp được giữ trong model layer.
 - Đã smoke test `from app import create_app`, gọi `create_app()` nhiều lần và `/api/health`; các bộ test liên quan group, teacher filtering, whitelist/logs, request IP, audit và admin auth đã pass.
 

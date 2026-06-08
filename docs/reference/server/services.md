@@ -26,7 +26,7 @@ Token operations cho Agent JWT. Token rotation hỗ trợ tuỳ chọn.
 | `.refresh_access_token(refresh_token)` | `→ (bool, tokens, error)` | [jwt_service.py:218](../../../server/services/jwt_service.py#L218) | **Chỉ access**, refresh không đổi. Used by Agent `/api/auth/refresh` mặc định |
 | `.refresh_tokens_with_rotation(refresh_token)` | | [jwt_service.py:262](../../../server/services/jwt_service.py#L262) | **Revoke refresh cũ + issue cặp mới**. Chống reuse attack. Agent gọi với `rotate=true` |
 | `.revoke_token(token, token_type="access")` | `→ bool` | [jwt_service.py:316](../../../server/services/jwt_service.py#L316) | Decode (allow expired) → upsert vào `revoked_tokens` với TTL = `exp` |
-| `.revoke_all_agent_tokens(agent_id)` | `→ int` | [jwt_service.py:378](../../../server/services/jwt_service.py#L378) | Mark "revoke_all" - hiện ko force kick existing tokens (TTL auto-cleanup) |
+| `.revoke_all_agent_tokens(agent_id)` | `→ int` | [jwt_service.py:378](../../../server/services/jwt_service.py#L378) | Ghi marker `revoke_all` theo `agent_id`; validate token sau đó sẽ chặn token cũ của agent này ngay |
 | `.decode_token_without_verification(token)` | | [jwt_service.py:419](../../../server/services/jwt_service.py#L419) | Debug helper. **KHÔNG verify signature** |
 | `.get_token_info(token)` | `→ Dict` | [jwt_service.py:437](../../../server/services/jwt_service.py#L437) | Status snapshot (agent_id, type, expires_at, is_expired, is_revoked) |
 | `.{_is_token_revoked, _setup_indexes}` | | [jwt_service.py:408, 66](../../../server/services/jwt_service.py#L408) | Internal |
@@ -60,7 +60,7 @@ Login flow cho Admin/Teacher. Bcrypt password. Session record. Brute-force prote
 
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
-| `MIN_PASSWORD_LENGTH = 8` / `MAX_PASSWORD_LENGTH = 128` | const | [admin_auth_service.py:24-25](../../../server/services/admin_auth_service.py#L24) | |
+| `MIN_PASSWORD_LENGTH = 8` / `MAX_PASSWORD_BYTES = 72` | const | [admin_auth_service.py:24-25](../../../server/services/admin_auth_service.py#L24) | Bcrypt chỉ dùng 72 UTF-8 bytes đầu |
 | `__init__(user_model, jwt_service, session_model, audit_service, socketio=None)` | | [admin_auth_service.py:31](../../../server/services/admin_auth_service.py#L31) | |
 | `.login(username, password, ip_address=None, user_agent=None)` | `→ (bool, {user, tokens}, error)` | [admin_auth_service.py:45](../../../server/services/admin_auth_service.py#L45) | Flow: find_by_username → check active/locked → bcrypt verify → reset attempts → generate_tokens với `additional_claims={token_for: "admin_user", role, username}` → create session → audit `auth.login` |
 | `.logout(access_token, refresh_token=None)` | `→ (bool, error)` | [admin_auth_service.py:148](../../../server/services/admin_auth_service.py#L148) | Revoke 2 JTI (session + jwt_service) |
@@ -93,7 +93,7 @@ CRUD teacher accounts. Admin only operations.
 | `.toggle_active(user_id, is_active, updated_by_user=None)` | | [user_service.py:176](../../../server/services/user_service.py#L176) | Block disable last admin (count check) |
 | `.reset_password(user_id, new_password, reset_by_user=None)` | | [user_service.py:208](../../../server/services/user_service.py#L208) | Admin reset, không cần old_password |
 | `.delete_user(user_id, deleted_by_user=None)` | | [user_service.py:245](../../../server/services/user_service.py#L245) | Block delete last admin + self-delete |
-| `.ensure_default_admin(username="admin", password="admin123456")` | `→ Optional[Dict]` | [user_service.py:284](../../../server/services/user_service.py#L284) | Seed nếu chưa có admin. Log warning với plaintext password. Gọi từ app bootstrap |
+| `.ensure_default_admin(username=None, password=None)` | `→ Optional[Dict]` | [user_service.py:284](../../../server/services/user_service.py#L284) | Chỉ seed khi chưa có admin và credentials được cung cấp; không log plaintext password |
 | `_sanitize_user(user)` | `@staticmethod` | [user_service.py:325](../../../server/services/user_service.py#L325) | Loại password_hash, failed_login_attempts, locked_until |
 
 ### `services/agent_service.py` - `AgentService`

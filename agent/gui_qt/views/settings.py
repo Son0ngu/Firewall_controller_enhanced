@@ -339,7 +339,9 @@ class SettingsView(QWidget):
 
             # Encrypt + write.
             from config.crypto import encrypt_config
-            encrypt_config(self._config, self._config_path)
+            if not encrypt_config(self._config, self._config_path):
+                self._show_error("Failed to encrypt and save settings")
+                return
             if normalized_url != url_value:
                 self._show_success(f"Settings saved. Server URL normalized to {normalized_url}")
             else:

@@ -8,7 +8,7 @@
 ## Mục đích
 - `app.py`: Entrypoint Flask. Chỉ áp `gevent.monkey.patch_all()` ở line 1-6, set `sys.path`, gọi `create_app()` từ `bootstrap.app_factory` và `socketio.run(...)`. Không còn DI logic ở đây.
 - `bootstrap/app_factory.py`: Factory thật — Flask app, CORS, SocketIO (có fallback `gevent` → `threading`), connect Mongo, gọi container, register CSRF middleware, register page routes / error handlers / socketio events.
-- `bootstrap/container.py`: DI chain models → services → controllers; chạy `run_startup_tasks` (seed admin, default API key) với config gate.
+- `bootstrap/container.py`: DI chain models → services → controllers; chạy `run_startup_tasks` (admin bootstrap chỉ khi có env, API key bootstrap bị skip) với config gate.
 - `routes/pages.py`: HTML page routes (`/`, `/agents`, `/groups`, `/whitelist`, `/logs`, `/api-keys`, `/login`, `/admin/users`, `/admin/audit`, `/profile`) + health (`/api/health`, `/api/config`).
 - `routes/errors.py`: 404/500 handler (JSON cho `/api/`, HTML cho page).
 - `routes/socketio_events.py`: `connect`, `disconnect`, `ping`.
@@ -37,7 +37,7 @@
 | Symbol | Vị trí | Mô tả |
 |---|---|---|
 | `initialize_database_indexes(app, db)` | [container.py](../../../server/bootstrap/container.py) | Construct mọi Model class một lần để trigger `_setup_indexes()` của từng model. |
-| `initialize_container(app, socketio, db)` | [container.py](../../../server/bootstrap/container.py) | Trái tim DI: models → jwt_service → services → middleware init → controllers → blueprints (`url_prefix="/api"`). Gọi `run_startup_tasks(user_service, api_key_service)` (seed admin, default API key) với config gate. |
+| `initialize_container(app, socketio, db)` | [container.py](../../../server/bootstrap/container.py) | Trái tim DI: models → jwt_service → services → middleware init → controllers → blueprints (`url_prefix="/api"`). Gọi `run_startup_tasks(user_service, api_key_service)` (admin bootstrap theo env; API key bootstrap skipped) với config gate. |
 
 ### `server/routes/pages.py`
 
@@ -114,8 +114,7 @@
 - **`_app_initialized` flag đã bỏ** sau refactor 2026-05-26. `create_app()` mỗi lần gọi luôn trả app đầy đủ blueprint; không còn nhánh "minimal app" lén lút thiếu route. Dev mode bật reloader tự xử lý qua `use_reloader=False` ở `socketio.run` (app.py:40).
 - **Socket.IO fallback** (app_factory.py:19): nếu `gevent` thiếu trong Python env, `_create_socketio` log warning và fallback `threading`. App vẫn boot.
 - **Startup mutation đã chuyển ra khỏi boot** (P0.3): `register_controllers` cũ chạy `whitelist_profile_model.collection.delete_many({"is_default": True})` mỗi lần boot. Đã gỡ — app boot phải idempotent, không sửa dữ liệu nghiệp vụ. Migration một lần: `server/scripts/migrations/2026_remove_default_profiles.py` (hỗ trợ `--dry-run`).
-- **Default API key auto-tạo lần đầu** (container.py qua `run_startup_tasks`): log warning ra console với key plaintext. **CHỈ SHOW 1 LẦN** - production deploy phải copy ngay hoặc check `api_keys` collection cũ.
-- **Default admin user auto-tạo** (container.py qua `run_startup_tasks`): `user_service.ensure_default_admin()` chỉ tạo nếu chưa có admin nào. Username/password mặc định `admin/admin123456` - đổi ngay sau lần login đầu.
+- **`run_startup_tasks` chỉ seed admin khi có `DEFAULT_ADMIN_USERNAME` + `DEFAULT_ADMIN_PASSWORD`**. API key không auto-tạo nữa, nên boot không còn dump plaintext key.
 - **`gevent` async mode** trên SocketIO: tránh dùng blocking I/O trong controller - sẽ block toàn bộ worker. Nếu cần CPU-heavy, dùng `flask_executor` hoặc background task.
 - **CORS allow `*`** (app_factory.py:73): chấp nhận mọi origin cho dev. Production nên restrict.
 - **CSRF middleware** (app_factory.py:108 sau khi container init): mọi POST/PUT/PATCH/DELETE cookie-authed phải có `X-CSRF-Token` header matches cookie. Mới thêm middleware → chạy test_csrf.py để chắc không phá.

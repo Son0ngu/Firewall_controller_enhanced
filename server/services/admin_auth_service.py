@@ -22,7 +22,7 @@ from time_utils import now_vietnam
 
 # Password policy
 MIN_PASSWORD_LENGTH = 8
-MAX_PASSWORD_LENGTH = 128
+MAX_PASSWORD_BYTES = 72
 
 
 class AdminAuthService:
@@ -282,8 +282,8 @@ class AdminAuthService:
         """Validate password policy"""
         if len(password) < MIN_PASSWORD_LENGTH:
             return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
-        if len(password) > MAX_PASSWORD_LENGTH:
-            return False, f"Password must not exceed {MAX_PASSWORD_LENGTH} characters"
+        if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            return False, f"Password must not exceed {MAX_PASSWORD_BYTES} UTF-8 bytes (bcrypt limit)"
         return True, None
 
     def _extract_jti(self, token: str) -> Optional[str]:

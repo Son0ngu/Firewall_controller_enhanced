@@ -13,7 +13,6 @@ import pytest
 from flask import Blueprint, Flask, jsonify
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from middleware import csrf as csrf_module
 from middleware.csrf import (
     CSRF_COOKIE_NAME,

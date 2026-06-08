@@ -238,8 +238,9 @@ class APIKeyService:
                 if result.get("success"):
                     self.logger.warning("="*60)
                     self.logger.warning("DEFAULT API KEY CREATED")
-                    self.logger.warning(f"Key: {result.get('api_key')}")
-                    self.logger.warning("⚠️ Save this key! It won't be shown again.")
+                    self.logger.warning(f"Key ID: {result.get('key_id')}")
+                    self.logger.warning(f"Prefix: {result.get('key_prefix')}")
+                    self.logger.warning("Plaintext API key is returned to the caller and is not logged.")
                     self.logger.warning("="*60)
                     return result
             

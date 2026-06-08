@@ -40,3 +40,11 @@ Với whitelist, controller gọi `WhitelistService.validate_teacher_entry_acces
 Các luồng đăng nhập, audit, Agent register/heartbeat, receive logs và whitelist dùng `utils.request_ip.get_client_ip()` để lấy IP client. Thứ tự ưu tiên là `X-Forwarded-For` (IP đầu tiên), `X-Real-IP`, rồi `request.remote_addr`.
 
 Khi triển khai sau reverse proxy, chỉ nên để proxy tin cậy set các header này. Nếu Server mở trực tiếp ra mạng và vẫn tin `X-Forwarded-For`, client có thể tự gửi header giả mạo IP.
+## Security updates 2026-06-08
+
+- `API_KEY_HMAC_SECRET` is now required from env; no hardcoded fallback remains.
+- `SECRET_KEY` no longer gets a random fallback in config; missing secret now fails validation.
+- `JWTService.revoke_all_agent_tokens()` now writes an agent-wide revoke marker, and token validation checks it.
+- Startup bootstrap no longer auto-creates a default admin or API key on boot.
+- Default admin seeding is env/CLI driven only, and plaintext API keys are no longer logged.
+- Password policy now checks bcrypt's real 72 UTF-8 byte limit instead of 128 characters.

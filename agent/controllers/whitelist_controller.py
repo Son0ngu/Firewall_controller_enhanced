@@ -178,39 +178,52 @@ class WhitelistController:
                 logger.error(f"Error in success callback: {e}")
     
     def remove_ip(self, ip: str) -> bool:
- 
-        ip = ip.strip()
+        normalized_ip = ip.strip()
+        local_key = normalized_ip
+        if local_key not in self._local_ips:
+            candidate_key = f"ip:{normalized_ip}"
+            if candidate_key in self._local_ips:
+                local_key = candidate_key
+            else:
+                self._notify_error(f"IP not found: {normalized_ip}")
+                return False
         
         with self._lock_data:
-            if ip not in self._local_ips:
-                self._notify_error(f"IP not found: {ip}")
+            if local_key not in self._local_ips:
+                self._notify_error(f"IP not found: {normalized_ip}")
                 return False
         
         def remove_worker():
             try:
                 # Remove from local list
                 with self._lock_data:
-                    if ip in self._local_ips:
-                        del self._local_ips[ip]
+                    if local_key in self._local_ips:
+                        del self._local_ips[local_key]
                 
                 # If WhitelistManager supports removing IPs, call it
                 if self._whitelist_manager:
                     if hasattr(self._whitelist_manager, 'remove_ip'):
-                        self._whitelist_manager.remove_ip(ip)
+                        self._whitelist_manager.remove_ip(
+                            normalized_ip[3:] if normalized_ip.startswith("ip:") else normalized_ip
+                        )
                     elif hasattr(self._whitelist_manager, '_state'):
                         # Fallback (though manager should have remove_ip now)
                         if hasattr(self._whitelist_manager._state, 'remove_ip'):
-                             self._whitelist_manager._state.remove_ip(ip)
+                             self._whitelist_manager._state.remove_ip(
+                                 normalized_ip[3:] if normalized_ip.startswith("ip:") else normalized_ip
+                             )
                         else: 
-                             self._whitelist_manager._state._ips.discard(ip)
+                             self._whitelist_manager._state._ips.discard(
+                                 normalized_ip[3:] if normalized_ip.startswith("ip:") else normalized_ip
+                             )
                 
                 self._notify_data_changed()
-                self._notify_success(f"IP removed: {ip}")
-                logger.info(f"IP removed from whitelist: {ip}")
+                self._notify_success(f"IP removed: {normalized_ip}")
+                logger.info(f"IP removed from whitelist: {normalized_ip}")
                 
             except Exception as e:
                 self._notify_error(f"Failed to remove IP: {e}")
-                logger.error(f"Failed to remove IP {ip}: {e}")
+                logger.error(f"Failed to remove IP {normalized_ip}: {e}")
         
         # Run in thread
         thread = threading.Thread(target=remove_worker, daemon=True)

@@ -158,7 +158,7 @@ First-class storage for group whitelist entries during migration away from `grou
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
 | `KEY_PREFIX = "fc_"` | const | [api_key_model.py:35](../../../server/models/api_key_model.py#L35) | "FirewallController prefix" |
-| `API_KEY_HMAC_SECRET` | env var | [api_key_model.py:25](../../../server/models/api_key_model.py#L25) | Bắt buộc set ở production. Default cảnh báo |
+| `API_KEY_HMAC_SECRET` | env var | [api_key_model.py:25](../../../server/models/api_key_model.py#L25) | Bắt buộc set ở production; thiếu env sẽ raise `RuntimeError` ngay khi import |
 | `__init__(db)` | | [api_key_model.py:37](../../../server/models/api_key_model.py#L37) | Setup 5 index incl `key_hash` unique |
 | `generate_api_key()` | `@staticmethod → str` | [api_key_model.py:57](../../../server/models/api_key_model.py#L57) | `fc_<token_hex(16)>` = 35 chars |
 | `hash_api_key(key)` | `@staticmethod → str` | [api_key_model.py:69](../../../server/models/api_key_model.py#L69) | HMAC-SHA256 với secret |
@@ -259,7 +259,7 @@ Cap nhat 2026-05-27: group entries are collection-first through `WhitelistEntryM
 ### API key migration
 - **Lazy migration HMAC** (api_key_model.py:191-197): legacy keys hash bằng plain SHA-256. Khi validate fail HMAC, fallback legacy. Match → update hash sang HMAC. Sau migration full, có thể xoá `_hash_api_key_legacy`.
 - **Không có API key rate limit thật**: collection `api_keys` không lưu `rate_limit`, `usage_window`, quota bucket hoặc reset timestamp. `usage_count` là counter trọn đời, chỉ tăng `$inc` mỗi lần validate thành công và không dùng để chặn request.
-- **`API_KEY_HMAC_SECRET` default ở line 27** - chỉ warning log. Production phải set env → đổi secret = invalidate tất cả keys (kể cả đang dùng). Migration phải re-issue keys.
+- **`API_KEY_HMAC_SECRET` không còn default fallback** - module import sẽ fail nếu env thiếu. Production phải set env; đổi secret vẫn invalidate các key HMAC cũ nên migration/re-issue keys phải làm cẩn thận.
 
 ### API key expiration
 

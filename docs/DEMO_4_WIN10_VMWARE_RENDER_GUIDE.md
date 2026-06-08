@@ -56,7 +56,7 @@ Neu trang dau cham, cho 30-60 giay roi refresh. Khong bat dau quay neu health ch
 
 Tai lieu test mac dinh co:
 
-- Admin: `admin / admin123456`
+- Admin: `admin / <admin_password>`
 - Teacher demo:
   - `teacher_network / Teacher@123456`
   - `teacher_web / Teacher@123456`

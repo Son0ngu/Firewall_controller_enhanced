@@ -26,7 +26,7 @@ Wrap `pymongo.MongoClient` thành singleton, đọc cấu hình từ env (`.env`
 
 | Env var | Default | Mục đích |
 |---|---|---|
-| `SECRET_KEY` | `secrets.token_hex(32)` (random mỗi restart) | Flask session signing |
+| `SECRET_KEY` | env bắt buộc | Flask session signing; thiếu env thì validate/startup fail |
 | `DEBUG` | `True` | Flask debug mode |
 | `MONGO_URI` | `mongodb://localhost:27017/` | Connection string |
 | `MONGO_DBNAME` | `Monitoring` | DB name |
@@ -45,7 +45,7 @@ Wrap `pymongo.MongoClient` thành singleton, đọc cấu hình từ env (`.env`
 | `FLASK_ENV` | `development` | Picks config class |
 | `JWT_SECRET_KEY` | random | Bắt buộc ở production (raise `RuntimeError`) - xem [services.md](services.md) |
 | `JWT_REFRESH_SECRET_KEY` | random | Bắt buộc ở production |
-| `API_KEY_HMAC_SECRET` | default string | Set ở production - xem [models.md](models.md) |
+| `API_KEY_HMAC_SECRET` | env bắt buộc | Set ở production - xem [models.md](models.md); thiếu env sẽ raise khi import |
 | `ADMIN_COOKIE_SECURE` | `False` ở `Config`, `True` ở `ProductionConfig` | Cookie auth/refresh dùng `Secure` flag — chỉ gửi qua HTTPS. Đọc qua helper `_cookie_secure()` ở [web_auth_controller.py](../../../server/controllers/web_auth_controller.py) (đổi tên từ `admin_auth_controller.py`; shim cũ vẫn re-export cho backwards-compat). |
 | `ENABLE_DEBUG_ENDPOINTS` | `False` | Cho phép register `/api/agents/debug/status` & `/api/agents/debug/direct` (xem [controllers.md](controllers.md)). Production để `False` → route trả 404. |
 | `DEBUG_AUTH_QUERY_TOKEN` | `False` | Cho phép đọc `?api_key=` và `?access_token=` query string ở [middleware/auth.py](../../../server/middleware/auth.py). Default deny vì token leak qua proxy log/Referer. |
@@ -71,7 +71,7 @@ Không có model/service nào import trực tiếp - chỉ `app.py` và `seed_rb
 
 ## Gotchas
 - **`get_config()` không cache** (config.py:120): mỗi lần gọi tạo `Config()` mới → re-read env. Acceptable vì `Config` chỉ là namespace. Nếu cần cache, caller tự giữ ref (app.py:155 lưu `app.config_instance`).
-- **`SECRET_KEY` random mỗi restart** nếu env chưa set: Flask sessions invalidate sau restart. Production phải set `SECRET_KEY` cố định trong `.env`.
+- **`SECRET_KEY` thiếu env thì fail fast**: không còn random fallback. Production phải set `SECRET_KEY` cố định trong `.env`, nếu thiếu thì app không qua validation/startup.
 - **`_mongo_client` là module-level singleton**: test phải `close_mongo_client()` giữa các test session để có connection mới (TestingConfig dùng db khác nhưng connection reuse).
 - **Connection settings hardcode trong `get_mongo_client`** (config.py:84-99): override `MONGO_MAX_POOL_SIZE` env vẫn không có hiệu lực vì hàm dùng literal `maxPoolSize=10`. **Bug**: code đọc env vào `Config.MONGO_MAX_POOL_SIZE` nhưng không truyền vào client. Đáng sửa.
 - **`compressors="snappy,zlib"`** (config.py:97): server Mongo phải hỗ trợ. Mongo Atlas free có sẵn. Self-hosted có thể thiếu snappy → fall back zlib.

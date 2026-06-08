@@ -64,7 +64,7 @@ cd server
 copy .env-example .env
 # sửa .env theo môi trường test
 python -m pip install -r requirements.txt
-python scripts/seed_rbac.py --username admin --password admin123456
+ python scripts/seed_rbac.py --username admin --password <admin_password>
 python app.py
 ```
 
@@ -94,7 +94,7 @@ python -m pytest tests/ -v
 
 | Loại | Giá trị mẫu |
 |---|---|
-| Admin | `admin / admin123456` |
+| Admin | `admin / <admin_password>` |
 | Teacher A | `teacher_a / Teacher@123456` |
 | Teacher B | `teacher_b / Teacher@123456` |
 | Group A | `Lab A` |
@@ -127,7 +127,7 @@ Kết quả mong đợi:
 - Server log có MongoDB connected, MVC components initialized, controllers registered.
 - `/api/health` trả `200`, `status=healthy`, có `timestamp`.
 - `/api/config` trả `socketio_enabled=true`, `timezone=vietnam`.
-- Nếu chưa có admin/API key, startup seed default admin và default API key.
+- Nếu chưa có admin/API key, phải seed explicit bằng script hoặc tạo trong UI; startup không auto-seed nữa.
 
 ### TC-SRV-002 - Khởi động Server khi MongoDB sai
 
@@ -163,7 +163,7 @@ Kết quả mong đợi:
 Mức ưu tiên: `P0`
 
 Bước test:
-1. `POST /api/admin/auth/login` với `{ "username": "admin", "password": "admin123456" }`.
+1. `POST /api/admin/auth/login` với `{ "username": "admin", "password": "<admin_password>" }`.
 2. Kiểm tra response JSON.
 3. Kiểm tra cookie `access_token`, `refresh_token`.
 4. Gọi `GET /api/admin/auth/me` bằng cookie vừa nhận.
