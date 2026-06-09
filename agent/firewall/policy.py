@@ -87,17 +87,21 @@ class PolicyManager:
                 else:
                     logger.error(f"Failed to set {profile.title()} profile")
             
-            if success_count >= 1:
+            # Require ALL profiles to be set. A partial result can leave the
+            # active network profile allowing outbound, so treating it as
+            # success would be fail-open.
+            if success_count == len(profiles):
                 if self.verify_default_deny():
                     self.default_deny_enabled = True
                     logger.info("Default Deny policy enabled successfully")
                     return True
-                else:
-                    logger.warning("Policy set but verification failed - proceeding anyway")
-                    self.default_deny_enabled = True
-                    return True
+                # Verification failed → do NOT claim deny is active.
+                logger.error("Default Deny verification failed - not all profiles block outbound")
+                self.default_deny_enabled = False
+                return False
             else:
-                logger.error("Failed to set any firewall profiles")
+                logger.error(f"Failed to set all firewall profiles ({success_count}/{len(profiles)})")
+                self.default_deny_enabled = False
                 return False
                 
         except Exception as e:
@@ -105,39 +109,14 @@ class PolicyManager:
             return False
     
     def verify_default_deny(self) -> bool:
+        # Verify per-profile via get_current_policy() (parses outbound action
+        # for every profile) instead of counting the word 'block' in raw netsh
+        # output. Default Deny is only "verified" when ALL profiles block
+        # outbound.
         try:
-            result = FirewallUtils.run_netsh_command(
-                ["advfirewall", "show", "allprofiles"]
-            )
-            
-            if result.returncode != 0:
-                logger.warning(f"Could not verify firewall policy: {result.stderr}")
-                return False
-            
-            output = result.stdout.lower()
-            
-            # Check for block indicators
-            profiles_verified = 0
-            lines = output.split('\n')
-            current_profile = None
-            
-            for line in lines:
-                line_lower = line.strip().lower()
-                
-                # Detect profile headers
-                if any(x in line_lower for x in ['domain profile', 'private profile', 'public profile']):
-                    current_profile = line.strip()
-                
-                elif current_profile and any(x in line_lower for x in ['outbound connections', 'firewall policy']):
-                    if 'block' in line_lower:
-                        profiles_verified += 1
-            
-            if profiles_verified == 0:
-                if 'blockoutbound' in output or output.count('block') >= 2:
-                    profiles_verified = 1
-            
-            return profiles_verified >= 1
-            
+            policies = self.get_current_policy()
+            profiles = ["domain", "private", "public"]
+            return all(policies.get(profile) == "block" for profile in profiles)
         except Exception as e:
             logger.warning(f"Error verifying Default Deny policy: {e}")
             return False
@@ -160,9 +139,13 @@ class PolicyManager:
             
             if success_count > 0:
                 self.default_deny_enabled = False
-            
-            return success_count > 0
-            
+
+            # Require ALL profiles restored (consistent with
+            # restore_default_policy). A partial restore returns False so the
+            # caller falls back to restore_default_policy() rather than leaving
+            # a profile stuck in block-outbound.
+            return success_count == len(self._original_policies)
+
         except Exception as e:
             logger.error(f"Error restoring original policy: {e}")
             return False

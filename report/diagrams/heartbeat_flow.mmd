@@ -1,0 +1,14 @@
+flowchart TD
+  START["HeartbeatSender.start() (enabled + agent_id + JWT/agent_token)"] --> LOOP["_heartbeat_loop (daemon)"]
+  LOOP --> SEND["_send_heartbeat(): POST /api/agents/heartbeat"]
+  SEND --> HDR["JWT via get_auth_headers(config); body: agent_id, metrics, status, whitelist versions"]
+  HDR --> RESP{"HTTP 200?"}
+  RESP -->|"yes"| OK["_consecutive_failures=0; _last_successful_heartbeat=now"]
+  OK --> FORCE{"response force_sync == true?"}
+  FORCE -->|"yes"| SYNC["on_force_sync() -> whitelist.sync_now()"]
+  FORCE -->|"no"| WAIT1["_interruptible_sleep(interval=20s)"]
+  SYNC --> WAIT1
+  RESP -->|"no / exception"| FAILN["_consecutive_failures += 1"]
+  FAILN --> BO["_interruptible_sleep(_backoff_seconds(): full-jitter, fractional honored)"]
+  WAIT1 --> LOOP
+  BO --> LOOP

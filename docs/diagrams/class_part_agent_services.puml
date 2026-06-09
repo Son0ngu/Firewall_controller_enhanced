@@ -1,0 +1,55 @@
+@startuml SAINT_Class_Agent_Services
+' General class diagram - PART: agent/services + agent/logging_module
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.services / logging_module
+
+package "agent.services" {
+  class HeartbeatSender {
+    - interval: int
+    - retry_interval / max_retry_interval: int
+    - _running: bool
+    - _consecutive_failures: int
+    + on_force_sync: Optional[Callable]
+    + get_whitelist_versions: Optional[Callable]
+    + set_agent_credentials(agent_id, token)
+    + start() / stop()
+    + get_status(): Dict
+    - _heartbeat_loop()
+    - _interruptible_sleep(seconds)
+    - _backoff_seconds(): float
+  }
+}
+package "agent.logging_module" {
+  class LogSender {
+    - log_queue: Queue
+    - batch_size / send_interval: int
+    - _consecutive_send_failures: int
+    - _logs_sent: int
+    + start() / stop()
+    + queue_log(entry): bool
+    + get_status(): Dict
+    - _sender_loop()
+    - _send_batch(logs): bool
+  }
+}
+
+HeartbeatSender ..> "agent.whitelist.WhitelistManager" : on_force_sync -> sync_now
+LogSender ..> "Server /api/logs" : POST batch (JWT)
+
+note bottom of HeartbeatSender
+  _interruptible_sleep sleeps whole seconds then the fractional
+  remainder (no busy-spin on sub-second backoff). Full-jitter backoff.
+end note
+note bottom of LogSender
+  _logs_sent counts logs POSTed with 2xx; exposed in get_status().
+end note
+@enduml

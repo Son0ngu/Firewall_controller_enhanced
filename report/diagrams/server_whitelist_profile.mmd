@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant T as Teacher (web UI)
+  participant C as WhitelistProfileController
+  participant MW as require_login + require_permission
+  participant RB as RBACService.can_access_group
+  participant PS as WhitelistProfileService
+  participant GM as GroupModel
+  participant DB as Mongo (whitelist_profiles, groups)
+
+  T->>C: POST /api/groups/<gid>/profiles (name, domains)
+  C->>MW: require_permission("whitelist_profile:create")
+  MW->>RB: can_access_group(user, gid)?
+  RB-->>C: allowed (teacher in group.teacher_ids)
+  C->>PS: create_profile(gid, teacher_id, name, domains)
+  PS->>DB: insert profile (active_profile=false)
+  T->>C: POST /api/groups/<gid>/profiles/<pid>/activate
+  C->>PS: activate_profile(pid, user)
+  PS->>DB: set active_profile=true (others false)
+  PS->>GM: bump group whitelist_version
+  Note over GM: agent sync now serves profile entries instead of group base

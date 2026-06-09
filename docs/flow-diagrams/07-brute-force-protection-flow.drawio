@@ -74,7 +74,7 @@
         <mxCell id="e8" value="No (&lt;5)" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#d6b656;fontSize=11;" edge="1" source="w_d1" target="w_notyet" parent="1" />
 
         <!-- Audit log wrong -->
-        <mxCell id="w_audit" value="&lt;b&gt;AuditService.log(&quot;wrong_password&quot;)&lt;/b&gt;&lt;br&gt;&lt;i&gt;Ghi audit log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="w_audit" value="&lt;b&gt;AuditService.log_action(&quot;wrong_password&quot;)&lt;/b&gt;&lt;br&gt;&lt;i&gt;Ghi audit log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="810" y="650" width="200" height="40" as="geometry" />
         </mxCell>
         <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="w_notyet" target="w_audit" parent="1" />

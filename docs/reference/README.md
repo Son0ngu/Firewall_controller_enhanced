@@ -6,6 +6,7 @@ Khác biệt với các docs còn lại:
 - [docs/SYSTEM_OVERVIEW.md](../SYSTEM_OVERVIEW.md) → **kiến trúc** (luồng, sơ đồ, vì sao).
 - Thư mục này → **API surface** (class/function nào tồn tại, signature, vị trí, ai gọi).
 - [current-flows.md](current-flows.md) → **flow runtime hiện tại**: whitelist CRUD/sync/merge, agent firewall apply, config/build.
+- [../diagrams/README.md](../diagrams/README.md) → **chỉ mục sơ đồ**: use-case, class tổng quan + chi tiết (PlantUML), và flow từng phần (Mermaid).
 
 ---
 

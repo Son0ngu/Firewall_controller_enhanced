@@ -114,7 +114,7 @@
         <mxCell id="e_s7_s8" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s7" target="s8" parent="1" />
 
         <!-- Audit + Socket -->
-        <mxCell id="s9" value="&lt;b&gt;AuditService.log(&quot;auth.login&quot;)&lt;/b&gt;&lt;br&gt;SocketIO.emit(&quot;admin_login&quot;)&lt;br&gt;&lt;i&gt;Ghi audit log + thông báo realtime&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="s9" value="&lt;b&gt;AuditService.log_action(&quot;auth.login&quot;)&lt;/b&gt;&lt;br&gt;SocketIO.emit(&quot;admin_login&quot;)&lt;br&gt;&lt;i&gt;Ghi audit log + thông báo realtime&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="330" y="1330" width="250" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e_s8_s9" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s8" target="s9" parent="1" />

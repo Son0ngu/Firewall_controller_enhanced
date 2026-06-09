@@ -1,0 +1,16 @@
+flowchart TD
+  subgraph Create["Admin creates key"]
+    A1["POST /api/api-keys (require_login, admin)"] --> A2["APIKeyService.create_api_key(name, perms, expires_in_days)"]
+    A2 --> A3["generate random key; store HMAC-SHA256 hash only"]
+    A3 --> A4["return plaintext key ONCE (not logged); emit api_key_created"]
+  end
+  subgraph Validate["Agent uses key"]
+    V1["request with X-API-Key"] --> V2["require_api_key -> validate_api_key"]
+    V2 --> V3{"hash match + active + not expired + has permission?"}
+    V3 -->|"yes"| V4["allow (e.g. agent_register)"]
+    V3 -->|"no"| V5["401"]
+  end
+  subgraph Revoke["Admin revokes"]
+    R1["POST /api/api-keys/<id>/revoke"] --> R2["set is_revoked=true; emit api_key_revoked"]
+    R2 --> R3["subsequent validate_api_key -> 401"]
+  end

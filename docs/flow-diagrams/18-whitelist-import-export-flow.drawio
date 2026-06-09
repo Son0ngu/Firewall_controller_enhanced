@@ -58,7 +58,7 @@
         <mxCell id="ie6" value="No (Admin)" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="i_d1" target="i_proc" parent="1" />
         <mxCell id="ie6b" value="Yes (owns)" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#82b366;fontSize=8;" edge="1" source="i_d3" target="i_proc" parent="1" />
 
-        <mxCell id="i_bulk" value="&lt;b&gt;service.bulk_add_entries(items)&lt;/b&gt;&lt;br&gt;Split by scope: global vs group&lt;br&gt;bump_global_version() if global added&lt;br&gt;bump group whitelist_version if group added&lt;br&gt;&lt;i&gt;Thêm hàng loạt + tăng version&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="i_bulk" value="&lt;b&gt;service.import_domains(domains, category)&lt;/b&gt;&lt;br&gt;Legacy path: strings only, GLOBAL scope&lt;br&gt;bump_global_version()&lt;br&gt;&lt;i&gt;Import global (admin-only)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="55" y="415" width="260" height="65" as="geometry" />
         </mxCell>
         <mxCell id="ie7" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="i_proc" target="i_bulk" parent="1" />
@@ -68,7 +68,7 @@
         </mxCell>
         <mxCell id="ie8" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="i_bulk" target="i_socket" parent="1" />
 
-        <mxCell id="i_resp" value="&lt;b&gt;200 OK&lt;/b&gt;&lt;br&gt;{added_count, skipped_count, failed_count, errors}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="i_resp" value="&lt;b&gt;200 OK&lt;/b&gt;&lt;br&gt;{added_count, duplicate_count, error_count, total_processed, errors}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="60" y="565" width="280" height="35" as="geometry" />
         </mxCell>
         <mxCell id="ie9" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="i_socket" target="i_resp" parent="1" />
@@ -102,7 +102,7 @@
         <mxCell id="ee3" value="json" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="e_d1" target="e_json" parent="1" />
 
         <!-- TXT format -->
-        <mxCell id="e_txt" value="&lt;b&gt;TXT File Download&lt;/b&gt;&lt;br&gt;One domain per line&lt;br&gt;&lt;br&gt;Content-Type: text/plain&lt;br&gt;Content-Disposition:&lt;br&gt;&amp;nbsp;&amp;nbsp;attachment; filename=&lt;br&gt;&amp;nbsp;&amp;nbsp;&quot;whitelist_export_YYYY...&quot;&lt;br&gt;&lt;i&gt;Tải file text&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="e_txt" value="&lt;b&gt;TXT File Download&lt;/b&gt;&lt;br&gt;One domain per line&lt;br&gt;&lt;br&gt;Content-Type: text/plain&lt;br&gt;Content-Disposition:&lt;br&gt;&amp;nbsp;&amp;nbsp;attachment; filename=&lt;br&gt;&amp;nbsp;&amp;nbsp;&quot;whitelist.txt&quot;&lt;br&gt;&lt;i&gt;Tải file text&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="830" y="320" width="180" height="100" as="geometry" />
         </mxCell>
         <mxCell id="ee4" value="txt" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="e_d1" target="e_txt" parent="1" />

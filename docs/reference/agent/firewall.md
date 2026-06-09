@@ -44,9 +44,9 @@ Kiến trúc chính: `FirewallManager` (orchestrator) → `PolicyManager` (chín
 | `PolicyManager` | `class` | [policy.py:9](../../../agent/firewall/policy.py#L9) | Quản 3 profile: domain / private / public |
 | `.get_current_policy()` | `() -> Dict[str, str]` | [policy.py:15](../../../agent/firewall/policy.py#L15) | Parse `netsh advfirewall show allprofiles`, trả `{profile: "allow"/"block"}` cho Outbound |
 | `.backup_current_policy()` | `() -> None` | [policy.py:48](../../../agent/firewall/policy.py#L48) | Lưu vào `_original_policies` để restore sau |
-| `.enable_default_deny()` | `() -> bool` | [policy.py:56](../../../agent/firewall/policy.py#L56) | Set `blockinbound,blockoutbound` cho 3 profile |
-| `.verify_default_deny()` | `() -> bool` | [policy.py:100](../../../agent/firewall/policy.py#L100) | Re-parse và confirm ≥1 profile ở chế độ block |
-| `.restore_original_policy()` | `() -> bool` | [policy.py:138](../../../agent/firewall/policy.py#L138) | Restore từ `_original_policies`; rỗng → fallback default |
+| `.enable_default_deny()` | `() -> bool` | [policy.py:56](../../../agent/firewall/policy.py#L56) | Set `blockinbound,blockoutbound` cho 3 profile. Chỉ `True` khi set **đủ cả 3** (`success_count == len(profiles)`) VÀ `verify_default_deny()` pass; verify fail → `default_deny_enabled=False` + `False` (không báo thành công giả) |
+| `.verify_default_deny()` | `() -> bool` | [policy.py:100](../../../agent/firewall/policy.py#L100) | Kiểm per-profile qua `get_current_policy()`: `all(profile == "block")` cho cả 3. Bỏ đếm chuỗi `count('block')` |
+| `.restore_original_policy()` | `() -> bool` | [policy.py:138](../../../agent/firewall/policy.py#L138) | Restore từ `_original_policies`; rỗng → fallback default. Trả `True` chỉ khi restore **đủ mọi** profile (`== len(_original_policies)`); partial → `False` → caller fallback `restore_default_policy()` (nhất quán với `restore_default_policy`) |
 | `.restore_default_policy()` | `() -> bool` | [policy.py:170](../../../agent/firewall/policy.py#L170) | Set tất cả profile về `blockinbound,allowoutbound` (mặc định Windows) |
 | `.default_deny_enabled` | `bool` | [policy.py:13](../../../agent/firewall/policy.py#L13) | State flag |
 

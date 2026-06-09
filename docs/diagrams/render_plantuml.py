@@ -1,10 +1,42 @@
 from pathlib import Path
+import os
+import shutil
+import subprocess
 import sys
 import zlib
 import urllib.request
 
 
 PLANTUML_SERVER = "https://www.plantuml.com/plantuml"
+
+
+def _find_jar() -> Path | None:
+    """Locate a local plantuml.jar.
+
+    Order: $PLANTUML_JAR, then plantuml.jar next to this script, then in CWD.
+    Local rendering avoids the public server's GET-URL length limit (large
+    diagrams with many notes return HTTP 400 over GET).
+    """
+    env_jar = os.environ.get("PLANTUML_JAR")
+    candidates = []
+    if env_jar:
+        candidates.append(Path(env_jar))
+    candidates.append(Path(__file__).resolve().parent / "plantuml.jar")
+    candidates.append(Path("plantuml.jar"))
+    for jar in candidates:
+        if jar.exists():
+            return jar
+    return None
+
+
+def render_with_jar(files, jar: Path, fmt: str = "svg") -> None:
+    java = shutil.which("java")
+    if not java:
+        raise RuntimeError("java not found on PATH")
+    cmd = [java, "-jar", str(jar), f"-t{fmt}", *[str(f) for f in files]]
+    subprocess.run(cmd, check=True)
+    for f in files:
+        print(f"Rendered: {Path(f).with_suffix('.' + fmt)}")
 
 
 def encode64(data: bytes) -> str:
@@ -66,11 +98,20 @@ def main():
         print("No .puml files found in current folder.")
         return
 
-    for file in files:
-        if not file.exists():
-            print(f"Not found: {file}")
-            continue
+    existing = [f for f in files if f.exists()]
+    for f in files:
+        if not f.exists():
+            print(f"Not found: {f}")
 
+    # Prefer a local plantuml.jar (no URL-length limit); fall back to server.
+    jar = _find_jar()
+    if jar:
+        print(f"Rendering locally via {jar}")
+        render_with_jar(existing, jar, fmt="svg")
+        return
+
+    print("No local plantuml.jar found - using public server (may HTTP 400 on large diagrams).")
+    for file in existing:
         render_puml(file, fmt="svg")
 
 

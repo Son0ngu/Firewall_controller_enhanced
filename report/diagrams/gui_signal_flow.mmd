@@ -1,0 +1,16 @@
+flowchart TD
+  subgraph Worker["AgentController worker thread (daemon)"]
+    W["_agent_worker / components"] --> EMIT["AgentSignals.emit(name, data)"]
+    EMIT --> Q["thread-safe event queue"]
+  end
+  subgraph QtMain["Qt main thread (event loop)"]
+    TIMER["QtSignalBridge QTimer (~50ms)"] --> DRAIN["_drain(): pop queue"]
+    DRAIN --> DISP["_dispatch(event) -> Qt Signal.emit"]
+    DISP --> SIG{"signal type"}
+    SIG -->|"status_changed"| DASH1["DashboardView._on_status_changed -> StatusPill"]
+    SIG -->|"stats_updated"| DASH2["DashboardView._on_stats_updated -> StatusCards"]
+    SIG -->|"whitelist_synced"| WL["DashboardView + WhitelistView reload"]
+    SIG -->|"packet_captured"| LOG["Activity log (rate-limited)"]
+    SIG -->|"error_occurred"| ERR["status pill = Error + log"]
+  end
+  Q -. consumed by .-> TIMER

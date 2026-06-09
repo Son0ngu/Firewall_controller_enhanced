@@ -99,7 +99,7 @@
         <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s_process" target="s_db" parent="1" />
 
         <!-- SocketIO -->
-        <mxCell id="s_socket" value="&lt;b&gt;SocketIO.emit(&quot;logs_received&quot;)&lt;/b&gt;&lt;br&gt;{count, agents_affected, timestamp}&lt;br&gt;&lt;i&gt;Thông báo realtime&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="s_socket" value="&lt;b&gt;SocketIO.emit(&quot;new_log&quot;)&lt;/b&gt;&lt;br&gt;{count, agents_affected, timestamp}&lt;br&gt;&lt;i&gt;Thông báo realtime&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="490" y="1000" width="200" height="50" as="geometry" />
         </mxCell>
         <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s_db" target="s_socket" parent="1" />
@@ -117,7 +117,7 @@
         </mxCell>
 
         <!-- Response -->
-        <mxCell id="s_resp" value="&lt;b&gt;201 Created&lt;/b&gt;&lt;br&gt;{success: true, inserted_count: 100}&lt;br&gt;&lt;i&gt;Xác nhận đã nhận log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="s_resp" value="&lt;b&gt;201 Created&lt;/b&gt;&lt;br&gt;{success: true, processed_count: 100}&lt;br&gt;&lt;i&gt;Xác nhận đã nhận log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="500" y="1085" width="190" height="50" as="geometry" />
         </mxCell>
         <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s_socket" target="s_resp" parent="1" />

@@ -171,7 +171,9 @@ class WhitelistService:
             try:
                 group = self.group_model.find_group_with_embedded_entry(ObjectId(item_id))
             except Exception:
-                return True, None
+                # Malformed entry id from a teacher → fail closed (an auth gate
+                # must not default to "allowed" on bad input).
+                return False, "Invalid entry id"
 
             if not group:
                 return True, None
@@ -863,20 +865,24 @@ class WhitelistService:
             existing = merged.get(key)
 
             if existing:
-                # Group scope wins over global (more specific)
+                # Group scope is more specific than global, so a group entry
+                # wins regardless of the order entries arrive in. A same-scope
+                # collision keeps the entry seen later (last-wins).
                 incoming_scope = entry.get("scope", "global")
                 existing_scope = existing.get("scope", "global")
-                if incoming_scope == "group" or existing_scope != "group":
-                    # Incoming is group or existing is not group → use incoming
-                    entry_copy = {**entry}
-                    # Use higher priority if different
-                    if existing.get("priority") == "high" and entry_copy.get("priority") != "high":
-                        entry_copy["priority"] = "high"
-                    merged[key] = entry_copy
+                incoming_is_group = incoming_scope == "group"
+                existing_is_group = existing_scope == "group"
+
+                if existing_is_group and not incoming_is_group:
+                    winner, loser = existing, entry
                 else:
-                    # Existing is group, incoming is global → keep existing, merge optional fields
-                    if entry.get("priority") == "high":
-                        existing["priority"] = "high"
+                    winner, loser = entry, existing
+
+                entry_copy = {**winner}
+                # Preserve a "high" priority flag from either side.
+                if winner.get("priority") == "high" or loser.get("priority") == "high":
+                    entry_copy["priority"] = "high"
+                merged[key] = entry_copy
             else:
                 merged[key] = {**entry}
 
@@ -957,14 +963,18 @@ class WhitelistService:
             current_group_version = group.get("whitelist_version", 1)
 
             # Check if agent has an active policy override BEFORE version short-circuit.
-            # Skip version cache if:
-            #   1. Policy is currently active (isolate/custom_whitelist) → agent needs policy-modified whitelist
-            #   2. Policy changed since last sync (e.g. was isolate, now none) → agent needs fresh normal whitelist
+            # Skip the version cache when EITHER condition holds (independently
+            # forces a full sync):
+            #   - policy is currently active (isolate/custom_whitelist) → agent
+            #     needs the policy-modified whitelist
+            #   - effective mode differs from the mode the agent last applied
+            #     (override was just turned on/off) → agent needs fresh data
             policy_changed = False
             if self.policy_service:
                 effective_mode = self.policy_service.policy_model.get_effective_mode(agent_id)
-                if effective_mode != "none" or effective_mode != agent_policy_mode:
-                    policy_changed = True
+                policy_active = effective_mode != "none"
+                policy_mode_changed = effective_mode != agent_policy_mode
+                policy_changed = policy_active or policy_mode_changed
 
             if not policy_changed and global_version == current_global_version and group_version == current_group_version:
                 return {
@@ -1154,27 +1164,33 @@ class WhitelistService:
                     # Filter out items to be deleted
                     # items is list of (value, type)
                     new_whitelist = []
+                    # Track which requested (value, type) pairs actually matched
+                    # so deleted_count reflects requests fulfilled (1 per id),
+                    # consistent with the global path, instead of the raw number
+                    # of array elements removed (which over-counts duplicates).
+                    matched = set()
                     for entry in group.get("whitelist", []):
                         # Normalize entry
                         e_val = entry.get("value") if isinstance(entry, dict) else entry
                         e_type = entry.get("type", "domain") if isinstance(entry, dict) else "domain"
-                        
+
                         # Check if should be deleted
                         should_delete = False
                         for d_val, d_type in items:
                             if d_val == e_val and d_type == e_type:
                                 should_delete = True
+                                matched.add((d_val, d_type))
                                 break
-                        
+
                         if not should_delete:
                             new_whitelist.append(entry)
-                    
+
                     if len(new_whitelist) != original_len:
                         self.group_model.update_group(gid, {
                             "whitelist": new_whitelist,
                             "whitelist_version": group.get("whitelist_version", 1) + 1
                         })
-                        deleted_count += (original_len - len(new_whitelist))
+                        deleted_count += len(matched)
             except Exception as e:
                 errors.append(f"Error updating group {gid}: {str(e)}")
 

@@ -17,7 +17,8 @@ sequenceDiagram
     Note over Lifecycle: record registration / whitelist_sync as degraded
   end
   Lifecycle->>Firewall: enable_whitelist_mode()
-  Note over Lifecycle: log_sender / heartbeat_sender require server_url + agent_id;<br/>otherwise marked degraded
+  Note over Firewall: allow rules and self-allow created FIRST,<br/>then enable_default_deny marks active only when all 3 profiles verify block (fail-closed)
+  Note over Lifecycle: log_sender and heartbeat_sender require server_url and agent_id,<br/>otherwise marked degraded
   Lifecycle-->>Controller: InitResult (ok | degraded | failed)
   alt overall == failed
     Controller-->>GUI: status_changed (error)

@@ -1,0 +1,66 @@
+@startuml SAINT_Class_Agent_Whitelist
+' General class diagram - PART: agent/whitelist
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.whitelist
+
+package "agent.whitelist" {
+  class WhitelistManager {
+    - _state: WhitelistState
+    - _syncer: WhitelistSyncer
+    - dns_cache: LRUCache
+    - _stats: Dict
+    + start_sync()
+    + stop_sync()
+    + sync_now(): bool
+    + is_allowed(domain, ip=None): bool
+    + is_ip_allowed(ip): bool
+    + remove_ip(ip): bool
+    + set_firewall_manager(fw)
+    + get_stats(): Dict
+    - _sync_loop()
+    - _refresh_dns_loop()
+    - _update_firewall_rules()
+  }
+  class WhitelistState {
+    - _domains: set
+    - _patterns: set
+    - _ips: set
+    - _version / _group_version
+    + update(data): bool
+    + is_domain_allowed(domain): bool
+    + is_ip_allowed(ip): bool
+    + get_all_domains() / get_all_ips() / get_all_patterns()
+    + get_stats(): Dict
+    + clear()
+  }
+  class WhitelistSyncer {
+    + sync_with_server(params): Dict
+    - _get_headers()
+    - _build_sync_url(base)
+  }
+  class WhitelistMonitor {
+    + start() / stop()
+  }
+}
+
+WhitelistManager *-- WhitelistState
+WhitelistManager *-- WhitelistSyncer
+WhitelistManager ..> "agent.firewall.FirewallManager" : set_firewall_manager (o--)
+WhitelistManager ..> "agent.network.OptimizedDNSResolver"
+WhitelistManager ..> "agent.cache.LRUCache" : dns_cache
+
+note bottom of WhitelistState
+  update() has anti-wipe guard (keep cache when server
+  returns empty while entries exist, unless group changed).
+  Merge: group/profile entries win over global.
+end note
+@enduml

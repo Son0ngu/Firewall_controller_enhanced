@@ -1,0 +1,13 @@
+flowchart TD
+  AG["Agent LogSender batch"] --> RT["POST /api/logs (require_jwt)"]
+  RT --> SVC["LogService.receive_logs(logs, agent_id)"]
+  SVC --> PARSE["parse protocol/port/action; stamp agent_id + vietnam timestamp"]
+  PARSE --> INS["LogModel.insert_log (per entry)"]
+  INS --> IO["socketio emit logs_received (count + sample)"]
+  IO --> BROWSER["connected dashboards (Logs page)"]
+  BROWSER --> FILT{"new_log matches active client filter? (level + agent + search + time)"}
+  FILT -->|"yes"| PREP["unshift + re-render visible list"]
+  FILT -->|"no"| SKIP["skip prepend"]
+
+  Q["GET /api/logs (require_login)"] --> QFILT["RBACService.get_log_query_filter(user): teacher -> agent_id in own groups"]
+  QFILT --> QRES["LogService.get_all_logs(filters)"]

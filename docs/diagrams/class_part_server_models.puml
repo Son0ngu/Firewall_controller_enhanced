@@ -1,0 +1,83 @@
+@startuml SAINT_Class_Server_Models
+' General class diagram - PART: server/models (11 models) + collections
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - server.models (collections)
+
+package "server.models" {
+  class WhitelistModel {
+    collection: whitelist / whitelist_meta
+    + bump_global_version() / get_global_version()
+    + find_entries() / add_entry() / delete_entry()
+  }
+  class WhitelistEntryModel {
+    collection: whitelist_entries
+    + insert() / update() / delete() / find_by_value()
+  }
+  class AgentModel {
+    collection: agents
+    + register_agent() / update_agent()
+    + find_by_agent_id() / get_all_agents() / delete_agent()
+  }
+  class LogModel {
+    collection: logs
+    + insert_log() / find_all_logs() / count_logs() / delete_logs()
+  }
+  class GroupModel {
+    collection: groups
+    + create_group() / update_group() / set_teachers()
+    + find_accessible_group_ids_for_teacher()
+    + find_group_with_embedded_entry()
+  }
+  class APIKeyModel {
+    collection: api_keys
+    + create_api_key() / find_by_hash() / revoke_api_key()
+  }
+  class AgentPolicyModel {
+    collection: agent_policies
+    + set_policy() / get_effective_mode()
+  }
+  class UserModel {
+    collection: users
+    + create_user() / find_by_username() / is_locked()
+  }
+  class WhitelistProfileModel {
+    collection: whitelist_profiles
+    + create_profile() / activate_profile() / list_by_group()
+  }
+  class SessionModel {
+    collection: admin_sessions
+    + create() / revoke() / is_session_revoked()
+  }
+  class AuditModel {
+    collection: audit_logs
+    + insert() / get_logs() / get_user_activity()
+  }
+}
+
+class "MongoDB" as Mongo <<datastore>>
+WhitelistModel --> Mongo
+WhitelistEntryModel --> Mongo
+AgentModel --> Mongo
+LogModel --> Mongo
+GroupModel --> Mongo
+APIKeyModel --> Mongo
+AgentPolicyModel --> Mongo
+UserModel --> Mongo
+WhitelistProfileModel --> Mongo
+SessionModel --> Mongo
+AuditModel --> Mongo
+
+note bottom of Mongo
+  All direct collection access lives in the model layer
+  (controllers/services never touch .collection directly).
+end note
+@enduml

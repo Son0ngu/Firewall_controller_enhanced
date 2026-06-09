@@ -1,0 +1,109 @@
+@startuml SAINT_Server_Class_Overview
+' OVERVIEW (general) class diagram of the Flask server (MVC + DI).
+' Layers + key classes + layer dependencies only (no methods).
+' For full members see class_diagram_server.puml.
+
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+
+title Class Overview - SAINT Server (MVC + DI container)
+
+package "bootstrap" {
+  class "app_factory" as AppFactory <<module>>
+  class "container" as Container <<module>>
+}
+
+package "middleware" {
+  class "auth (require_api_key / require_jwt)" as AuthMW <<M>>
+  class "rbac (require_login / require_admin / require_permission)" as RbacMW <<M>>
+}
+
+package "controllers" {
+  class WhitelistController <<C>>
+  class AgentController <<C>>
+  class LogController <<C>>
+  class GroupController <<C>>
+  class APIKeyController <<C>>
+  class WhitelistProfileController <<C>>
+  class WebAuthController <<C>>
+  class UserController <<C>>
+  class AuditController <<C>>
+  class AgentAuthController <<C>>
+}
+
+package "services" {
+  class WhitelistService
+  class AgentService
+  class LogService
+  class GroupService
+  class APIKeyService
+  class WhitelistProfileService
+  class AgentPolicyService
+  class AdminAuthService
+  class UserService
+  class RBACService
+  class AuditService
+  class JWTService
+}
+
+package "models" {
+  class WhitelistModel
+  class WhitelistEntryModel
+  class AgentModel
+  class LogModel
+  class GroupModel
+  class APIKeyModel
+  class AgentPolicyModel
+  class UserModel
+  class WhitelistProfileModel
+  class SessionModel
+  class AuditModel
+}
+
+class "MongoDB" as Mongo <<datastore>>
+class "Flask-SocketIO" as IO <<realtime>>
+
+' --- Bootstrap / DI ---
+AppFactory ..> Container : initialize_container
+Container ..> JWTService : build + inject services
+Container ..> WhitelistController : inject services into controllers
+
+' --- Request path (layered, representative classes) ---
+AgentController ..> AuthMW : agent routes (api key / jwt)
+WhitelistController ..> RbacMW : web routes (login + rbac)
+WhitelistController --> WhitelistService
+WhitelistService --> WhitelistModel
+WhitelistModel --> Mongo
+LogService ..> IO : emit realtime events
+
+' --- Cross-service deps (key ones) ---
+WhitelistService ..> AgentPolicyService
+WhitelistService ..> WhitelistProfileService
+AgentService ..> JWTService
+AdminAuthService ..> JWTService
+AdminAuthService ..> AuditService
+UserService ..> AuditService
+AuthMW ..> APIKeyService
+AuthMW ..> JWTService
+RbacMW ..> AdminAuthService
+RbacMW ..> RBACService
+
+note as NWiring
+  11 models + 12 services wired in
+  bootstrap/container.py. Agent routes
+  authenticate via API key (register) then
+  JWT (heartbeat/sync/logs); web routes via
+  login JWT cookie + RBAC role/ownership.
+  (Layer arrows show one representative path;
+  every controller -> service -> model follows it.)
+end note
+
+@enduml

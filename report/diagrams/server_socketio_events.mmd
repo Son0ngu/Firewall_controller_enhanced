@@ -1,0 +1,17 @@
+flowchart LR
+  subgraph Emitters["Server emit points (services/controllers)"]
+    AS["AgentService"] --> E1["agent_registered / agent_heartbeat / agent_deleted / agent_group_updated"]
+    PS["AgentPolicyService"] --> E2["agent_policy_updated"]
+    WS["WhitelistService"] --> E3["whitelist_updated"]
+    LS["LogService"] --> E4["logs_received / logs_cleared"]
+    KS["APIKeyService"] --> E5["api_key_created / api_key_revoked"]
+    AUTH["AdminAuthService / AuthController"] --> E6["user_logged_in / token_refreshed / agent_logout"]
+  end
+  E1 --> IO["Flask-SocketIO broadcast"]
+  E2 --> IO
+  E3 --> IO
+  E4 --> IO
+  E5 --> IO
+  E6 --> IO
+  IO --> CLIENTS["Connected dashboards (admin/teacher browsers)"]
+  CLIENTS --> UPD["live update: agents grid, whitelist, logs, api-keys"]

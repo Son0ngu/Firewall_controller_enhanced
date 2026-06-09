@@ -17,7 +17,6 @@ from models.user_model import UserModel
 from models.session_model import SessionModel
 from services.jwt_service import JWTService
 from services.audit_service import AuditService
-from config.rbac_config import get_all_permissions
 from time_utils import now_vietnam
 
 # Password policy

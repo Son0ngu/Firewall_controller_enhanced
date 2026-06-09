@@ -84,7 +84,7 @@
           <mxGeometry x="40" y="710" width="500" height="40" as="geometry"/>
         </mxCell>
 
-        <mxCell id="gd1" value="&lt;b&gt;Page Load&lt;/b&gt;&lt;br&gt;&lt;i&gt;GET /api/groups/:id (detail)&lt;br&gt;GET /api/agents (for assignment)&lt;br&gt;GET /api/whitelist?group_id=:id&lt;br&gt;GET /api/whitelist-profiles&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="gd1" value="&lt;b&gt;Page Load&lt;/b&gt;&lt;br&gt;&lt;i&gt;GET /api/groups/:id (detail)&lt;br&gt;GET /api/agents (for assignment)&lt;br&gt;GET /api/whitelist?group_id=:id&lt;br&gt;GET /api/groups/:gid/profiles&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="60" y="770" width="300" height="80" as="geometry"/>
         </mxCell>
 
@@ -110,7 +110,7 @@
           <mxGeometry x="10" y="160" width="240" height="90" as="geometry"/>
         </mxCell>
 
-        <mxCell id="gdf4" value="&lt;b&gt;Whitelist Profiles&lt;/b&gt;&lt;br&gt;&lt;i&gt;Teacher-specific whitelists&lt;br&gt;Profile assignment management&lt;br&gt;GET /api/whitelist-profiles&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=11;align=left;" vertex="1" parent="gd_features">
+        <mxCell id="gdf4" value="&lt;b&gt;Whitelist Profiles&lt;/b&gt;&lt;br&gt;&lt;i&gt;Teacher-specific whitelists&lt;br&gt;Profile assignment management&lt;br&gt;GET /api/groups/:gid/profiles&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=11;align=left;" vertex="1" parent="gd_features">
           <mxGeometry x="270" y="160" width="240" height="90" as="geometry"/>
         </mxCell>
 
@@ -305,7 +305,7 @@
         <mxCell id="ar11a" value="POST" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;fontColor=#009900;" vertex="1" parent="ar11">
           <mxGeometry width="70" height="26" as="geometry"/>
         </mxCell>
-        <mxCell id="ar11b" value="/api/groups/:id/agents" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="ar11">
+        <mxCell id="ar11b" value="PATCH /api/agents/:id/group" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="ar11">
           <mxGeometry x="70" width="240" height="26" as="geometry"/>
         </mxCell>
         <mxCell id="ar11c" value="Bulk add agents" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="ar11">
@@ -321,7 +321,7 @@
         <mxCell id="ar12a" value="DELETE" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;fontColor=#cc0000;" vertex="1" parent="ar12">
           <mxGeometry width="70" height="26" as="geometry"/>
         </mxCell>
-        <mxCell id="ar12b" value="/api/groups/:id/agents/:agent_id" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="ar12">
+        <mxCell id="ar12b" value="PATCH /api/agents/:id/group (move to pending)" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="ar12">
           <mxGeometry x="70" width="240" height="26" as="geometry"/>
         </mxCell>
         <mxCell id="ar12c" value="Remove agent" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="ar12">

@@ -5,7 +5,7 @@
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="title" value="&lt;b&gt;Flow 17: Whitelist CRUD&lt;/b&gt;&lt;br&gt;/api/whitelist - Admin + Teacher (scoped)&lt;br&gt;&lt;i&gt;Quản lý whitelist domain/IP/pattern&lt;/i&gt;" style="text;html=1;align=center;strokeColor=none;fillColor=none;fontSize=14;" vertex="1" parent="1">
+        <mxCell id="title" value="&lt;b&gt;Flow 17: Whitelist CRUD&lt;/b&gt;&lt;br&gt;/api/whitelist - Admin only (teachers use Whitelist Profiles)&lt;br&gt;&lt;i&gt;Quản lý whitelist domain/IP/pattern&lt;/i&gt;" style="text;html=1;align=center;strokeColor=none;fillColor=none;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="480" y="10" width="370" height="50" as="geometry" />
         </mxCell>
 
@@ -32,7 +32,7 @@
         </mxCell>
         <mxCell id="ae2" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="a_d1" target="a_d2" parent="1" />
 
-        <mxCell id="a_err1" value="&lt;b&gt;403&lt;/b&gt;&lt;br&gt;Teacher không thêm global" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="a_err1" value="&lt;b&gt;403&lt;/b&gt;&lt;br&gt;Teachers cannot modify whitelist (use Profiles)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="370" y="255" width="130" height="35" as="geometry" />
         </mxCell>
         <mxCell id="ae3" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=9;" edge="1" source="a_d2" target="a_err1" parent="1" />
@@ -96,7 +96,7 @@
         </mxCell>
         <mxCell id="de3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="d_check" target="d_d2" parent="1" />
 
-        <mxCell id="d_err" value="&lt;b&gt;403&lt;/b&gt;&lt;br&gt;Teacher không xoá global" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="d_err" value="&lt;b&gt;403&lt;/b&gt;&lt;br&gt;Teachers cannot modify whitelist (use Profiles)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="870" y="330" width="130" height="35" as="geometry" />
         </mxCell>
         <mxCell id="de4" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=9;" edge="1" source="d_d2" target="d_err" parent="1" />
@@ -116,7 +116,7 @@
         </mxCell>
 
         <!-- Bulk Add -->
-        <mxCell id="ba" value="&lt;b&gt;BULK ADD&lt;/b&gt; POST /whitelist/bulk&lt;br&gt;{items: [...]} (max 1000)&lt;br&gt;&lt;br&gt;Teacher: chỉ thêm vào group mình&lt;br&gt;Admin: thêm global + group&lt;br&gt;&lt;br&gt;Return: {added_count, failed_count, errors}&lt;br&gt;&lt;i&gt;Thêm hàng loạt (tối đa 1000)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
+        <mxCell id="ba" value="&lt;b&gt;BULK ADD&lt;/b&gt; POST /whitelist/bulk&lt;br&gt;{items: [...]} (max 1000)&lt;br&gt;&lt;br&gt;Teacher: 403 (admin-only)&lt;br&gt;Admin: global + group&lt;br&gt;&lt;br&gt;Return: {inserted_count, error_count, errors}&lt;br&gt;&lt;i&gt;Thêm hàng loạt (tối đa 1000)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
           <mxGeometry x="555" y="490" width="220" height="105" as="geometry" />
         </mxCell>
 
@@ -148,7 +148,7 @@
         <mxCell id="scope_title" value="&lt;b&gt;Scope RBAC Rules / Quy tắc phân quyền theo scope&lt;/b&gt;" style="text;html=1;align=center;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="620" y="765" width="320" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="scope" value="&lt;table style='font-size:9px;border-collapse:collapse;width:100%'&gt;&lt;tr style='background:#6c8ebf;color:white'&gt;&lt;th style='padding:3px;border:1px solid #999'&gt;Action&lt;/th&gt;&lt;th style='padding:3px;border:1px solid #999'&gt;Admin&lt;/th&gt;&lt;th style='padding:3px;border:1px solid #999'&gt;Teacher&lt;/th&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Add global entry&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr style='background:#f9f9f9'&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Add group entry (own group)&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Add group entry (other group)&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr style='background:#f9f9f9'&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Delete global entry&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Delete group entry (own)&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;/tr&gt;&lt;tr style='background:#f9f9f9'&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;View all entries&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅ all&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅ global + own groups&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;" style="text;html=1;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
+        <mxCell id="scope" value="&lt;table style='font-size:9px;border-collapse:collapse;width:100%'&gt;&lt;tr style='background:#6c8ebf;color:white'&gt;&lt;th style='padding:3px;border:1px solid #999'&gt;Action&lt;/th&gt;&lt;th style='padding:3px;border:1px solid #999'&gt;Admin&lt;/th&gt;&lt;th style='padding:3px;border:1px solid #999'&gt;Teacher&lt;/th&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Add global entry&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr style='background:#f9f9f9'&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Add group entry (own group)&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Add group entry (other group)&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr style='background:#f9f9f9'&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Delete global entry&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;Delete group entry (own)&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;❌ 403&lt;/td&gt;&lt;/tr&gt;&lt;tr style='background:#f9f9f9'&gt;&lt;td style='padding:2px;border:1px solid #ccc'&gt;View all entries&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅ all&lt;/td&gt;&lt;td style='padding:2px;border:1px solid #ccc;text-align:center'&gt;✅ global + own groups&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;" style="text;html=1;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
           <mxGeometry x="555" y="790" width="450" height="80" as="geometry" />
         </mxCell>
 

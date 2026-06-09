@@ -1,0 +1,71 @@
+@startuml SAINT_Class_Agent_Controllers_GUI
+' General class diagram - PART: agent/controllers + agent/gui_qt
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.controllers / gui_qt
+
+package "agent.controllers" {
+  class AgentController <<singleton>> {
+    - _runtime: AgentRuntime
+    - signals: AgentSignals
+    + start_agent() / stop_agent()
+    + get_agent_info() / get_stats()
+    + force_whitelist_sync()
+    - _agent_worker(id)
+    - _on_whitelist_ready(manager)
+  }
+  class AgentSignals {
+    + emit(name, data)
+    + connect(name, cb) / disconnect()
+  }
+  class AgentEvent <<dataclass>>
+  class AgentStatus <<enum>>
+  class WhitelistController <<singleton>> {
+    - _whitelist_manager
+    + set_whitelist_manager(m)
+    + get_all_ips() / remove_ip(ip)
+    + refresh() / get_stats()
+  }
+}
+package "agent.gui_qt" {
+  class "app" as App <<module>> {
+    + run()
+  }
+  class MainWindow
+  class QtSignalBridge {
+    - _drain()
+    - _dispatch(event)
+  }
+  class "views/*" as Views {
+    DashboardView / WhitelistView /
+    FirewallView / LogsView / SettingsView
+  }
+}
+
+AgentController *-- AgentSignals
+AgentSignals ..> AgentEvent
+AgentController ..> AgentStatus
+AgentController o-- "agent.core.AgentRuntime"
+App ..> AgentController
+App ..> MainWindow
+App ..> QtSignalBridge
+MainWindow *-- Views
+MainWindow o-- AgentController
+QtSignalBridge ..> AgentSignals : drain queue (QTimer)
+Views ..> WhitelistController
+WhitelistController o-- "agent.whitelist.WhitelistManager"
+
+note bottom of QtSignalBridge
+  Worker thread emits to AgentSignals queue; QtSignalBridge QTimer
+  (~50ms) drains it on the Qt main thread and re-emits as Qt signals
+  to the view slots (status_changed / stats_updated / whitelist_synced...).
+end note
+@enduml

@@ -1,0 +1,68 @@
+@startuml SAINT_Class_Agent_Config
+' General class diagram - PART: agent/config + agent/shared + agent/utils
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.config / shared / utils
+
+package "agent.config" {
+  class "loader" as Loader <<module>> {
+    + load_config(): Dict
+    + get_config(): Dict
+    + reload_config(): Dict
+  }
+  class "crypto" as Crypto <<module>> {
+    + encrypt_config(config, path): bool
+    + decrypt_config(path): Dict
+    + migrate_plaintext_to_encrypted(path): bool
+    + restrict_to_owner(path)
+    - _get_machine_key(): bytes (LEGACY)
+    - _load_or_create_salt(path): bytes
+    - _get_salted_key(path): bytes
+  }
+  class "validator" as Validator <<module>> {
+    + validate_config(config): bool
+  }
+  class "defaults" as Defaults <<module>> {
+    + DEFAULT_CONFIG: Dict
+  }
+  class "paths" as Paths <<module>> {
+    + get_config_write_path(): Path
+    + get_config_read_paths(): List[Path]
+    + get_user_data_dir(): Path
+  }
+}
+package "agent.shared" {
+  class "server_urls" as ServerUrls <<module>> {
+    + normalize_server_url(url): str
+    + collect_server_urls(config): List[str]
+  }
+  class "time_utils" as TimeUtils <<module>> {
+    + now() / now_iso() / sleep() / uptime()
+  }
+}
+package "agent.utils" {
+  class "error_handler" as ErrHandler <<module>> {
+    + CriticalErrorHandler.safe_execute(...)
+  }
+}
+
+Loader ..> Crypto : decrypt/encrypt .enc
+Loader ..> Defaults : deep-merge
+Loader ..> Validator
+Loader ..> Paths : read/write paths
+Crypto ..> Paths : .enc + .salt location
+
+note bottom of Crypto
+  Fernet key = SHA256(hostname + MAC + per-install salt).
+  Salt persisted in ".salt" (ACL-locked). decrypt_config falls
+  back to LEGACY machine-only key and re-encrypts (migration).
+end note
+@enduml

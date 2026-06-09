@@ -1,7 +1,16 @@
 """
 Encrypt/decrypt agent_config.json using Fernet (AES-128-CBC).
-Key is derived from machine identity (hostname + MAC address) so the
-config file is only readable on the same machine.
+
+The Fernet key is derived from machine identity (hostname + MAC address)
+combined with a per-install random salt persisted in an ACL-restricted
+``.salt`` file. Mixing in the salt means the key is no longer reproducible
+from public machine identifiers alone: an attacker who exfiltrates only the
+``.enc`` ciphertext cannot derive the key without also reading the
+ACL-restricted salt file. (A local admin able to read both files can still
+decrypt — that is an inherent limit of local symmetric encryption.)
+
+Configs encrypted before the salt was introduced are migrated transparently
+on read via the legacy machine-only key (see ``decrypt_config``).
 """
 
 import base64
@@ -9,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import socket
 import stat
 import subprocess
@@ -21,8 +31,9 @@ from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger("config.crypto")
 
-# Encrypted config uses .enc extension
+# Encrypted config uses .enc extension; per-install salt uses .salt
 ENCRYPTED_EXT = ".enc"
+SALT_EXT = ".salt"
 
 
 def _current_windows_user() -> str:
@@ -97,20 +108,62 @@ def restrict_to_owner(path: Path) -> None:
         logger.debug(f"restrict_to_owner({path}) icacls timed out")
 
 
-def _get_machine_key() -> bytes:
-    """Derive a Fernet key from machine identity (hostname + MAC)."""
+def _machine_seed() -> bytes:
+    """Public machine identity (hostname + MAC). NOT secret on its own."""
     hostname = socket.gethostname()
     mac = hex(uuid.getnode())
-    seed = f"SAINT:{hostname}:{mac}".encode()
-    # SHA-256 → take first 32 bytes → base64-encode for Fernet (requires url-safe b64)
-    digest = hashlib.sha256(seed).digest()
+    return f"SAINT:{hostname}:{mac}".encode()
+
+
+def _get_machine_key() -> bytes:
+    """LEGACY Fernet key derived from machine identity only (hostname + MAC).
+
+    Kept solely so configs encrypted before the per-install salt was added can
+    still be decrypted and migrated forward (see ``decrypt_config``). New writes
+    use ``_get_salted_key``.
+    """
+    # SHA-256 → 32 bytes → url-safe base64 (Fernet key format)
+    digest = hashlib.sha256(_machine_seed()).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+def _salt_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + SALT_EXT)
+
+
+def _load_or_create_salt(path: Path) -> bytes:
+    """Return the per-install random salt, creating + ACL-restricting it once.
+
+    The salt is what makes the encryption key non-reproducible from public
+    machine identifiers. Stored next to the ``.enc`` file and locked down with
+    the same ``restrict_to_owner`` ACL.
+    """
+    salt_path = _salt_path(path)
+    if salt_path.exists():
+        try:
+            data = salt_path.read_bytes()
+            if data:
+                return data
+        except OSError as e:
+            logger.warning(f"Cannot read salt {salt_path}: {e} - regenerating")
+
+    salt = secrets.token_bytes(32)
+    salt_path.parent.mkdir(parents=True, exist_ok=True)
+    salt_path.write_bytes(salt)
+    restrict_to_owner(salt_path)
+    return salt
+
+
+def _get_salted_key(path: Path) -> bytes:
+    """Current Fernet key: SHA-256(machine identity + per-install salt)."""
+    digest = hashlib.sha256(_machine_seed() + b":" + _load_or_create_salt(path)).digest()
     return base64.urlsafe_b64encode(digest)
 
 
 def encrypt_config(config: Dict[str, Any], path: Path) -> bool:
     """Encrypt config dict and write to file."""
     try:
-        key = _get_machine_key()
+        key = _get_salted_key(path)
         fernet = Fernet(key)
 
         plaintext = json.dumps(config, indent=4, ensure_ascii=False).encode("utf-8")
@@ -119,10 +172,9 @@ def encrypt_config(config: Dict[str, Any], path: Path) -> bool:
         enc_path = path.with_suffix(path.suffix + ENCRYPTED_EXT)
         enc_path.parent.mkdir(parents=True, exist_ok=True)
         enc_path.write_bytes(encrypted)
-        # Tighten ACL immediately after write. The ciphertext alone is fine
-        # at rest, but the machine-key derivation (hostname + MAC) is
-        # trivially reproducible by any local account, so we don't want a
-        # world-readable .enc file lying around.
+        # Tighten ACL immediately after write. Belt-and-suspenders on top of the
+        # salt: keep both the ciphertext and the salt file out of reach of other
+        # local accounts.
         restrict_to_owner(enc_path)
 
         # Remove plaintext file if it exists
@@ -136,26 +188,46 @@ def encrypt_config(config: Dict[str, Any], path: Path) -> bool:
         return False
 
 
+def _try_decrypt(ciphertext: bytes, key: bytes) -> Optional[Dict[str, Any]]:
+    """Decrypt + parse with one key. None if the key is wrong/data corrupt."""
+    try:
+        plaintext = Fernet(key).decrypt(ciphertext)
+        return json.loads(plaintext.decode("utf-8"))
+    except (InvalidToken, ValueError):
+        return None
+
+
 def decrypt_config(path: Path) -> Optional[Dict[str, Any]]:
-    """Read and decrypt config from encrypted file."""
+    """Read and decrypt config from encrypted file.
+
+    Tries the current salted key first; falls back to the legacy machine-only
+    key and, on success, re-encrypts with the salted key so old configs migrate
+    forward transparently.
+    """
     enc_path = path.with_suffix(path.suffix + ENCRYPTED_EXT)
     if not enc_path.exists():
         return None
 
     try:
-        key = _get_machine_key()
-        fernet = Fernet(key)
-
         encrypted = enc_path.read_bytes()
-        plaintext = fernet.decrypt(encrypted)
+    except OSError as e:
+        logger.error(f"Failed to read {enc_path}: {e}")
+        return None
 
-        return json.loads(plaintext.decode("utf-8"))
-    except InvalidToken:
-        logger.error(f"Cannot decrypt {enc_path} - wrong machine or corrupted file")
-        return None
-    except Exception as e:
-        logger.error(f"Failed to decrypt config: {e}")
-        return None
+    # 1) Current salted key.
+    config = _try_decrypt(encrypted, _get_salted_key(path))
+    if config is not None:
+        return config
+
+    # 2) Legacy machine-only key → migrate forward.
+    config = _try_decrypt(encrypted, _get_machine_key())
+    if config is not None:
+        logger.info("Migrating config from legacy machine key to salted key")
+        encrypt_config(config, path)
+        return config
+
+    logger.error(f"Cannot decrypt {enc_path} - wrong machine or corrupted file")
+    return None
 
 
 def migrate_plaintext_to_encrypted(path: Path) -> bool:

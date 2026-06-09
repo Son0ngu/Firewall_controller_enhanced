@@ -19,7 +19,7 @@
         </mxCell>
 
         <!-- Collect metrics -->
-        <mxCell id="s1" value="&lt;b&gt;_collect_metrics()&lt;/b&gt;&lt;br&gt;CPU%, memory%, disk%, uptime_seconds&lt;br&gt;&lt;i&gt;Thu thập thông số hệ thống&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="s1" value="&lt;b&gt;_collect_metrics()&lt;/b&gt;&lt;br&gt;memory%, disk%, uptime_seconds (no CPU)&lt;br&gt;&lt;i&gt;Thu thập thông số hệ thống&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="470" y="165" width="270" height="50" as="geometry" />
         </mxCell>
         <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="start" target="s1" parent="1" />
@@ -83,7 +83,7 @@
         <mxCell id="e11" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=9;" edge="1" source="d3" target="critical" parent="1" />
 
         <!-- Sleep 5s -->
-        <mxCell id="sleep_fail" value="&lt;b&gt;Sleep 5s&lt;/b&gt; (retry interval)&lt;br&gt;&lt;i&gt;Chờ 5 giây rồi thử lại&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="sleep_fail" value="&lt;b&gt;Backoff sleep&lt;/b&gt; (full-jitter, base 5s)&lt;br&gt;_interruptible_sleep(_backoff_seconds())&lt;br&gt;&lt;i&gt;Chờ theo backoff lũy thừa rồi thử lại&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="775" y="610" width="180" height="35" as="geometry" />
         </mxCell>
         <mxCell id="e12" value="No" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="d3" target="sleep_fail" parent="1" />
@@ -120,7 +120,7 @@
         <mxCell id="data_title" value="&lt;b&gt;Heartbeat Payload / Dữ liệu gửi đi&lt;/b&gt;" style="text;html=1;align=center;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="90" y="165" width="230" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="data" value="&lt;pre style='font-size:9px;margin:2px'&gt;POST /api/agents/heartbeat&lt;br&gt;Authorization: Bearer &lt;jwt_token&gt;&lt;br&gt;&lt;br&gt;{&lt;br&gt;  &quot;agent_id&quot;: &quot;abc123&quot;,&lt;br&gt;  &quot;token&quot;: &quot;legacy_token&quot;,&lt;br&gt;  &quot;device_id&quot;: &quot;SAINT-PC01&quot;,&lt;br&gt;  &quot;timestamp&quot;: &quot;2026-03-23T10:00:00+07:00&quot;,&lt;br&gt;  &quot;metrics&quot;: {&lt;br&gt;    &quot;cpu_percent&quot;: 25.3,&lt;br&gt;    &quot;memory_percent&quot;: 68.1,&lt;br&gt;    &quot;disk_percent&quot;: 45.2,&lt;br&gt;    &quot;uptime_seconds&quot;: 86400&lt;br&gt;  },&lt;br&gt;  &quot;status&quot;: &quot;active&quot;,&lt;br&gt;  &quot;platform&quot;: &quot;Windows&quot;,&lt;br&gt;  &quot;os_info&quot;: &quot;Windows 11 Pro 10.0.26200&quot;,&lt;br&gt;  &quot;agent_version&quot;: &quot;1.0.0&quot;&lt;br&gt;}&lt;/pre&gt;" style="text;html=1;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
+        <mxCell id="data" value="&lt;pre style='font-size:9px;margin:2px'&gt;POST /api/agents/heartbeat&lt;br&gt;Authorization: Bearer &lt;jwt_token&gt;&lt;br&gt;&lt;br&gt;{&lt;br&gt;  &quot;agent_id&quot;: &quot;abc123&quot;,&lt;br&gt;  &quot;token&quot;: &quot;legacy_token&quot;,&lt;br&gt;  &quot;device_id&quot;: &quot;SAINT-PC01&quot;,&lt;br&gt;  &quot;timestamp&quot;: &quot;2026-03-23T10:00:00+07:00&quot;,&lt;br&gt;  &quot;metrics&quot;: {&lt;br&gt;    &quot;memory_percent&quot;: 68.1,&lt;br&gt;    &quot;disk_percent&quot;: 45.2,&lt;br&gt;    &quot;uptime_seconds&quot;: 86400&lt;br&gt;  },&lt;br&gt;  &quot;status&quot;: &quot;active&quot;,&lt;br&gt;  &quot;platform&quot;: &quot;Windows&quot;,&lt;br&gt;  &quot;os_info&quot;: &quot;Windows 11 Pro 10.0.26200&quot;,&lt;br&gt;  &quot;agent_version&quot;: &quot;1.0.0&quot;&lt;br&gt;}&lt;/pre&gt;" style="text;html=1;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
           <mxGeometry x="40" y="190" width="330" height="190" as="geometry" />
         </mxCell>
 

@@ -1,0 +1,19 @@
+flowchart TD
+  REQ["GET /api/whitelist/agent-sync (require_jwt)"] --> SVC["WhitelistService.get_agent_sync_data(agent_id, global_version, group_version, agent_policy_mode)"]
+  SVC --> GRP["find agent group (or ensure_pending_group)"]
+  GRP --> POL{"policy_service: effective_mode active OR != agent_policy_mode?"}
+  POL -->|"no change & versions match"| CACHE["return up_to_date=True, domains=[] (version short-circuit)"]
+  POL -->|"changed / active"| BUILD["build full set"]
+  BUILD --> GLOBAL["global entries (canonicalized)"]
+  BUILD --> PROFILE{"active whitelist profile for group?"}
+  PROFILE -->|"yes"| PROF["use active profile entries"]
+  PROFILE -->|"no"| BASE["use group base whitelist"]
+  GLOBAL --> MERGE["_merge_whitelists: group/profile wins over global (order-independent), priority high preserved"]
+  PROF --> MERGE
+  BASE --> MERGE
+  MERGE --> OVR{"agent policy override mode"}
+  OVR -->|"none"| OUT["payload: domains + global_version + group_version"]
+  OVR -->|"isolate"| ISO["server host only (no public DNS)"]
+  OVR -->|"custom_whitelist"| CUS["custom entries + server host"]
+  ISO --> OUT
+  CUS --> OUT

@@ -178,7 +178,7 @@ class SettingsView(QWidget):
         form.addRow("Server URL:", self._server_url_input)
 
         self._heartbeat_input = QLineEdit(
-            str(self._config.get("heartbeat", {}).get("interval", 30))
+            str(self._config.get("heartbeat", {}).get("interval", 20))
         )
         self._heartbeat_input.setValidator(QIntValidator(1, 86400, self))
         form.addRow("Heartbeat Interval (s):", self._heartbeat_input)
@@ -292,7 +292,7 @@ class SettingsView(QWidget):
                     "(e.g. http://localhost:5000) before saving."
                 )
                 return
-            from shared.server_urls import normalize_server_url
+            from shared.server_urls import normalize_server_url, collect_server_urls
 
             normalized_url = normalize_server_url(url_value)
             if not (
@@ -312,8 +312,13 @@ class SettingsView(QWidget):
 
             self._config.setdefault("server", {})
             self._config["server"]["url"] = normalized_url
-            # Keep `server.urls` list in sync so the runtime sees the new endpoint.
-            self._config["server"]["urls"] = [normalized_url]
+            # Keep `server.urls` list in sync so the runtime sees the new
+            # endpoint, while preserving any existing fallback URLs. Put the
+            # newly-entered URL first so `server_urls[0]` (used by LogSender)
+            # points at it; collect_server_urls normalizes + dedupes.
+            prior_urls = list(self._config["server"].get("urls", []) or [])
+            self._config["server"]["urls"] = [normalized_url, *prior_urls]
+            self._config["server"]["urls"] = collect_server_urls(self._config)
 
             if self._heartbeat_input:
                 try:

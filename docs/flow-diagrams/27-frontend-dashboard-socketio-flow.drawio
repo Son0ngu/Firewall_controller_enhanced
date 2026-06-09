@@ -79,7 +79,7 @@
         <mxCell id="sr1" value="" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;collapsible=0;dropTarget=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=10;fontFamily=Segoe UI;html=1;" vertex="1" parent="sio_table">
           <mxGeometry y="58" width="700" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="sr1a" value="stats_update" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;fontStyle=1;" vertex="1" parent="sr1">
+        <mxCell id="sr1a" value="stats_update (NOT emitted - client polls /stats every 10s)" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;fontStyle=1;" vertex="1" parent="sr1">
           <mxGeometry width="160" height="34" as="geometry"/>
         </mxCell>
         <mxCell id="sr1b" value="Log submitted / Agent status change" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="sr1">
@@ -111,7 +111,7 @@
         <mxCell id="sr3" value="" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;collapsible=0;dropTarget=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=10;fontFamily=Segoe UI;html=1;" vertex="1" parent="sio_table">
           <mxGeometry y="126" width="700" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="sr3a" value="agent_update" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;fontStyle=1;" vertex="1" parent="sr3">
+        <mxCell id="sr3a" value="agent_update (NOT emitted by server)" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;fontStyle=1;" vertex="1" parent="sr3">
           <mxGeometry width="160" height="34" as="geometry"/>
         </mxCell>
         <mxCell id="sr3b" value="Agent data modified" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="sr3">

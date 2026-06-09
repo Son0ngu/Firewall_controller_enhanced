@@ -88,28 +88,28 @@
         <mxCell id="he3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="h_wl1" target="h_wl2" parent="1" />
 
         <!-- Firewall mode decision -->
-        <mxCell id="h_d1" value="&lt;b&gt;Firewall mode?&lt;/b&gt;&lt;br&gt;&lt;i&gt;Chế độ firewall?&lt;/i&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="h_d1" value="&lt;b&gt;firewall_enabled?&lt;/b&gt;&lt;br&gt;&lt;i&gt;Firewall bật?&lt;/i&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="620" y="665" width="120" height="55" as="geometry" />
         </mxCell>
         <mxCell id="he4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="h_wl2" target="h_d1" parent="1" />
 
         <!-- Mode: monitor -->
-        <mxCell id="h_monitor" value="&lt;b&gt;monitor&lt;/b&gt;&lt;br&gt;action = &quot;MONITORED&quot;&lt;br&gt;level = INFO/WARNING&lt;br&gt;&lt;i&gt;Chỉ ghi log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="1">
+        <mxCell id="h_monitor" value="&lt;b&gt;disabled&lt;/b&gt;&lt;br&gt;action = &quot;OBSERVED&quot;&lt;br&gt;(log only, not blocked)&lt;br&gt;&lt;i&gt;Chỉ quan sát&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="1">
           <mxGeometry x="460" y="735" width="120" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="he5" value="monitor" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=8;" edge="1" source="h_d1" target="h_monitor" parent="1" />
+        <mxCell id="he5" value="disabled" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=8;" edge="1" source="h_d1" target="h_monitor" parent="1" />
 
         <!-- Mode: whitelist_only -->
-        <mxCell id="h_wlonly" value="&lt;b&gt;whitelist_only&lt;/b&gt;&lt;br&gt;Whitelisted → &quot;ALLOWED&quot;&lt;br&gt;Not whitelisted → &quot;BLOCKED&quot;&lt;br&gt;&lt;i&gt;Chặn nếu không nằm trong WL&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=8;" vertex="1" parent="1">
+        <mxCell id="h_wlonly" value="&lt;b&gt;enabled (whitelist_only)&lt;/b&gt;&lt;br&gt;Domain WL → &quot;ALLOWED&quot;&lt;br&gt;IP-only WL → &quot;ALLOWED_BY_IP&quot;&lt;br&gt;Not WL → &quot;BLOCKED&quot; (OS firewall)&lt;br&gt;&lt;i&gt;Chặn nếu không nằm trong WL&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=8;" vertex="1" parent="1">
           <mxGeometry x="600" y="735" width="150" height="55" as="geometry" />
         </mxCell>
         <mxCell id="he6" value="whitelist_only" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=8;" edge="1" source="h_d1" target="h_wlonly" parent="1" />
 
         <!-- Mode: warn -->
-        <mxCell id="h_warn" value="&lt;b&gt;warn&lt;/b&gt;&lt;br&gt;Not whitelisted → &quot;WARNING&quot;&lt;br&gt;Still allowed through&lt;br&gt;&lt;i&gt;Cảnh báo nhưng cho phép&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="1">
+        <mxCell id="h_warn" value="&lt;b&gt;ALLOWED_BY_IP (warning)&lt;/b&gt;&lt;br&gt;IP whitelisted but domain not&lt;br&gt;(CDN/shared-IP bleed) → logged&lt;br&gt;&lt;i&gt;Cho qua theo IP, ghi cảnh báo&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="1">
           <mxGeometry x="770" y="735" width="140" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="he7" value="warn" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=8;" edge="1" source="h_d1" target="h_warn" parent="1" />
+        <mxCell id="he7" value="IP-only" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=8;" edge="1" source="h_d1" target="h_warn" parent="1" />
 
         <!-- Queue log -->
         <mxCell id="h_log" value="&lt;b&gt;log_sender.queue_log(enhanced_record)&lt;/b&gt;&lt;br&gt;{timestamp, agent_id, level, action, domain,&lt;br&gt;destination, source_ip, dest_ip, protocol, port,&lt;br&gt;firewall_mode, firewall_enabled}&lt;br&gt;&lt;i&gt;Đẩy log vào hàng đợi → LogSender thread&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
@@ -126,7 +126,7 @@
         <mxCell id="match_title" value="&lt;b&gt;Whitelist Match Logic / Logic kiểm tra WL&lt;/b&gt;" style="text;html=1;align=center;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="90" y="485" width="250" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="match" value="&lt;pre style='font-size:9px;margin:2px'&gt;is_domain_allowed(&quot;mail.google.com&quot;):&lt;br&gt;&lt;br&gt;1. Direct: &quot;mail.google.com&quot; in _domains? → ✅/❌&lt;br&gt;2. Pattern: fnmatch(&quot;mail.google.com&quot;, &quot;*.google.com&quot;) → ✅/❌&lt;br&gt;3. Subdomain:&lt;br&gt;   - &quot;mail.google.com&quot; in _domains? ❌&lt;br&gt;   - &quot;google.com&quot; in _domains? → ✅ (parent match)&lt;br&gt;   - &quot;com&quot; in _domains? ❌&lt;br&gt;&lt;br&gt;is_ip_allowed(&quot;142.250.185.5&quot;):&lt;br&gt;   &quot;142.250.185.5&quot; in _ips? → ✅/❌&lt;/pre&gt;" style="text;html=1;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
+        <mxCell id="match" value="&lt;pre style='font-size:9px;margin:2px'&gt;is_allowed(&quot;mail.google.com&quot;):&lt;br&gt;&lt;br&gt;1. Direct: &quot;mail.google.com&quot; in _domains? → ✅/❌&lt;br&gt;2. Pattern: fnmatch(&quot;mail.google.com&quot;, &quot;*.google.com&quot;) → ✅/❌&lt;br&gt;3. Subdomain:&lt;br&gt;   - &quot;mail.google.com&quot; in _domains? ❌&lt;br&gt;   - &quot;google.com&quot; in _domains? → ✅ (parent match)&lt;br&gt;   - &quot;com&quot; in _domains? ❌&lt;br&gt;&lt;br&gt;is_ip_allowed(&quot;142.250.185.5&quot;):&lt;br&gt;   &quot;142.250.185.5&quot; in _ips? → ✅/❌&lt;/pre&gt;" style="text;html=1;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
           <mxGeometry x="40" y="510" width="350" height="110" as="geometry" />
         </mxCell>
 

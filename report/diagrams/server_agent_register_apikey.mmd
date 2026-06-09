@@ -1,0 +1,24 @@
+sequenceDiagram
+  participant A as Agent
+  participant C as AgentController.register_agent
+  participant MW as middleware.auth.require_api_key
+  participant AK as APIKeyService.validate_api_key
+  participant AS as AgentService.register_agent
+  participant JWT as JWTService
+  participant DB as Mongo (agents, api_keys)
+
+  A->>C: POST /api/agents/register (X-API-Key, hostname, device_id)
+  C->>MW: require_api_key("agent_register")
+  MW->>AK: validate_api_key(key, permission)
+  AK->>DB: find_by_hash(HMAC(key)) then check active, expiry, permission
+  alt invalid / expired / revoked
+    AK-->>A: 401 Unauthorized
+  else valid
+    AK-->>C: { valid, permissions }
+    C->>AS: register_agent(agent_data, client_ip)
+    AS->>DB: upsert agent (agent_id, group_id=Pending if none)
+    AS->>JWT: issue_agent_token(agent_id, device_id)
+    JWT-->>AS: access and refresh JWT
+    AS-->>A: { agent_id, access_token, refresh_token }
+    AS->>AS: socketio emit agent_registered
+  end

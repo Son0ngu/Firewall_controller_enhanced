@@ -326,11 +326,22 @@ package "server.services" {
     + add_entry(entry_data, client_ip): Dict
     + delete_entry(entry_id): bool
     + update_entry(entry_id, data): Dict
+    + bulk_delete_entries(item_ids): Dict
     + import_entries(entries): int
     + export_entries(filters): List[Dict]
     + get_entries_by_group(group_id): List[Dict]
-    + agent_sync(agent_id, version, checksum): Dict
+    + validate_teacher_entry_access(item_id, teacher_group_ids, action): tuple
+    + get_agent_sync_data(since, agent_id, global_version, group_version, agent_policy_mode): Dict
+    - _merge_whitelists(global_entries, group_entries): List[Dict]
   }
+  note bottom of WhitelistService
+    _merge_whitelists: group scope wins over global, order-independent
+    (tie-break by scope), "high" priority preserved from either side.
+    validate_teacher_entry_access: fails CLOSED on a malformed
+    ObjectId (returns (False, "Invalid entry id")).
+    bulk_delete_entries: deleted_count counts matched requests
+    (not raw array elements), so it never exceeds len(item_ids).
+  end note
 
   class LogService {
     - log_model: LogModel

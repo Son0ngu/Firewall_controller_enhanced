@@ -174,6 +174,13 @@ package "agent.firewall" {
     + restore_original_policy(): bool
     + restore_default_policy(): bool
   }
+  note bottom of PolicyManager
+    enable_default_deny() succeeds only when ALL 3 profiles
+    block outbound (success_count == len(profiles)); on verify
+    failure it returns False and leaves default_deny_enabled=False
+    (no false success). verify_default_deny() checks per-profile
+    via get_current_policy() (no raw 'block' string counting).
+  end note
 
   class RulesManager {
     - rule_prefix: str
@@ -411,7 +418,16 @@ package "agent.services" {
     + start()
     + stop()
     + get_status(): Dict
+    - _heartbeat_loop()
+    - _interruptible_sleep(seconds)
+    - _backoff_seconds(): float
   }
+  note bottom of HeartbeatSender
+    _interruptible_sleep() sleeps whole seconds then the
+    fractional remainder, so a sub-second backoff no longer
+    rounds to 0 (fixes failure-loop busy-spin). Used by both
+    the normal and exception sleep paths.
+  end note
 }
 
 package "agent.logging_module" {
@@ -428,12 +444,19 @@ package "agent.logging_module" {
     - agent_id: str
     - last_send_time: float
     - _send_lock: Lock
+    - _consecutive_send_failures: int
+    - _logs_sent: int
     --
     + start()
     + stop()
     + queue_log(log_data): bool
     + get_status(): Dict
   }
+  note bottom of LogSender
+    _logs_sent counts logs successfully POSTed (2xx) and is
+    exposed in get_status()["logs_sent"] so the controller stat
+    is no longer stuck at 0.
+  end note
 }
 
 ' ============================================================
@@ -477,9 +500,22 @@ package "agent.config" {
   }
 
   class "crypto" as cfg_crypto <<module>> {
-    + encrypt_config(config, path)
+    + encrypt_config(config, path): bool
     + decrypt_config(path): Dict
+    + migrate_plaintext_to_encrypted(path): bool
+    + restrict_to_owner(path)
+    - _machine_seed(): bytes
+    - _get_machine_key(): bytes
+    - _load_or_create_salt(path): bytes
+    - _get_salted_key(path): bytes
+    - _try_decrypt(ciphertext, key): Dict
   }
+  note bottom of cfg_crypto
+    Key = SHA256(hostname + MAC + per-install salt).
+    Salt stored in ".salt" file, ACL-locked via restrict_to_owner.
+    _get_machine_key() is LEGACY (hostname+MAC only) kept so
+    decrypt_config can migrate old .enc forward (re-encrypt).
+  end note
 
   class "validator" as cfg_validator <<module>> {
     + validate_config(config): bool

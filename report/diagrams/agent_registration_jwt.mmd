@@ -1,0 +1,27 @@
+sequenceDiagram
+  participant L as Lifecycle (RegistrationComponent)
+  participant R as core/registry.register_agent
+  participant S as Server /api/agents/register
+  participant TM as core/token_manager.TokenManager
+  participant API as Server /api/auth/refresh
+
+  L->>R: register_agent(config)
+  R->>S: POST /api/agents/register (X-API-Key, device info)
+  alt API key valid
+    S-->>R: { agent_id, access_token, refresh_token }
+    R->>TM: set_tokens(access, refresh, exp...)
+    Note over R: config["agent_id"], config["jwt"] persisted
+  else key invalid / offline
+    S-->>R: 401 / no response
+    Note over R: registration marked degraded (retry next start)
+  end
+
+  TM->>TM: start_auto_refresh(on_refreshed, on_expired)
+  loop background (margin 5 min before exp)
+    TM->>API: POST /api/auth/refresh (refresh_token)
+    alt refresh ok
+      API-->>TM: new access (+ rotated refresh)
+    else refresh fails >= max_failures
+      TM->>L: on_expired() -> re-register (register_agent) -> _load_tokens_from_config()
+    end
+  end

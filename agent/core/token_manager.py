@@ -210,7 +210,7 @@ class TokenManager:
                     'rotate': with_rotation
                 },
                 headers={'Content-Type': 'application/json'},
-                timeout=15
+                timeout=10
             )
             
             if response.status_code == 200:

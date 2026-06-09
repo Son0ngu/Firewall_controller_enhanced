@@ -1,0 +1,19 @@
+sequenceDiagram
+  participant A as Admin (web UI)
+  participant C as UserController
+  participant MW as require_login + require_admin
+  participant US as UserService
+  participant UM as UserModel
+  participant AU as AuditService
+  participant DB as Mongo (users, audit_logs)
+
+  A->>C: POST /api/admin/users (create) | PATCH | DELETE | reset-password
+  C->>MW: require_admin
+  MW-->>C: g.current_user (admin)
+  C->>US: create_user(username, password, role, ...)
+  US->>US: validate unique username, password length min, bcrypt 72-byte cap
+  US->>UM: create_user(password_hash, role=admin|teacher)
+  UM->>DB: insert user (is_active=true)
+  US->>AU: log_action("user.create", resource_id, ip)
+  AU->>DB: insert audit_logs
+  US-->>A: { success, user }

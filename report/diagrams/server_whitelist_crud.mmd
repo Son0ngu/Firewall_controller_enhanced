@@ -1,0 +1,14 @@
+flowchart TD
+  UI["Admin web UI"] --> RT["/api/whitelist POST | DELETE /<id> | bulk | bulk-delete"]
+  RT --> AUTH["require_login (+ inject_current_user)"]
+  AUTH --> TEACH{"is_teacher()?"}
+  TEACH -->|"yes"| DENY["403 - teachers use Whitelist Profiles"]
+  TEACH -->|"no (admin)"| SVC["WhitelistService.add_entry / bulk_delete_entries"]
+  SVC --> KIND{"entry id kind"}
+  KIND -->|"global ObjectId"| GMODEL["WhitelistModel.delete_entry / WhitelistEntryModel.insert"]
+  KIND -->|"group embedded / pseudo-id"| GROUPV["groups.whitelist[] update"]
+  GMODEL --> BUMP["bump_global_version / bump group whitelist_version"]
+  GROUPV --> BUMP
+  BUMP --> IO["socketio emit whitelist_updated"]
+  IO --> UI
+  SVC --> NOTE["bulk-delete: deleted_count counts matched requests, never exceeds len(item_ids)"]

@@ -143,10 +143,10 @@
         <mxCell id="t_log1" value="&lt;b&gt;Agent submits logs&lt;/b&gt;&lt;br&gt;POST /api/logs&lt;br&gt;&lt;i&gt;Agent gửi batch log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="50" y="720" width="170" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_log1" value="&lt;b&gt;emit(&quot;logs_received&quot;)&lt;/b&gt;&lt;br&gt;{count, agents_affected, timestamp}&lt;br&gt;&lt;i&gt;Thông báo nhận log mới&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="s_log1" value="&lt;b&gt;emit(&quot;new_log&quot;)&lt;/b&gt;&lt;br&gt;{count, agents_affected, timestamp}&lt;br&gt;&lt;i&gt;Thông báo nhận log mới&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="460" y="720" width="230" height="45" as="geometry" />
         </mxCell>
-        <mxCell id="d_log1" value="&lt;b&gt;on(&quot;logs_received&quot;)&lt;/b&gt;&lt;br&gt;Refresh log entries&lt;br&gt;Update log count&lt;br&gt;&lt;i&gt;Làm mới trang logs&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="d_log1" value="&lt;b&gt;on(&quot;new_log&quot;)&lt;/b&gt;&lt;br&gt;Refresh log entries&lt;br&gt;Update log count&lt;br&gt;&lt;i&gt;Làm mới trang logs&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="1040" y="715" width="200" height="50" as="geometry" />
         </mxCell>
         <mxCell id="el1" value="" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=1;" edge="1" parent="1">
@@ -202,7 +202,7 @@
         <mxCell id="summary_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="1020" width="500" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="summary" value="&lt;b&gt;Summary / Tổng kết:&lt;/b&gt; 8 event types qua SocketIO&lt;br&gt;• Agent: registered, heartbeat, deleted, group_updated (4)&lt;br&gt;• Whitelist: whitelist_updated (1)&lt;br&gt;• Log: logs_received, logs_cleared (2)&lt;br&gt;• Auth: admin_login, token_refreshed (2) - &lt;i&gt;không push to dashboard&lt;/i&gt;" style="text;html=1;align=left;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="summary" value="&lt;b&gt;Summary / Tổng kết:&lt;/b&gt; 8 event types qua SocketIO&lt;br&gt;• Agent: registered, heartbeat, deleted, group_updated (4)&lt;br&gt;• Whitelist: whitelist_updated (1)&lt;br&gt;• Log: new_log, logs_cleared (2)&lt;br&gt;• Auth: admin_login, token_refreshed (2) - &lt;i&gt;không push to dashboard&lt;/i&gt;" style="text;html=1;align=left;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="50" y="1025" width="480" height="60" as="geometry" />
         </mxCell>
 

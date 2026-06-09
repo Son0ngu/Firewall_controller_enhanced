@@ -1,0 +1,16 @@
+flowchart TD
+  subgraph Encrypt
+    ENC["encrypt_config(config, path)"] --> SALT["_load_or_create_salt(path)<br/>read .salt or secrets.token_bytes(32)"]
+    SALT --> RESTRICT["restrict_to_owner(.salt)<br/>icacls / chmod 600"]
+    SALT --> KEY["_get_salted_key()<br/>SHA256(hostname + MAC + salt)"]
+    KEY --> WRITE["write agent_config.json.enc<br/>restrict_to_owner(.enc); delete plaintext"]
+  end
+  subgraph Decrypt
+    DEC["decrypt_config(path)"] --> READ["read .enc bytes"]
+    READ --> T1{"_try_decrypt(salted key)"}
+    T1 -->|"OK"| RET["return config"]
+    T1 -->|"InvalidToken"| T2{"_try_decrypt(LEGACY _get_machine_key)"}
+    T2 -->|"OK = old .enc"| MIG["migrate: re-encrypt with salted key"]
+    T2 -->|"fail"| NIL["return None"]
+    MIG --> RET
+  end

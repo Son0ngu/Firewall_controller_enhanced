@@ -28,7 +28,7 @@
           <mxGeometry x="10" y="80" width="220" height="70" as="geometry"/>
         </mxCell>
 
-        <mxCell id="uf3" value="&lt;b&gt;Update User&lt;/b&gt;&lt;br&gt;&lt;i&gt;Edit role, email, status&lt;br&gt;PUT /api/admin/users/:id&lt;br&gt;Activate/Deactivate toggle&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=11;align=left;" vertex="1" parent="u_feat">
+        <mxCell id="uf3" value="&lt;b&gt;Update User&lt;/b&gt;&lt;br&gt;&lt;i&gt;Edit role, email, status&lt;br&gt;PATCH /api/admin/users/:id&lt;br&gt;Activate/Deactivate toggle&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Segoe UI;fontSize=11;align=left;" vertex="1" parent="u_feat">
           <mxGeometry x="250" y="80" width="220" height="70" as="geometry"/>
         </mxCell>
 
@@ -106,7 +106,7 @@
           <mxGeometry x="10" y="210" width="460" height="30" as="geometry"/>
         </mxCell>
 
-        <mxCell id="af5" value="&lt;b&gt;API&lt;/b&gt;: GET /api/audit (filters) | POST /api/audit/export (CSV/JSON)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontFamily=Segoe UI;fontSize=10;" vertex="1" parent="a_feat">
+        <mxCell id="af5" value="&lt;b&gt;API&lt;/b&gt;: GET /api/admin/audit (filters) | GET /api/admin/audit/user/:id (no server export)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontFamily=Segoe UI;fontSize=10;" vertex="1" parent="a_feat">
           <mxGeometry x="10" y="248" width="460" height="25" as="geometry"/>
         </mxCell>
 

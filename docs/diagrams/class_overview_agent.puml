@@ -1,0 +1,120 @@
+@startuml SAINT_Agent_Class_Overview
+' OVERVIEW (general) class diagram of the Windows Agent.
+' Package + key classes + ownership/relationships only (no methods).
+' For full members see class_diagram_agent.puml.
+
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+
+title Class Overview - SAINT Agent
+
+package "gui_qt" {
+  class MainWindow
+  class QtSignalBridge
+  class "views/*" as Views
+}
+
+package "controllers" {
+  class AgentController <<singleton>>
+  class WhitelistController <<singleton>>
+  class AgentSignals
+}
+
+package "core" {
+  class AgentRuntime
+  class TokenManager
+  class "lifecycle" as Lifecycle <<module>>
+  class "registry" as Registry <<module>>
+}
+
+package "whitelist" {
+  class WhitelistManager
+  class WhitelistState
+  class WhitelistSyncer
+}
+
+package "firewall" {
+  class FirewallManager
+  class PolicyManager
+  class RulesManager
+  class FirewallProvider
+}
+
+package "capture" {
+  class PacketSniffer
+  class DomainExtractor
+}
+
+package "services" {
+  class HeartbeatSender
+}
+package "logging_module" {
+  class LogSender
+}
+package "network" {
+  class OptimizedDNSResolver
+}
+package "cache" {
+  class LRUCache
+}
+package "config" {
+  class "loader" as ConfigLoader <<module>>
+  class "crypto" as ConfigCrypto <<module>>
+}
+
+' --- GUI wiring ---
+MainWindow *-- Views
+MainWindow --> AgentController
+MainWindow --> QtSignalBridge
+QtSignalBridge ..> AgentSignals : drains queue (QTimer)
+AgentController *-- AgentSignals
+Views ..> WhitelistController
+
+' --- Controller drives lifecycle/runtime ---
+AgentController ..> Lifecycle : initialize_components / cleanup
+Lifecycle ..> Registry : register_agent
+AgentController --> AgentRuntime
+
+' --- Runtime ownership graph ---
+AgentRuntime *-- WhitelistManager
+AgentRuntime *-- FirewallManager
+AgentRuntime *-- LogSender
+AgentRuntime *-- HeartbeatSender
+AgentRuntime *-- PacketSniffer
+AgentRuntime o-- TokenManager
+
+WhitelistManager *-- WhitelistState
+WhitelistManager *-- WhitelistSyncer
+WhitelistManager o-- FirewallManager : set_firewall_manager
+WhitelistManager *-- LRUCache : dns_cache
+WhitelistManager ..> OptimizedDNSResolver
+
+FirewallManager *-- PolicyManager
+FirewallManager *-- RulesManager
+RulesManager ..> FirewallProvider
+
+PacketSniffer *-- DomainExtractor
+PacketSniffer ..> WhitelistManager : is_allowed / is_ip_allowed
+PacketSniffer ..> LogSender : queue_log
+
+HeartbeatSender ..> WhitelistManager : on_force_sync -> sync_now
+WhitelistController o-- WhitelistManager : set_whitelist_manager
+
+ConfigLoader ..> ConfigCrypto : decrypt/encrypt .enc
+
+note bottom of AgentRuntime
+  Thread model: Qt main thread (GUI) + 1 agent
+  worker thread (lifecycle) + daemon threads
+  (whitelist sync, DNS refresh, heartbeat,
+  log sender, packet sniffer).
+end note
+
+@enduml

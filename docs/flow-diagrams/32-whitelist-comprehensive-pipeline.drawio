@@ -65,7 +65,7 @@
         </mxCell>
 
         <!-- SocketIO Emit -->
-        <mxCell id="socketio_emit" value="&lt;b&gt;SocketIO Emit&lt;/b&gt;&lt;br&gt;&lt;i&gt;Thông báo real-time&lt;/i&gt;&lt;br&gt;agent_group_updated" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="socketio_emit" value="&lt;b&gt;SocketIO Emit&lt;/b&gt;&lt;br&gt;&lt;i&gt;Thông báo real-time&lt;/i&gt;&lt;br&gt;whitelist_updated" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="1490" y="165" width="160" height="70" as="geometry"/>
         </mxCell>
 
@@ -114,7 +114,7 @@
         </mxCell>
 
         <!-- Teacher creates profile -->
-        <mxCell id="prof_create" value="&lt;b&gt;Teacher Creates Profile&lt;/b&gt;&lt;br&gt;&lt;i&gt;Giáo viên tạo profile mới&lt;/i&gt;&lt;br&gt;POST /api/whitelist-profiles&lt;br&gt;{name, group_id, domains[]}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="prof_create" value="&lt;b&gt;Teacher Creates Profile&lt;/b&gt;&lt;br&gt;&lt;i&gt;Giáo viên tạo profile mới&lt;/i&gt;&lt;br&gt;POST /api/groups/:gid/profiles&lt;br&gt;{name, group_id, domains[]}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="80" y="350" width="200" height="80" as="geometry"/>
         </mxCell>
 
@@ -124,7 +124,7 @@
         </mxCell>
 
         <!-- Activate profile decision -->
-        <mxCell id="prof_activate" value="&lt;b&gt;Activate Profile&lt;/b&gt;&lt;br&gt;&lt;i&gt;Kích hoạt profile&lt;/i&gt;&lt;br&gt;PUT /api/whitelist-profiles/:id/activate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="prof_activate" value="&lt;b&gt;Activate Profile&lt;/b&gt;&lt;br&gt;&lt;i&gt;Kích hoạt profile&lt;/i&gt;&lt;br&gt;PUT /api/groups/:gid/profiles/:id/activate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="570" y="350" width="210" height="70" as="geometry"/>
         </mxCell>
 
@@ -351,7 +351,7 @@
         </mxCell>
 
         <!-- WhitelistState -->
-        <mxCell id="wl_state" value="&lt;b&gt;WhitelistState&lt;/b&gt;&lt;br&gt;&lt;i&gt;Lưu trạng thái whitelist&lt;/i&gt;&lt;br&gt;• domains, ip_addresses, patterns&lt;br&gt;• global_version, group_version&lt;br&gt;• is_domain_allowed(domain)&lt;br&gt;• is_ip_allowed(ip)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+        <mxCell id="wl_state" value="&lt;b&gt;WhitelistState&lt;/b&gt;&lt;br&gt;&lt;i&gt;Lưu trạng thái whitelist&lt;/i&gt;&lt;br&gt;• domains, ip_addresses, patterns&lt;br&gt;• global_version, group_version&lt;br&gt;• is_allowed(domain)&lt;br&gt;• is_ip_allowed(ip)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
           <mxGeometry x="520" y="1200" width="250" height="100" as="geometry"/>
         </mxCell>
 
@@ -455,19 +455,19 @@
         <mxCell id="f1c" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#0000FF;" edge="1" source="wl_state" target="collect_ips" parent="1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="collect_ips" target="default_deny" parent="1">
+        <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="collect_ips" target="diff_calc" parent="1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="default_deny" target="diff_calc" parent="1">
+        <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="diff_calc" target="add_rules" parent="1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="f4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="diff_calc" target="add_rules" parent="1">
+        <mxCell id="f4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="add_rules" target="default_deny" parent="1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="f4b" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="diff_calc" target="remove_rules" parent="1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="f5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="add_rules" target="fw_active" parent="1">
+        <mxCell id="f5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="default_deny" target="fw_active" parent="1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="f5b" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="remove_rules" target="fw_active" parent="1">
@@ -671,7 +671,7 @@
         </mxCell>
 
         <!-- Agent-side code refs -->
-        <mxCell id="code_agent" value="&lt;b&gt;Agent-side Code:&lt;/b&gt;&lt;hr&gt;&lt;b&gt;whitelist/sync.py&lt;/b&gt;&lt;br&gt;• WhitelistSyncer.sync_with_server() - Retry + fallback&lt;br&gt;&lt;br&gt;&lt;b&gt;whitelist/manager.py&lt;/b&gt;&lt;br&gt;• WhitelistManager - Sync loop 60s, DNS refresh 10s&lt;br&gt;&lt;br&gt;&lt;b&gt;whitelist/state.py&lt;/b&gt;&lt;br&gt;• WhitelistState - domains/patterns/IPs sets, version&lt;br&gt;• is_domain_allowed() / is_ip_allowed()&lt;br&gt;&lt;br&gt;&lt;b&gt;firewall/manager.py&lt;/b&gt;&lt;br&gt;• FirewallManager - Default Deny + ALLOW rules&lt;br&gt;• sync_whitelist_changes() - Diff-based update&lt;br&gt;&lt;br&gt;&lt;b&gt;network/dns_resolver.py&lt;/b&gt;&lt;br&gt;• OptimizedDNSResolver - Parallel, LRUCache, TTL" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=10;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+        <mxCell id="code_agent" value="&lt;b&gt;Agent-side Code:&lt;/b&gt;&lt;hr&gt;&lt;b&gt;whitelist/sync.py&lt;/b&gt;&lt;br&gt;• WhitelistSyncer.sync_with_server() - Retry + fallback&lt;br&gt;&lt;br&gt;&lt;b&gt;whitelist/manager.py&lt;/b&gt;&lt;br&gt;• WhitelistManager - Sync loop 60s, DNS refresh 10s&lt;br&gt;&lt;br&gt;&lt;b&gt;whitelist/state.py&lt;/b&gt;&lt;br&gt;• WhitelistState - domains/patterns/IPs sets, version&lt;br&gt;• is_allowed() / is_ip_allowed()&lt;br&gt;&lt;br&gt;&lt;b&gt;firewall/manager.py&lt;/b&gt;&lt;br&gt;• FirewallManager - Default Deny + ALLOW rules&lt;br&gt;• sync_whitelist_changes() - Diff-based update&lt;br&gt;&lt;br&gt;&lt;b&gt;network/dns_resolver.py&lt;/b&gt;&lt;br&gt;• OptimizedDNSResolver - Parallel, LRUCache, TTL" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=10;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
           <mxGeometry x="500" y="2290" width="380" height="260" as="geometry"/>
         </mxCell>
 

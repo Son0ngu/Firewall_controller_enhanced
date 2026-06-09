@@ -1,0 +1,10 @@
+flowchart TD
+  ADMIN["Admin web UI"] --> CREATE["POST /api/groups (require_login + require_admin)"]
+  CREATE --> GS["GroupService.create_group(name, desc, whitelist?)"]
+  GS --> GM1["GroupModel.create_group (teacher_ids=[])"]
+  ADMIN --> ASSIGN["POST /api/groups/<gid>/teachers (require_admin)"]
+  ASSIGN --> GM2["GroupModel.set_teachers(gid, [teacher_id...])"]
+  GM2 --> SCOPE["teacher scope established"]
+  SCOPE --> S1["get_teacher_group_ids -> find_accessible_group_ids_for_teacher"]
+  S1 --> S2["RBAC filters: agents (group_id in), logs (agent_id in), whitelist (scope global or group_id in)"]
+  S2 --> TEACHER["Teacher now sees only their groups' agents/logs/whitelist + can manage profiles"]

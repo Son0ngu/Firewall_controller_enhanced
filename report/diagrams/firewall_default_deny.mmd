@@ -1,0 +1,15 @@
+flowchart TD
+  START["FirewallManager.enable_whitelist_mode / setup_whitelist_firewall"] --> SNAP["save_snapshot (backup current FW policy)"]
+  SNAP --> ESS["resolve essential IPs (DNS, gateway, localhost) + server IPs"]
+  ESS --> SELF["RulesManager.create_self_allow_rules(agent exe path)"]
+  SELF --> SELFOK{"self-allow created?"}
+  SELFOK -->|"no"| ABORT["return False (do NOT enable deny)"]
+  SELFOK -->|"yes"| BATCH["create_allow_rules_batch(all_allowed_ips)"]
+  BATCH --> BATCHOK{"all rules created?"}
+  BATCHOK -->|"no"| ABORT
+  BATCHOK -->|"yes"| DENY["PolicyManager.enable_default_deny(): set block-outbound on domain+private+public"]
+  DENY --> CNT{"success_count == len(profiles) (all 3)?"}
+  CNT -->|"no"| FAIL["default_deny_enabled=False; return False"]
+  CNT -->|"yes"| VERIFY{"verify_default_deny(): get_current_policy() all 3 == block?"}
+  VERIFY -->|"no"| FAIL
+  VERIFY -->|"yes"| OK["default_deny_enabled=True; whitelist_mode_active=True"]

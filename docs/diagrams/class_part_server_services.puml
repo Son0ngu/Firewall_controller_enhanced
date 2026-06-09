@@ -1,0 +1,77 @@
+@startuml SAINT_Class_Server_Services
+' General class diagram - PART: server/services (12 services)
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - server.services
+
+package "server.services" {
+  class WhitelistService {
+    + get_agent_sync_data(...): Dict
+    + get_all_entries(filters): Dict
+    + add_entry() / bulk_delete_entries()
+    + validate_teacher_entry_access(item_id, group_ids, action): tuple
+    - _merge_whitelists(global, group): List
+  }
+  class AgentService {
+    + register_agent() / process_heartbeat()
+    + get_agents_with_status() / delete_agent()
+    + move_agent_to_group()
+  }
+  class LogService {
+    + receive_logs() / get_all_logs()
+    + get_comprehensive_statistics() / clear_logs()
+  }
+  class GroupService {
+    + list/create/update/delete_group()
+  }
+  class APIKeyService {
+    + create_api_key() / validate_api_key()
+    + revoke_api_key() / get_stats()
+  }
+  class WhitelistProfileService {
+    + create/update/delete_profile()
+    + activate_profile() / deactivate_profile()
+  }
+  class AgentPolicyService {
+    + set_policy() / get_policy()
+  }
+  class AdminAuthService {
+    + login() / refresh_token() / logout() / change_password()
+  }
+  class UserService {
+    + create/update/delete_user() / reset_password()
+  }
+  class RBACService {
+    + check_permission() / get_teacher_group_ids()
+    + get_log/agent/group/whitelist_query_filter()
+  }
+  class AuditService {
+    + log_action(user, action, resource, ...)
+  }
+  class JWTService {
+    + issue_agent_token() / issue_admin_token()
+    + validate_access_token() / refresh_access_token()
+    + revoke_token() / revoke_all_agent_tokens()
+  }
+}
+
+WhitelistService ..> AgentPolicyService
+WhitelistService ..> WhitelistProfileService
+AgentService ..> JWTService
+AdminAuthService ..> JWTService
+AdminAuthService ..> AuditService
+UserService ..> AuditService
+
+note bottom of WhitelistService
+  Services depend only on models + each other (no direct Mongo
+  in controllers/services). Realtime changes emit via SocketIO.
+end note
+@enduml

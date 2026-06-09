@@ -1,0 +1,14 @@
+flowchart TD
+  LOOP["WhitelistManager._refresh_dns_loop (daemon)"] --> EXP["dns_cache.get_expiring_keys(threshold=60s)"]
+  EXP --> EACH{"for each domain needing resolve"}
+  EACH --> CACHE{"dns_cache.get(domain) valid?"}
+  CACHE -->|"hit"| REUSE["reuse cached IPs (LRUCache, TTL)"]
+  CACHE -->|"miss / expiring"| RES["OptimizedDNSResolver.resolve_multiple_parallel"]
+  RES --> DNSPY["dnspython A query (TTL from record)"]
+  DNSPY -->|"ok"| PUT["dns_cache.set(domain, ips, ttl=cache_ttl)"]
+  DNSPY -->|"fail"| FALLBACK["socket.getaddrinfo fallback"]
+  FALLBACK --> PUT
+  REUSE --> UNION["final_ips = static IPs union resolved IPs"]
+  PUT --> UNION
+  UNION --> FW["FirewallManager.update_whitelist(set(), final_ips)"]
+  FW --> RULES["create/sync allow rules (essential + server IPs protected)"]

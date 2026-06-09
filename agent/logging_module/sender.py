@@ -45,6 +45,7 @@ class LogSender:
         # every ``send_interval`` (was: ~every 2 s). Reset to zero on the
         # next successful batch.
         self._consecutive_send_failures = 0
+        self._logs_sent = 0
         self._next_send_allowed_at: float = now()
         self.max_retry_interval = config.get("max_retry_interval", 300)
 
@@ -318,6 +319,7 @@ class LogSender:
             if response.status_code in (200, 201, 202):
                 logger.info(f"Sent {len(serialized_logs)} logs to server")
                 self._record_send_success()
+                self._logs_sent += len(serialized_logs)
                 return True
             elif response.status_code == 401:
                 logger.warning("Log send authentication failed - token may be expired")
@@ -373,6 +375,7 @@ class LogSender:
             "running": self.running,
             "agent_id": self.agent_id,
             "queue_size": self.log_queue.qsize(),
+            "logs_sent": self._logs_sent,
             "max_queue_size": self.max_queue_size,
             "batch_size": self.batch_size,
             "send_interval": self.send_interval,

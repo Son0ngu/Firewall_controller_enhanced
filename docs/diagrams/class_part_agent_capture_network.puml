@@ -1,0 +1,63 @@
+@startuml SAINT_Class_Agent_Capture_Network
+' General class diagram - PART: agent/capture + agent/network + agent/cache
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.capture / network / cache
+
+package "agent.capture" {
+  class PacketSniffer {
+    - packet_count: int
+    - domain_count: int
+    + start() / stop()
+    - _capture_loop()
+    - _process_packet(pkt)
+  }
+  class DomainExtractor {
+    + extract_sni(pkt): Optional[str]
+    + extract_from_dns(pkt): Optional[str]
+    + extract_from_http(pkt): Optional[str]
+  }
+}
+package "agent.network" {
+  class OptimizedDNSResolver {
+    + resolve_multiple_parallel(domains): Dict
+    + resolve_domain_sync(domain): DNSRecord
+    + shutdown()
+  }
+}
+package "agent.cache" {
+  class LRUCache {
+    - _cache: OrderedDict
+    + get(key) / set(key, value, ttl)
+    + get_expiring_keys(threshold): list
+    + cleanup_expired(): int
+    + clear()
+  }
+  class DNSRecord <<dataclass>> {
+    + ip_addresses: list
+    + ttl: int
+    + timestamp: float
+  }
+}
+
+PacketSniffer *-- DomainExtractor
+PacketSniffer ..> "agent.whitelist.WhitelistManager" : is_allowed / is_ip_allowed
+PacketSniffer ..> "agent.logging_module.LogSender" : queue_log
+OptimizedDNSResolver ..> DNSRecord
+LRUCache ..> DNSRecord : stores
+OptimizedDNSResolver ..> LRUCache
+
+note bottom of PacketSniffer
+  Passive Scapy sniff (TCP 80/443, UDP 53). Per packet:
+  extract domain -> whitelist check -> handlers.handle_domain_detection
+  -> LogSender. Enforcement itself is the OS firewall (Default Deny).
+end note
+@enduml

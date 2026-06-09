@@ -126,15 +126,30 @@ class HeartbeatSender:
                         )
                     sleep_time = self._backoff_seconds()
 
-                # Interruptible sleep
-                for _ in range(int(sleep_time)):
-                    if not self._running:
-                        break
-                    sleep(1)
+                # Interruptible sleep (honors fractional backoff so a
+                # sub-second value never rounds to 0 and busy-spins).
+                self._interruptible_sleep(sleep_time)
 
             except Exception as e:
                 logger.error(f"Error in heartbeat loop: {e}")
-                sleep(self._backoff_seconds())
+                self._interruptible_sleep(self._backoff_seconds())
+
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """Sleep up to ``seconds``, waking early if ``_running`` clears.
+
+        Sleeps whole seconds one at a time (so a stop request returns within
+        ~1 s) and then the fractional remainder. Unlike ``range(int(seconds))``
+        this does not discard sub-second durations, which previously turned a
+        <1 s backoff into a no-op and let the loop hammer the server.
+        """
+        whole = int(seconds)
+        for _ in range(whole):
+            if not self._running:
+                return
+            sleep(1)
+        remainder = seconds - whole
+        if self._running and remainder > 0:
+            sleep(remainder)
 
     def _backoff_seconds(self) -> float:
         """Capped exponential backoff with full jitter.

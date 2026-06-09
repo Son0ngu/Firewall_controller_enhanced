@@ -1,6 +1,6 @@
 # SAINT Current Runtime Flows
 
-Last checked against source: 2026-06-08.
+Last checked against source: 2026-06-09.
 
 This page is the current source-readable flow reference for the recent Agent,
 Server, whitelist, packaging, and config changes. It intentionally uses
@@ -18,6 +18,8 @@ Mermaid diagrams so the flow can be reviewed without opening DrawIO.
 | Agent whitelist sync | `agent/whitelist/manager.py`, `agent/whitelist/state.py` |
 | Firewall allow rules | `agent/firewall/manager.py`, `agent/firewall/utils.py` |
 | Server URL/config paths | `agent/shared/server_urls.py`, `agent/config/paths.py` |
+| Config encryption | `agent/config/crypto.py` (Fernet + per-install salt) |
+| Firewall default-deny policy | `agent/firewall/policy.py` (`enable_default_deny`, `verify_default_deny`) |
 | Build artifact | `agent/saint_agent.spec` -> `dist/SAINT.exe` |
 
 ## Whitelist Web CRUD Flow
@@ -155,13 +157,20 @@ flowchart TD
     DNS --> IPS
 
     IPS --> ESSENTIAL["Add localhost + system DNS + local IP/gateway"]
-    ESSENTIAL --> RULES["Create SAINT allow rules"]
-    RULES --> DENY["Enable whitelist_only default deny"]
-    DENY --> SNAPSHOT["Snapshot/restore stored in %LOCALAPPDATA%/SAINT/profiles"]
+    ESSENTIAL --> RULES["Create SAINT allow rules + self-allow (agent program path) FIRST"]
+    RULES --> DENY["enable_default_deny(): set block-outbound on ALL 3 profiles"]
+    DENY --> VERIFY{"verify_default_deny(): get_current_policy() shows all 3 = block?"}
+    VERIFY -->|"Yes (success_count == 3)"| ACTIVE["default_deny_enabled=True; whitelist_mode_active"]
+    VERIFY -->|"No / partial"| FAILCLOSED["Return False; default_deny_enabled=False (no false 'enabled')"]
+    ACTIVE --> SNAPSHOT["Snapshot/restore stored in %LOCALAPPDATA%/SAINT/profiles"]
 
     NPCAP{"Npcap/WinPcap available?"} -->|"Yes"| SNIFFER["Start packet sniffer"]
     NPCAP -->|"No"| SKIP["Mark packet_sniffer skipped; firewall/whitelist still run"]
 ```
+
+Default-deny is fail-closed on the "enabled" claim: allow rules and the
+agent self-allow rule are created *before* the policy flip, and the manager
+only marks `whitelist_mode_active` when all three profiles verify as blocking.
 
 ## Config And Packaging Flow
 
@@ -181,6 +190,36 @@ flowchart TD
     SNAPSHOT --> SNAPAPPDATA["Resolve to %LOCALAPPDATA%/SAINT/profiles"]
     SNAPAPPDATA --> RESTORE["Restore falls back to legacy exe/install dir snapshot if needed"]
 ```
+
+## Config Encryption / Decryption Flow
+
+`agent_config.json` holds the API key and JWT, so it is stored encrypted with
+Fernet. The key is derived from machine identity **plus a per-install random
+salt** (`secrets.token_bytes(32)`) kept in an ACL-restricted `.salt` file, so
+the key can no longer be reproduced from public host identifiers (hostname +
+MAC) alone. Configs written by the old machine-only key are migrated forward on
+read.
+
+```mermaid
+flowchart TD
+    ENC["encrypt_config(config, path)"] --> SALT["_load_or_create_salt(path): read .salt or generate 32 random bytes"]
+    SALT --> RESTRICT["restrict_to_owner(.salt): icacls / chmod"]
+    SALT --> KEY["_get_salted_key(): SHA256(hostname + MAC + salt)"]
+    KEY --> WRITEENC["Write agent_config.json.enc; restrict_to_owner(.enc); delete plaintext"]
+
+    DEC["decrypt_config(path)"] --> READ["Read .enc bytes"]
+    READ --> TRY1{"_try_decrypt with salted key?"}
+    TRY1 -->|"OK"| RETURN["Return config"]
+    TRY1 -->|"InvalidToken"| TRY2{"_try_decrypt with LEGACY _get_machine_key()?"}
+    TRY2 -->|"OK (old .enc)"| MIGRATE["Migrate: re-encrypt with salted key, then return config"]
+    TRY2 -->|"Fail"| NONE["Return None (wrong machine / corrupt)"]
+    MIGRATE --> RETURN
+```
+
+Limitation: a local admin who can read both the `.enc` and the `.salt` file can
+still decrypt — inherent to local symmetric encryption without TPM/DPAPI. The
+salt defends against ciphertext-only exposure (backup, AV quarantine, a leaked
+`.enc`).
 
 ## Current Warning Baseline
 

@@ -137,7 +137,7 @@
         <mxCell id="e9" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#82b366;fontSize=10;" edge="1" source="a_d1" target="a_ok" parent="1" />
 
         <!-- Failure: retry -->
-        <mxCell id="a_fail" value="&lt;b&gt;consecutive_failures++&lt;/b&gt;&lt;br&gt;if ≥ 3: log error&lt;br&gt;Sleep &lt;b&gt;5s&lt;/b&gt; (retry faster)&lt;br&gt;&lt;i&gt;Thử lại nhanh hơn khi lỗi&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="a_fail" value="&lt;b&gt;consecutive_failures++&lt;/b&gt;&lt;br&gt;if ≥ 3: log error&lt;br&gt;Backoff sleep (full-jitter, base &lt;b&gt;5s&lt;/b&gt;)&lt;br&gt;&lt;i&gt;_interruptible_sleep(_backoff_seconds())&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="250" y="1040" width="170" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e10" value="No" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=10;" edge="1" source="a_d1" target="a_fail" parent="1" />

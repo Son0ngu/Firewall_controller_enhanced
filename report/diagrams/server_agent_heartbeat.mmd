@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant A as Agent
+  participant C as AgentController.heartbeat
+  participant MW as require_jwt
+  participant AS as AgentService.process_heartbeat
+  participant DB as Mongo (agents)
+  participant IO as SocketIO
+
+  A->>C: POST /api/agents/heartbeat (Bearer JWT, metrics, wl versions)
+  C->>MW: require_jwt -> JWTService.validate_access_token
+  alt token invalid/expired/revoked
+    MW-->>A: 401
+  else valid
+    MW-->>C: g.agent_id
+    C->>AS: process_heartbeat(agent_id, data, client_ip)
+    AS->>DB: update last_heartbeat, metrics
+    AS->>AS: recompute status (active/inactive/offline by age)
+    AS->>IO: emit agent_heartbeat (status, metrics)
+    AS-->>A: { success, server_time, force_sync? }
+  end

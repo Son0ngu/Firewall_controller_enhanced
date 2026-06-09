@@ -16,7 +16,7 @@ Module 1 file (`sender.py`). Tên module là `logging_module` (không phải `lo
 | `.start()` | `() -> None` | [sender.py:56](../../../agent/logging_module/sender.py#L56) | Spawn thread, idempotent |
 | `.stop()` | `() -> None` | [sender.py:69](../../../agent/logging_module/sender.py#L69) | **Flush queue trước** rồi join thread 5s - đảm bảo logs còn lại được gửi |
 | `.queue_log(log_data)` | `(Dict) -> bool` | [sender.py:86](../../../agent/logging_module/sender.py#L86) | **Public entry**. Serialize, đảm bảo có `agent_id` + `timestamp`, `put_nowait`. `False` nếu queue full (drop) |
-| `.get_status()` | `() -> Dict` | [sender.py:286](../../../agent/logging_module/sender.py#L286) | running, queue_size, batch_size, last_send_time |
+| `.get_status()` | `() -> Dict` | [sender.py:286](../../../agent/logging_module/sender.py#L286) | running, queue_size, `logs_sent`, batch_size, last_send_time. `logs_sent` = counter `_logs_sent` cộng dồn số log gửi thành công (200/201/202) trong `_send_batch` |
 | `._serialize_log(log_data)` | `(Dict) -> Dict` | [sender.py:106](../../../agent/logging_module/sender.py#L106) | Recursive serialize. Detect `is_lifecycle_event` → bỏ network defaults. None → `"unknown"` |
 | `._sender_loop()` | `() -> None` | [sender.py:156](../../../agent/logging_module/sender.py#L156) | Wake mỗi 1s. Send khi `queue_size >= batch_size` OR `time_since_last_send >= send_interval` |
 | `._flush_queue()` | `() -> None` | [sender.py:178](../../../agent/logging_module/sender.py#L178) | Empty toàn bộ queue rồi gửi 1 batch lớn (cho shutdown) |

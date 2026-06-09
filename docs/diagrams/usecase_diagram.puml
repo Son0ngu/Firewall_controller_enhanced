@@ -116,6 +116,8 @@ rectangle "SAINT System" {
     usecase "Update API Key" as UC_UpdateKey
     usecase "Revoke API Key" as UC_RevokeKey
     usecase "Delete API Key" as UC_DeleteKey
+    usecase "Validate API Key" as UC_ValidateKey
+    usecase "API Key Statistics" as UC_KeyStats
   }
 
   package "Audit" {
@@ -183,6 +185,8 @@ Admin --> UC_CreateKey
 Admin --> UC_UpdateKey
 Admin --> UC_RevokeKey
 Admin --> UC_DeleteKey
+Admin --> UC_ValidateKey
+Admin --> UC_KeyStats
 
 Admin --> UC_ViewAudit
 Admin --> UC_ViewActivity

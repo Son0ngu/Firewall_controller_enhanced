@@ -56,10 +56,10 @@
         <mxCell id="se6" value="full" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=8;" edge="1" source="s_d1" target="s_full" parent="1" />
 
         <!-- Incremental -->
-        <mxCell id="s_inc" value="&lt;b&gt;type: &quot;incremental&quot;&lt;/b&gt;&lt;br&gt;MERGE into existing state&lt;br&gt;merged = existing | new&lt;br&gt;(union, no data loss)&lt;br&gt;&lt;i&gt;Gộp vào state hiện tại&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="s_inc" value="&lt;b&gt;Always FULL replace&lt;/b&gt;&lt;br&gt;_domains/_patterns/_ips = new sets&lt;br&gt;(no incremental merge)&lt;br&gt;Anti-wipe guard if server empty&lt;br&gt;&lt;i&gt;Luôn thay thế toàn bộ&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="370" y="510" width="170" height="65" as="geometry" />
         </mxCell>
-        <mxCell id="se7" value="incremental" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#82b366;fontSize=8;" edge="1" source="s_d1" target="s_inc" parent="1" />
+        <mxCell id="se7" value="full / up_to_date" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#82b366;fontSize=8;" edge="1" source="s_d1" target="s_inc" parent="1" />
 
         <!-- Update version -->
         <mxCell id="s_ver" value="&lt;b&gt;Update version + checksum&lt;/b&gt;&lt;br&gt;_version = global_version&lt;br&gt;_group_version = group_version&lt;br&gt;_checksum = sha256(sorted entries)&lt;br&gt;&lt;i&gt;Cập nhật version + checksum&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">

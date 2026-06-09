@@ -1,0 +1,68 @@
+@startuml SAINT_Class_Agent_Firewall
+' General class diagram - PART: agent/firewall
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.firewall
+
+package "agent.firewall" {
+  class FirewallManager {
+    - policy_manager: PolicyManager
+    - rules_manager: RulesManager
+    - allowed_ips: set
+    - whitelist_mode_active: bool
+    + enable_whitelist_mode(server_urls, ips, domains): bool
+    + setup_whitelist_firewall(ips): bool
+    + update_whitelist(domains, ips)
+    + sync_whitelist_changes(old, new)
+    + save_snapshot(path) / restore_snapshot(path)
+    + clear_all_rules(): bool
+  }
+  class PolicyManager {
+    - _original_policies: Dict
+    - default_deny_enabled: bool
+    + get_current_policy(): Dict
+    + enable_default_deny(): bool
+    + verify_default_deny(): bool
+    + restore_original_policy(): bool
+    + restore_default_policy(): bool
+  }
+  class RulesManager {
+    - allowed_ips: set
+    + create_allow_rules_batch(ips): bool
+    + create_self_allow_rules(exe): bool
+    + add_allow_rule(ip) / remove_allow_rule(ip)
+    + clear_all_rules(): bool
+    + load_existing_rules()
+  }
+  abstract class FirewallProvider {
+    + create_or_replace_rule(...)
+    + delete_rule(name) / delete_rules_by_prefix(p)
+    + list_outbound_allow_ips(): set
+    + set_profile_outbound_policy(profile, action): bool
+    + get_current_policy(): Dict
+  }
+  class NetshProvider
+  class NetSecurityProvider
+}
+
+FirewallManager *-- PolicyManager
+FirewallManager *-- RulesManager
+RulesManager o-- FirewallProvider : _provider (read) / _write_provider (write)
+PolicyManager ..> FirewallProvider : set_profile_outbound_policy
+FirewallProvider <|-- NetshProvider
+FirewallProvider <|-- NetSecurityProvider
+
+note bottom of PolicyManager
+  enable_default_deny() requires ALL 3 profiles (== len);
+  verify_default_deny() checks per-profile via get_current_policy();
+  fail-closed on verify failure (no false "enabled").
+end note
+@enduml

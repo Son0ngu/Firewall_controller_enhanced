@@ -44,7 +44,7 @@
         <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2" target="d2" parent="1" />
 
         <!-- Error branches -->
-        <mxCell id="err401a" value="&lt;b&gt;401&lt;/b&gt; TOKEN_EXPIRED&lt;br&gt;&lt;i&gt;Token hết hạn → Agent phải re-register&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="err401a" value="&lt;b&gt;401&lt;/b&gt; REFRESH_TOKEN_EXPIRED&lt;br&gt;&lt;i&gt;Token hết hạn → Agent phải re-register&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="770" y="420" width="230" height="50" as="geometry" />
         </mxCell>
         <mxCell id="err401b" value="&lt;b&gt;401&lt;/b&gt; TOKEN_REVOKED&lt;br&gt;&lt;i&gt;Token đã bị thu hồi&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">

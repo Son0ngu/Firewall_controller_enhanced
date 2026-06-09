@@ -1,0 +1,85 @@
+@startuml SAINT_Class_Agent_Core
+' General class diagram - PART: agent/core (runtime, lifecycle, token, registry, handlers)
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - agent.core
+
+package "agent.core" {
+  class DeviceIdentityProvider <<static>> {
+    + {static} get_device_id(): str
+    + {static} get_hostname(): str
+    + {static} reset()
+  }
+  class AgentRuntime {
+    - state: Dict
+    + get_agent_id(): Optional[str]
+    + get_agent_token(): Optional[str]
+    + is_registered(): bool
+    + is_running(): bool
+    + stop()
+  }
+  class Agent <<singleton>> {
+    + {static} reset_for_test()
+  }
+  class InitResult <<dataclass>> {
+    + record(name, status, detail)
+    + has_failure(): bool
+  }
+  class LifecycleContext {
+    + runtime: AgentRuntime
+    + config: Dict
+    + result: InitResult
+  }
+  abstract class AgentComponent {
+    + start(ctx)
+    + stop(ctx)
+    + health(ctx)
+  }
+  class TokenManager {
+    + access_token: Optional[str] <<property>>
+    + has_valid_token: bool
+    + is_expired: bool
+    + set_tokens(access, refresh, ...)
+    + start_auto_refresh(on_refreshed, on_expired)
+    + refresh_now(): bool
+  }
+  class "lifecycle" as Lifecycle <<module>> {
+    + initialize_components(config, runtime): InitResult
+    + cleanup(config, runtime)
+    + start_components(ctx)
+    + stop_components(ctx)
+  }
+  class "registry" as Registry <<module>> {
+    + register_agent(config)
+    + try_register_with_server(url, info, config)
+  }
+  class "handlers" as Handlers <<module>> {
+    + create_domain_handler(config, agent)
+    + handle_domain_detection(record, config, whitelist, log_sender)
+  }
+}
+
+Agent --|> AgentRuntime
+AgentComponent <|-- "RegistrationComponent\nTokenManagerComponent\nWhitelistComponent\nFirewallComponent\nLogSenderComponent\nHeartbeatComponent\nPacketSnifferComponent"
+LifecycleContext *-- AgentRuntime
+LifecycleContext *-- InitResult
+Lifecycle ..> LifecycleContext
+Lifecycle ..> AgentComponent : start/stop in order
+Lifecycle ..> Registry : register_agent
+Registry ..> TokenManager : set_tokens
+Handlers ..> AgentRuntime
+
+note bottom of Lifecycle
+  7-step startup: register -> TokenManager -> Whitelist (sync) ->
+  Firewall (default-deny) -> LogSender -> Heartbeat -> PacketSniffer.
+  cleanup() stops in reverse order.
+end note
+@enduml

@@ -1,0 +1,82 @@
+@startuml SAINT_Class_Server_Controllers
+' General class diagram - PART: server/controllers (10 Flask blueprint controllers)
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - server.controllers
+
+package "server.controllers" {
+  class WhitelistController <<C>> {
+    prefix /whitelist
+    + agent_sync() <<jwt>>
+    + list_domains() / add_domain() / delete_domain()
+    + bulk_add/update/delete_entries()
+  }
+  class AgentController <<C>> {
+    prefix /agents
+    + register_agent() <<api_key>>
+    + heartbeat() <<jwt>>
+    + list_agents() / get_agent() / delete_agent()
+    + get_agent_policy() / set_agent_policy()
+  }
+  class LogController <<C>> {
+    prefix /logs
+    + receive_logs() <<jwt>>
+    + list_logs() / get_log_statistics() / clear_logs()
+  }
+  class GroupController <<C>> {
+    prefix /groups
+    + list/create/get/update/delete_group()
+    + set_teachers()
+  }
+  class APIKeyController <<C>> {
+    prefix /api-keys
+    + list/create/get/update/delete/revoke + validate + stats
+  }
+  class WhitelistProfileController <<C>> {
+    + my_profiles() / list/create/update/delete
+    + activate_profile() / deactivate_profile()
+  }
+  class WebAuthController <<C>> {
+    prefix /admin/auth
+    + login() / get_profile() / refresh() / logout() / change_password()
+  }
+  class UserController <<C>> {
+    prefix /admin/users
+    + list/create/get/update/delete + reset_password
+  }
+  class AuditController <<C>> {
+    + list_logs() / user_activity()
+  }
+  class AgentAuthController <<C>> {
+    prefix /auth
+    + refresh_token() / logout() / verify_token() / token_info()
+  }
+}
+
+WhitelistController ..> "server.services.WhitelistService"
+WhitelistController ..> "server.services.RBACService"
+AgentController ..> "server.services.AgentService"
+AgentController ..> "server.services.AgentPolicyService"
+LogController ..> "server.services.LogService"
+GroupController ..> "server.services.GroupService"
+APIKeyController ..> "server.services.APIKeyService"
+WhitelistProfileController ..> "server.services.WhitelistProfileService"
+WebAuthController ..> "server.services.AdminAuthService"
+UserController ..> "server.services.UserService"
+AuditController ..> "server.services.AuditService"
+AgentAuthController ..> "server.services.JWTService"
+
+note bottom of AgentController
+  Agent routes auth via API key (register) then JWT
+  (heartbeat/sync/logs). Web routes via require_login + RBAC
+  (admin / teacher group-ownership).
+end note
+@enduml

@@ -1,0 +1,13 @@
+flowchart TD
+  UI["Admin / Teacher (owner) web UI"] --> RT["PATCH /api/agents/<agent_id>/policy"]
+  RT --> AUTH["require_login + ownership check (RBAC)"]
+  AUTH --> SVC["AgentPolicyService.set_policy(agent_id, mode, custom_whitelist?, duration?)"]
+  SVC --> MODE{"mode"}
+  MODE -->|"none"| CLR["clear override (normal whitelist)"]
+  MODE -->|"isolate"| ISO["override_mode=isolate (block all but server)"]
+  MODE -->|"custom_whitelist"| CUS["override_mode=custom + custom_whitelist[]"]
+  CLR --> MODEL["AgentPolicyModel: upsert + bump override_version (+ expires_at if duration)"]
+  ISO --> MODEL
+  CUS --> MODEL
+  MODEL --> IO["socketio emit agent_policy_updated"]
+  MODEL --> SYNC["next agent-sync: get_effective_mode() applies override (auto-reset on expiry)"]

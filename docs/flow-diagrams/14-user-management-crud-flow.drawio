@@ -31,7 +31,7 @@
         </mxCell>
         <mxCell id="ce2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="c_mw" target="c_v1" parent="1" />
 
-        <mxCell id="c_v2" value="&lt;b&gt;Validate email&lt;/b&gt; (if provided)&lt;br&gt;Check duplicate&lt;br&gt;&lt;b&gt;Validate role&lt;/b&gt; ∈ {admin, teacher}&lt;br&gt;&lt;b&gt;Validate password&lt;/b&gt; 8-128 chars&lt;br&gt;&lt;i&gt;Kiểm tra email, role, mật khẩu&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="c_v2" value="&lt;b&gt;Validate email&lt;/b&gt; (if provided)&lt;br&gt;Check duplicate&lt;br&gt;&lt;b&gt;Validate role&lt;/b&gt; ∈ {admin, teacher}&lt;br&gt;&lt;b&gt;Validate password&lt;/b&gt; min 8 chars, max 72 bytes (bcrypt)&lt;br&gt;&lt;i&gt;Kiểm tra email, role, mật khẩu&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="85" y="305" width="220" height="70" as="geometry" />
         </mxCell>
         <mxCell id="ce3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="c_v1" target="c_v2" parent="1" />
@@ -51,7 +51,7 @@
         </mxCell>
         <mxCell id="ce5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="c_hash" target="c_db" parent="1" />
 
-        <mxCell id="c_audit" value="&lt;b&gt;AuditService.log(&quot;user.create&quot;)&lt;/b&gt;&lt;br&gt;SocketIO.emit(&quot;user_created&quot;)&lt;br&gt;&lt;i&gt;Ghi audit + thông báo&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="c_audit" value="&lt;b&gt;AuditService.log_action(&quot;user.create&quot;)&lt;/b&gt;&lt;br&gt;SocketIO.emit(&quot;user_created&quot;)&lt;br&gt;&lt;i&gt;Ghi audit + thông báo&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="110" y="510" width="220" height="40" as="geometry" />
         </mxCell>
         <mxCell id="ce6" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="c_db" target="c_audit" parent="1" />
@@ -88,7 +88,7 @@
         </mxCell>
         <mxCell id="ue3" value="No" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontSize=9;" edge="1" source="u_d1" target="u_validate" parent="1" />
 
-        <mxCell id="u_db" value="&lt;b&gt;UserModel.update(user_id, data)&lt;/b&gt;&lt;br&gt;AuditService.log(&quot;user.update&quot;)&lt;br&gt;&lt;i&gt;Cập nhật DB + ghi log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="u_db" value="&lt;b&gt;UserModel.update(user_id, data)&lt;/b&gt;&lt;br&gt;AuditService.log_action(&quot;user.update&quot;)&lt;br&gt;&lt;i&gt;Cập nhật DB + ghi log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="610" y="375" width="220" height="45" as="geometry" />
         </mxCell>
         <mxCell id="ue4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="u_validate" target="u_db" parent="1" />
@@ -131,7 +131,7 @@
         </mxCell>
         <mxCell id="de4" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#b85450;fontSize=9;" edge="1" source="del_d2" target="del_err2" parent="1" />
 
-        <mxCell id="del_ok" value="&lt;b&gt;user_model.delete(user_id)&lt;/b&gt;&lt;br&gt;AuditService.log(&quot;user.delete&quot;)&lt;br&gt;&lt;i&gt;Xoá user + ghi audit&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="del_ok" value="&lt;b&gt;user_model.delete(user_id)&lt;/b&gt;&lt;br&gt;AuditService.log_action(&quot;user.delete&quot;)&lt;br&gt;&lt;i&gt;Xoá user + ghi audit&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="140" y="1000" width="220" height="40" as="geometry" />
         </mxCell>
         <mxCell id="de5" value="No" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#82b366;fontSize=9;" edge="1" source="del_d2" target="del_ok" parent="1" />
@@ -153,7 +153,7 @@
           <mxGeometry x="640" y="580" width="160" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="r_d1" value="&lt;b&gt;Length&lt;br&gt;8-128?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="r_d1" value="&lt;b&gt;Length&lt;br&gt;≥8, ≤72 bytes?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="675" y="625" width="90" height="55" as="geometry" />
         </mxCell>
         <mxCell id="re1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="r_start" target="r_d1" parent="1" />
@@ -168,7 +168,7 @@
         </mxCell>
         <mxCell id="re3" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontStyle=1;fontColor=#82b366;fontSize=9;" edge="1" source="r_d1" target="r_hash" parent="1" />
 
-        <mxCell id="r_audit" value="&lt;b&gt;AuditService.log(&quot;user.reset_password&quot;)&lt;/b&gt;&lt;br&gt;&lt;i&gt;Ghi audit log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+        <mxCell id="r_audit" value="&lt;b&gt;AuditService.log_action(&quot;user.reset_password&quot;)&lt;/b&gt;&lt;br&gt;&lt;i&gt;Ghi audit log&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
           <mxGeometry x="620" y="765" width="200" height="35" as="geometry" />
         </mxCell>
         <mxCell id="re4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="r_hash" target="r_audit" parent="1" />

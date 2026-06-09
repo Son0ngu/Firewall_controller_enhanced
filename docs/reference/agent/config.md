@@ -1,7 +1,7 @@
 # `agent/config` - Loader, Defaults, Validator, Encrypted Storage
 
 ## Mục đích
-Load config từ nhiều nguồn (file → env → defaults), merge theo deep-merge, validate, **mã hoá ngầm** bằng Fernet với khoá derive từ hostname + MAC (config chỉ đọc được trên cùng máy). Auto-migrate plaintext → encrypted lần đầu thấy plaintext.
+Load config từ nhiều nguồn (file → env → defaults), merge theo deep-merge, validate, **mã hoá ngầm** bằng Fernet với khoá derive từ hostname + MAC **+ salt ngẫu nhiên mỗi máy** (`.salt`, ACL-restricted) nên khoá không tái tạo được chỉ từ định danh máy công khai. Auto-migrate plaintext → encrypted, và `.enc` mã bằng khoá legacy (chưa salt) → re-encrypt khoá có salt khi đọc.
 
 4 file: `defaults.py` (DEFAULT_CONFIG), `loader.py` (load + merge), `validator.py` (validate + coerce), `crypto.py` (Fernet encrypt/decrypt).
 
@@ -64,11 +64,12 @@ Load config từ nhiều nguồn (file → env → defaults), merge theo deep-me
 
 | Symbol | Signature | Vị trí | Mô tả |
 |---|---|---|---|
-| `ENCRYPTED_EXT` | `str` const | [crypto.py:21](../../../agent/config/crypto.py#L21) | `".enc"`. File mã hoá là `agent_config.json.enc` |
-| `encrypt_config(config, path)` | `(Dict, Path) -> bool` | [crypto.py:34](../../../agent/config/crypto.py#L34) | Ghi `.enc` + xoá plaintext gốc |
-| `decrypt_config(path)` | `(Path) -> Optional[Dict]` | [crypto.py:58](../../../agent/config/crypto.py#L58) | Đọc `path.with_suffix("+.enc")`. `InvalidToken` → log error, trả None |
+| `ENCRYPTED_EXT` / `SALT_EXT` | `str` const | [crypto.py:25](../../../agent/config/crypto.py#L25) | `".enc"` / `".salt"`. File `agent_config.json.enc` + salt `agent_config.json.salt` |
+| `encrypt_config(config, path)` | `(Dict, Path) -> bool` | [crypto.py:34](../../../agent/config/crypto.py#L34) | Ghi `.enc` (khoá có salt) + xoá plaintext gốc |
+| `decrypt_config(path)` | `(Path) -> Optional[Dict]` | [crypto.py:58](../../../agent/config/crypto.py#L58) | Thử khoá-salt → fallback khoá legacy `_get_machine_key` → **re-encrypt** (migrate `.enc` cũ). Sai/hỏng → trả None |
 | `migrate_plaintext_to_encrypted(path)` | `(Path) -> bool` | [crypto.py:80](../../../agent/config/crypto.py#L80) | Nếu thấy plaintext mà chưa có `.enc` → encrypt rồi xoá plaintext |
-| `_get_machine_key()` | `() -> bytes` | [crypto.py:24](../../../agent/config/crypto.py#L24) | `urlsafe_b64encode(sha256("SAINT:{hostname}:{mac_int_hex}"))` - Fernet yêu cầu 32-byte url-safe base64 |
+| `_load_or_create_salt(path)` / `_get_salted_key(path)` | `(Path) -> bytes` | [crypto.py:24](../../../agent/config/crypto.py#L24) | Salt ngẫu nhiên 32 byte (`secrets`) lưu `.salt` ACL qua `restrict_to_owner`; khoá hiện tại = `sha256(hostname+MAC+salt)` |
+| `_get_machine_key()` | `() -> bytes` | [crypto.py:24](../../../agent/config/crypto.py#L24) | **LEGACY** (chỉ hostname+MAC) — chỉ dùng để migrate `.enc` cũ |
 
 ## Ai gọi module này
 - `agent/agent_gui.py` (entry point) - `load_config()` lúc startup

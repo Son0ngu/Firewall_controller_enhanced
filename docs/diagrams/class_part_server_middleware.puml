@@ -1,0 +1,53 @@
+@startuml SAINT_Class_Server_Middleware
+' General class diagram - PART: server/middleware + bootstrap
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  ArrowColor #A80036
+}
+skinparam package {
+  BackgroundColor #F0F0F0
+  BorderColor #888888
+}
+title Class Diagram (part) - server.middleware / bootstrap
+
+package "server.middleware" {
+  class "auth" as Auth <<M>> {
+    + init_auth_middleware(api_key_service, jwt_service)
+    + require_api_key(permission) <<decorator>>
+    + require_jwt(f) <<decorator>>
+    + require_jwt_or_api_key(permission) <<decorator>>
+  }
+  class "rbac" as Rbac <<M>> {
+    + init_rbac_middleware(admin_auth, rbac, jwt, user_model)
+    + require_login(f) <<decorator>>
+    + require_admin(f) <<decorator>>
+    + require_permission(perm) <<decorator>>
+    + inject_current_user(f) <<decorator>>
+  }
+}
+package "server.bootstrap" {
+  class "app_factory" as AppFactory <<module>> {
+    + create_app()
+  }
+  class "container" as Container <<module>> {
+    + initialize_container(db)
+    + initialize_database_indexes(db)
+  }
+}
+
+AppFactory ..> Container : build models + services + controllers
+Container ..> Auth : init_auth_middleware
+Container ..> Rbac : init_rbac_middleware
+Auth ..> "server.services.APIKeyService"
+Auth ..> "server.services.JWTService"
+Rbac ..> "server.services.AdminAuthService"
+Rbac ..> "server.services.RBACService"
+
+note bottom of Rbac
+  require_login validates the login JWT cookie and sets
+  g.current_user / g.current_role; require_admin / require_permission
+  gate by role; teacher scoping uses RBACService query filters.
+end note
+@enduml

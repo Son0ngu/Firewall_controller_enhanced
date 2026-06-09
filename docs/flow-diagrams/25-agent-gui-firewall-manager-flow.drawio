@@ -93,7 +93,7 @@
         </mxCell>
 
         <!-- F2: Check existing policy -->
-        <mxCell id="f2" value="&lt;b&gt;Default Deny active?&lt;/b&gt;&lt;br&gt;&lt;i&gt;policy_manager.verify_default_deny()&lt;/i&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="f2" value="&lt;b&gt;Default Deny active?&lt;/b&gt;&lt;br&gt;&lt;i&gt;verify_default_deny(): get_current_policy()&lt;br&gt;all 3 profiles == block (else fail-closed)&lt;/i&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="640" y="240" width="220" height="100" as="geometry"/>
         </mxCell>
         <mxCell id="ef1f2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="f1" target="f2"><mxGeometry relative="1" as="geometry"/></mxCell>
@@ -105,7 +105,7 @@
         <mxCell id="ef2y" value="Yes" style="edgeStyle=orthogonalEdgeStyle;fontFamily=Segoe UI;fontSize=11;fontStyle=1;" edge="1" parent="1" source="f2" target="f2y"><mxGeometry relative="1" as="geometry"/></mxCell>
 
         <!-- F3: Enable Default Deny -->
-        <mxCell id="f3" value="&lt;b&gt;enable_default_deny()&lt;/b&gt;&lt;br&gt;&lt;i&gt;netsh advfirewall set allprofiles&lt;br&gt;firewallpolicy blockinbound,blockoutbound&lt;br&gt;(Chặn tất cả kết nối mặc định)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="f3" value="&lt;b&gt;enable_default_deny()&lt;/b&gt;&lt;br&gt;&lt;i&gt;block-outbound on ALL 3 profiles&lt;br&gt;(domain/private/public) - success only if all 3&lt;br&gt;(Chặn tất cả kết nối mặc định)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontFamily=Segoe UI;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="600" y="380" width="300" height="80" as="geometry"/>
         </mxCell>
         <mxCell id="ef2f3" value="No (Enable)" style="edgeStyle=orthogonalEdgeStyle;fontFamily=Segoe UI;fontSize=11;fontStyle=1;" edge="1" parent="1" source="f2" target="f3"><mxGeometry relative="1" as="geometry"/></mxCell>
@@ -340,7 +340,7 @@
         <mxCell id="rr6a" value="Snapshot file" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=11;html=1;" vertex="1" parent="rr6">
           <mxGeometry width="150" height="28" as="geometry"/>
         </mxCell>
-        <mxCell id="rr6b" value="profiles/backup.wfw (JSON: policies, IPs, timestamp)" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="rr6">
+        <mxCell id="rr6b" value="profiles/backup.saint-snapshot.json (JSON: policies, IPs, timestamp)" style="shape=partialRectangle;connectable=0;fillColor=none;top=0;left=0;bottom=0;right=0;overflow=hidden;fontFamily=Segoe UI;fontSize=10;html=1;" vertex="1" parent="rr6">
           <mxGeometry x="150" width="350" height="28" as="geometry"/>
         </mxCell>
 

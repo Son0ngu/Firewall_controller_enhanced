@@ -12,7 +12,7 @@ from bson import ObjectId
 
 from models.user_model import UserModel
 from services.audit_service import AuditService
-from config.rbac_config import VALID_ROLES, get_all_permissions
+from config.rbac_config import VALID_ROLES
 
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_BYTES = 72

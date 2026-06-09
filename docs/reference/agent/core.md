@@ -81,7 +81,7 @@ Cap nhat 2026-05-27: lifecycle da co contract `AgentComponent.start/stop/health`
 | `TokenManager.is_expired` | `@property -> bool` | [token_manager.py:139](../../../agent/core/token_manager.py#L139) | |
 | `TokenManager.get_auth_header()` | `() -> Dict[str, str]` | [token_manager.py:148](../../../agent/core/token_manager.py#L148) | `{"Authorization": "Bearer <token>"}` (rỗng nếu không có token) |
 | `TokenManager.set_tokens(access, refresh, access_exp, refresh_exp)` | `(str, str, str=None, str=None) -> None` | [token_manager.py:68](../../../agent/core/token_manager.py#L68) | Update + ghi vào config |
-| `TokenManager.refresh_now()` | `() -> bool` | [token_manager.py:335](../../../agent/core/token_manager.py#L335) | Force refresh (POST `/api/auth/refresh`) |
+| `TokenManager.refresh_now()` | `() -> bool` | [token_manager.py:335](../../../agent/core/token_manager.py#L335) | Force refresh (POST `/api/auth/refresh`, `timeout=10`). Giữ `_lock` suốt request → các call này nối tiếp nhau (theo thiết kế hiện tại) |
 | `TokenManager.start_auto_refresh(on_refreshed=None, on_expired=None)` | `(Callable, Callable) -> None` | [token_manager.py:340](../../../agent/core/token_manager.py#L340) | Spawn daemon thread `TokenRefresh`, loop 60s |
 | `TokenManager.stop_auto_refresh()` | `() -> None` | [token_manager.py:360](../../../agent/core/token_manager.py#L360) | Join với timeout 5s |
 | `TokenManager.needs_reregistration` | `@property -> bool` | [token_manager.py:397](../../../agent/core/token_manager.py#L397) | |
